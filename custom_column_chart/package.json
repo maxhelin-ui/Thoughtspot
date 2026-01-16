@@ -16,7 +16,7 @@
     "dependencies": {
         "@thoughtspot/ts-chart-sdk": "^0.0.2-alpha.20",
         "highcharts": "^11.4.8",
-        "highcharts-custom-events": "^3.0.10",
+        "highcharts-custom-events": "^4.0.2",
         "lodash": "^4.17.21",
         "numeral": "^2.0.6"
     }
