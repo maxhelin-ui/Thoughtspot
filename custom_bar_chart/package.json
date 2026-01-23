@@ -14,10 +14,10 @@
         "vite": "^4.3.5"
     },
     "dependencies": {
-        "@thoughtspot/ts-chart-sdk": "0.0.2-alpha.20",
+        "@thoughtspot/ts-chart-sdk": "1.0.0",
         "highcharts": "^11.4.8",
         "highcharts-custom-events": "^3.0.10",
-        "lodash": "^4.17.21",
+        "lodash": "^4.17.23",
         "numeral": "^2.0.6"
     }
 }
