@@ -18,6 +18,6 @@
     "highcharts-custom-events": "^3.0.10",
     "lodash": "^4.17.21",
     "numeral": "^2.0.6",
-    "vercel": "^25.2.0"
+    "vercel": "^28.17.0"
   }
 }
