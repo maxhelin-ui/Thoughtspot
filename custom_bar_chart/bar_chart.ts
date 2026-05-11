@@ -76,9 +76,22 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
 
         const lastIdx = yColumns.length - 1;
         const startValue = measureValues[0] ?? 0;
-        const endValue = measureValues
-            .slice(0, Math.max(lastIdx, 0))
-            .reduce((s, v) => s + v, 0);
+
+        // Walk the cumulative path so we can pin the y-axis to the actual data
+        // range (no empty 0-to-startValue gap below the chart).
+        const cumulatives: number[] = [startValue];
+        let cum = startValue;
+        for (let i = 1; i < lastIdx; i++) {
+            cum += measureValues[i];
+            cumulatives.push(cum);
+        }
+        const endValue = cum;
+        const minCum = Math.min(...cumulatives);
+        const maxCum = Math.max(...cumulatives);
+        const span = maxCum - minCum;
+        const pad = span > 0 ? span * 0.1 : Math.max(Math.abs(maxCum) * 0.05, 1);
+        const yAxisMin = Math.max(0, minCum - pad);
+        const yAxisMax = maxCum + pad;
 
         const xAxisLabels = yColumns.map((col, i) => {
             if (i === 0) return '__START__';
@@ -112,6 +125,8 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
             startName: yColumns[0]?.name ?? '',
             endName: yColumns[lastIdx]?.name ?? '',
             lastIdx,
+            yAxisMin,
+            yAxisMax,
         };
     }
 
@@ -322,7 +337,10 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 : undefined,
         },
         yAxis: {
-            min: dataModel.isWaterfall ? undefined : 0,
+            min: dataModel.isWaterfall ? dataModel.yAxisMin : 0,
+            max: dataModel.isWaterfall ? dataModel.yAxisMax : undefined,
+            startOnTick: !dataModel.isWaterfall,
+            endOnTick: !dataModel.isWaterfall,
             gridLineWidth: dataModel.isWaterfall ? 1 : 0,
             gridLineColor: '#E5E7EB',
             gridLineDashStyle: 'Dot',
