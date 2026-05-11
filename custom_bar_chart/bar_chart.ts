@@ -14,10 +14,17 @@ declare const Highcharts: any;
 
 interface VisualProps {
     numberFormat?: string;
+    chartTitle?: string;
+    xAxisTitle?: string;
+    yAxisTitle?: string;
     colorPositive?: string;
     colorNegative?: string;
     colorTotal?: string;
     showDataLabels?: boolean;
+    showConnector?: boolean;
+    showStartEndMarkers?: boolean;
+    showStartEndPills?: boolean;
+    showGridLines?: boolean;
 }
 
 let globalChartReference: any = null;
@@ -54,11 +61,18 @@ function render(ctx: CustomChartContext) {
     const { values, names } = getDataModel(chartModel);
     const visualProps  = (chartModel.visualProps ?? {}) as VisualProps;
 
-    const numberFormat   = visualProps.numberFormat   ?? '0.[0]a';
-    const colorPositive  = visualProps.colorPositive  ?? '#378ADD';
-    const colorNegative  = visualProps.colorNegative  ?? '#E24B4A';
-    const colorTotal     = visualProps.colorTotal     ?? '#534AB7';
-    const showDataLabels = visualProps.showDataLabels ?? true;
+    const numberFormat        = visualProps.numberFormat        ?? '0.[0]a';
+    const chartTitle          = visualProps.chartTitle          ?? '';
+    const xAxisTitle          = visualProps.xAxisTitle          ?? '';
+    const yAxisTitle          = visualProps.yAxisTitle          ?? 'Value';
+    const colorPositive       = visualProps.colorPositive       ?? '#378ADD';
+    const colorNegative       = visualProps.colorNegative       ?? '#E24B4A';
+    const colorTotal          = visualProps.colorTotal          ?? '#534AB7';
+    const showDataLabels      = visualProps.showDataLabels      ?? true;
+    const showConnector       = visualProps.showConnector       ?? true;
+    const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
+    const showStartEndPills   = visualProps.showStartEndPills   ?? true;
+    const showGridLines       = visualProps.showGridLines       ?? true;
 
     if (values.length < 2) return;
 
@@ -125,7 +139,7 @@ function render(ctx: CustomChartContext) {
             marginRight:  40,
             marginBottom: 100,
         },
-        title:   { text: '' },
+        title:   { text: chartTitle, style: { fontWeight: 'bold', fontSize: '14px' } },
         credits: { enabled: false },
 
         xAxis: {
@@ -133,9 +147,11 @@ function render(ctx: CustomChartContext) {
             lineWidth:     1,
             lineColor:     '#ddd',
             gridLineWidth: 0,
-            title:         { text: '' },
+            title:         { text: xAxisTitle, style: { fontWeight: 'bold' } },
             labels: {
-                useHTML: true,
+                useHTML:      true,
+                rotation:     0,
+                autoRotation: [0],
                 style: { fontSize: '11px' },
                 formatter: function (this: any) {
                     const cat = this.value as string;
@@ -155,8 +171,8 @@ function render(ctx: CustomChartContext) {
         yAxis: {
             min:           yMin - padding,
             max:           yMax + padding,
-            title:         { text: 'Value', style: { fontWeight: 'bold' } },
-            gridLineWidth: 1,
+            title:         { text: yAxisTitle, style: { fontWeight: 'bold' } },
+            gridLineWidth: showGridLines ? 1 : 0,
             gridLineColor: '#f0f0f0',
             labels: {
                 formatter: function (this: any) {
@@ -244,7 +260,7 @@ function render(ctx: CustomChartContext) {
                 })),
                 showInLegend: false,
             },
-            {
+            ...(showConnector ? [{
                 type:                'line',
                 name:                'connector',
                 data:                connectorY.map((y, i) => ({ x: i, y })),
@@ -254,23 +270,25 @@ function render(ctx: CustomChartContext) {
                 marker:              { enabled: false },
                 showInLegend:        false,
                 enableMouseTracking: false,
-            },
-            {
-                type:                'scatter',
-                name:                'start-marker',
-                data:                [{ x: 0, y: startValue }],
-                marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
-                showInLegend:        false,
-                enableMouseTracking: false,
-            },
-            {
-                type:                'scatter',
-                name:                'end-marker',
-                data:                [{ x: categories.length - 1, y: endValue }],
-                marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
-                showInLegend:        false,
-                enableMouseTracking: false,
-            },
+            }] : []),
+            ...(showStartEndMarkers ? [
+                {
+                    type:                'scatter',
+                    name:                'start-marker',
+                    data:                [{ x: 0, y: startValue }],
+                    marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                    showInLegend:        false,
+                    enableMouseTracking: false,
+                },
+                {
+                    type:                'scatter',
+                    name:                'end-marker',
+                    data:                [{ x: categories.length - 1, y: endValue }],
+                    marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                    showInLegend:        false,
+                    enableMouseTracking: false,
+                },
+            ] : []),
         ],
     });
 
@@ -292,8 +310,10 @@ function render(ctx: CustomChartContext) {
             .add();
     };
 
-    drawCallout(0,                     startValue, formatNumber(startValue, numberFormat), colorTotal);
-    drawCallout(categories.length - 1, endValue,   formatNumber(endValue,   numberFormat), colorTotal);
+    if (showStartEndPills) {
+        drawCallout(0,                     startValue, formatNumber(startValue, numberFormat), colorTotal);
+        drawCallout(categories.length - 1, endValue,   formatNumber(endValue,   numberFormat), colorTotal);
+    }
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
@@ -351,11 +371,18 @@ const renderChart = async (ctx: CustomChartContext) => {
         ],
         visualPropEditorDefinition: {
             elements: [
-                { key: 'numberFormat',   type: 'text',     defaultValue: '0.[0]a',  label: 'Number Format' },
-                { key: 'colorPositive',  type: 'text',     defaultValue: '#378ADD', label: 'Positive bar colour (HEX)' },
-                { key: 'colorNegative',  type: 'text',     defaultValue: '#E24B4A', label: 'Negative bar colour (HEX)' },
-                { key: 'colorTotal',     type: 'text',     defaultValue: '#534AB7', label: 'Total bar colour (HEX)' },
-                { key: 'showDataLabels', type: 'checkbox', defaultValue: true,      label: 'Show data labels' },
+                { key: 'chartTitle',          type: 'text',     defaultValue: '',        label: 'Chart title' },
+                { key: 'xAxisTitle',          type: 'text',     defaultValue: '',        label: 'X-axis title' },
+                { key: 'yAxisTitle',          type: 'text',     defaultValue: 'Value',   label: 'Y-axis title' },
+                { key: 'numberFormat',        type: 'text',     defaultValue: '0.[0]a',  label: 'Number format' },
+                { key: 'colorPositive',       type: 'text',     defaultValue: '#378ADD', label: 'Positive bar colour (HEX)' },
+                { key: 'colorNegative',       type: 'text',     defaultValue: '#E24B4A', label: 'Negative bar colour (HEX)' },
+                { key: 'colorTotal',          type: 'text',     defaultValue: '#534AB7', label: 'Total bar colour (HEX)' },
+                { key: 'showDataLabels',      type: 'checkbox', defaultValue: true,      label: 'Show data labels' },
+                { key: 'showConnector',       type: 'checkbox', defaultValue: true,      label: 'Show connector line' },
+                { key: 'showStartEndMarkers', type: 'checkbox', defaultValue: true,      label: 'Show start/end markers' },
+                { key: 'showStartEndPills',   type: 'checkbox', defaultValue: true,      label: 'Show start/end pill labels' },
+                { key: 'showGridLines',       type: 'checkbox', defaultValue: true,      label: 'Show grid lines' },
             ],
         },
     });
