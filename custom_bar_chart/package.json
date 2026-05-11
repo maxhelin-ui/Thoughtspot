@@ -11,7 +11,8 @@
     "author": "Nihal Ahmed",
     "license": "ISC",
     "devDependencies": {
-        "vite": "^4.3.5"
+        "vite": "^4.3.5",
+        "typescript": "^5.0.0"
     },
     "dependencies": {
         "@thoughtspot/ts-chart-sdk": "0.0.2-alpha.20",
