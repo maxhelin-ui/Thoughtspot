@@ -17,7 +17,7 @@ import Highcharts from 'highcharts';
 import {
     generateMapOptions,
     getDataFormatter,
-} from '@thoughtspot/ts-chart-sdk/src/utils/formatting-util';
+} from '@thoughtspot/ts-chart-sdk';
 import numeral from 'numeral';
 import * as _ from 'lodash';
 import HighchartsCustomEvents from 'highcharts-custom-events';
