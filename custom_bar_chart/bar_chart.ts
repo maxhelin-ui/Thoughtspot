@@ -48,9 +48,32 @@ function getDimensionByKey(chartModel: ChartModel, key: string) {
     return chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === key);
 }
 
+const SLICE_KEY_SEPARATOR = ' | ';
+
 // Extract data from ThoughtSpot ChartModel
 function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
     const dataArr = chartModel.data?.[chartModel.data?.length - 1]?.data ?? { columns: [], dataValue: [] };
+
+    const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
+    const sliceByColumns = getDimensionByKey(chartModel, 'sliceBy')?.columns ?? [];
+
+    // Measures-only mode: no attribute on the x-axis → one bar per measure
+    if (!xAxisColumn) {
+        const yColumns = getDimensionByKey(chartModel, 'y')?.columns || [];
+        const xAxisLabels = yColumns.map(c => c.name);
+        const seriesData = [{
+            name: 'Values',
+            data: yColumns.map(measureCol => {
+                const colIdx = dataArr.columns.indexOf(measureCol.id);
+                if (colIdx < 0) return 0;
+                return dataArr.dataValue.reduce(
+                    (sum, row) => sum + (parseFloat(row[colIdx]) || 0),
+                    0,
+                );
+            }),
+        }];
+        return { xAxisLabels, seriesData };
+    }
 
     const measureColumn = chartModel.columns.find(col => col.id === selectedMeasureId);
     if (!measureColumn) {
@@ -58,30 +81,26 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
         return { xAxisLabels: [], seriesData: [] };
     }
 
-    const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
-    const sliceByColumn = getDimensionByKey(chartModel, 'sliceBy')?.columns?.[0];
-
-    if (!xAxisColumn) {
-        console.error('X-axis column is undefined.');
-        return { xAxisLabels: [], seriesData: [] };
-    }
-
     const xAxisLabels = _.uniq(getDataForColumn(xAxisColumn, dataArr));
-    const sliceByValues = sliceByColumn
-        ? _.uniq(getDataForColumn(sliceByColumn, dataArr))
-        : ['Default'];
-
     const xAxisFormattedValues = getDataForColumn(xAxisColumn, dataArr);
-    const sliceByFormattedValues = sliceByColumn
-        ? getDataForColumn(sliceByColumn, dataArr)
+
+    // Combine all slice-by columns row-by-row into a single compound key
+    const sliceByPerColumn = sliceByColumns.map(col => getDataForColumn(col, dataArr));
+    const sliceByCombined = sliceByColumns.length > 0
+        ? xAxisFormattedValues.map((_label, rowIdx) =>
+            sliceByPerColumn.map(values => values[rowIdx]).join(SLICE_KEY_SEPARATOR))
         : [];
+
+    const sliceByValues = sliceByColumns.length > 0
+        ? _.uniq(sliceByCombined)
+        : ['Default'];
 
     const seriesData = sliceByValues.map(slice => ({
         name: slice,
         data: xAxisLabels.map(label => {
             const index = xAxisFormattedValues.findIndex((formattedLabel, idx) =>
                 formattedLabel === label &&
-                (sliceByColumn ? sliceByFormattedValues[idx] === slice : true)
+                (sliceByColumns.length > 0 ? sliceByCombined[idx] === slice : true)
             );
             if (index === -1) return 0;
             const row = dataArr.dataValue[index];
@@ -151,12 +170,21 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
     const selectedMeasureName = selectedMeasureColumn ? selectedMeasureColumn.name : 'Measure';
 
     const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
-    const sliceByColumn = getDimensionByKey(chartModel, 'sliceBy')?.columns?.[0];
+    const sliceByColumns = getDimensionByKey(chartModel, 'sliceBy')?.columns ?? [];
+    const measuresOnlyMode = !xAxisColumn;
 
-    const xAxisTitle = xAxisColumn ? xAxisColumn.name : 'Categories';
-    const sliceByColumnName = sliceByColumn ? sliceByColumn.name : 'Category Group';
+    const xAxisTitle = xAxisColumn ? xAxisColumn.name : 'Measure';
+    const yAxisTitle = measuresOnlyMode ? 'Value' : selectedMeasureName;
+    const sliceByColumnName = sliceByColumns.length > 0
+        ? sliceByColumns.map(c => c.name).join(' / ')
+        : 'Category Group';
 
-    createMeasureButtons(chartModel, (newMeasure) => render(ctx, newMeasure), firstMeasure);
+    if (measuresOnlyMode) {
+        const measureContainer = document.getElementById('buttonContainer');
+        if (measureContainer) measureContainer.innerHTML = '';
+    } else {
+        createMeasureButtons(chartModel, (newMeasure) => render(ctx, newMeasure), firstMeasure);
+    }
 
     const dataModel = getDataModel(chartModel, firstMeasure);
     const numberFormat = (chartModel.visualProps as any)?.numberFormat || '0.[0]a';
@@ -236,7 +264,7 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
             min: 0,
             gridLineWidth: 0,
             title: {
-                text: selectedMeasureName,
+                text: yAxisTitle,
                 style: { fontWeight: 'bold' },
                 events: {
                     click: function (e) {
@@ -297,7 +325,7 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 const xValue = point.key || 'N/A';
 
                 return `
-                    ${xAxisName}:</b><br> ${xValue}<br><br>
+                    <b>${xAxisName}:</b><br> ${xValue}<br><br>
                     <b>${yAxisName}:</b><br> ${formatNumber(point.y || 0, numberFormat)}
                 `;
             },
@@ -336,90 +364,91 @@ const renderChart = async (ctx: CustomChartContext) => {
 };
 
 (async () => {
-    const ctx = await getChartContext({
-        getDefaultChartConfig: (chartModel: ChartModel) => {
-            const cols = chartModel.columns;
-            const attributeColumns = cols.filter(col => col.type === ColumnType.ATTRIBUTE);
-            // ✅ No cap on measures
-            const measureColumns = cols.filter(col => col.type === ColumnType.MEASURE);
-            // ✅ All remaining attributes available for slice by
-            const sliceByColumns = attributeColumns.slice(1);
+    try {
+        const ctx = await getChartContext({
+            getDefaultChartConfig: (chartModel: ChartModel) => {
+                const cols = chartModel.columns;
+                const attributeColumns = cols.filter(col => col.type === ColumnType.ATTRIBUTE);
+                const measureColumns = cols.filter(col => col.type === ColumnType.MEASURE);
+                const xColumns = attributeColumns.length > 0 ? [attributeColumns[0]] : [];
+                const sliceByColumns = attributeColumns.slice(1);
 
-            if (attributeColumns.length < 1 || measureColumns.length < 1) {
-                throw new Error('Insufficient attributes or measures for the chart.');
-            }
+                if (measureColumns.length < 1) {
+                    throw new Error('At least one measure is required for the chart.');
+                }
 
-            return [
+                return [
+                    {
+                        key: 'column',
+                        dimensions: [
+                            { key: 'x', columns: xColumns },
+                            { key: 'y', columns: measureColumns },
+                            { key: 'sliceBy', columns: sliceByColumns },
+                        ],
+                    },
+                ];
+            },
+            getQueriesFromChartConfig: (chartConfig: ChartConfig[]) => {
+                return chartConfig.map(config =>
+                    config.dimensions.reduce(
+                        (acc: Query, dimension) => ({
+                            queryColumns: [...acc.queryColumns, ...dimension.columns],
+                        }),
+                        { queryColumns: [] } as Query
+                    )
+                );
+            },
+            renderChart,
+            chartConfigEditorDefinition: [
                 {
                     key: 'column',
-                    dimensions: [
-                        { key: 'x', columns: [attributeColumns[0]] },
-                        { key: 'y', columns: measureColumns },
-                        { key: 'sliceBy', columns: sliceByColumns },
+                    label: 'Column Chart Configuration',
+                    descriptionText: 'Configure the X-axis and Measures for your chart.',
+                    columnSections: [
+                        {
+                            key: 'x',
+                            label: 'X-Axis (Category)',
+                            allowAttributeColumns: true,
+                            allowMeasureColumns: false,
+                            allowTimeSeriesColumns: true,
+                            maxColumnCount: 1,
+                        },
+                        {
+                            key: 'y',
+                            label: 'Measure (Y-Axis)',
+                            allowAttributeColumns: false,
+                            allowMeasureColumns: true,
+                        },
+                        {
+                            key: 'sliceBy',
+                            label: 'Slice By Color',
+                            allowAttributeColumns: true,
+                            allowMeasureColumns: false,
+                            allowTimeSeriesColumns: false,
+                        }
                     ],
                 },
-            ];
-        },
-        getQueriesFromChartConfig: (chartConfig: ChartConfig[]) => {
-            return chartConfig.map(config =>
-                config.dimensions.reduce(
-                    (acc: Query, dimension) => ({
-                        queryColumns: [...acc.queryColumns, ...dimension.columns],
-                    }),
-                    { queryColumns: [] } as Query
-                )
-            );
-        },
-        renderChart,
-        chartConfigEditorDefinition: [
-            {
-                key: 'column',
-                label: 'Column Chart Configuration',
-                descriptionText: 'Configure the X-axis and Measures for your chart.',
-                columnSections: [
+            ],
+            visualPropEditorDefinition: {
+                elements: [
                     {
-                        key: 'x',
-                        label: 'X-Axis (Category)',
-                        allowAttributeColumns: true,
-                        allowMeasureColumns: false,
-                        allowTimeSeriesColumns: true,
-                        maxColumnCount: 1,
+                        key: 'numberFormat',
+                        type: 'text',
+                        defaultValue: '0.[0]a',
+                        label: 'Number Format',
                     },
                     {
-                        key: 'y',
-                        label: 'Measure (Y-Axis)',
-                        allowAttributeColumns: false,
-                        allowMeasureColumns: true,
-                        // ✅ No maxColumnCount — unlimited measures
+                        key: 'DatalabelsToggle',
+                        type: 'checkbox',
+                        defaultValue: true,
+                        label: 'Column Total Labels',
                     },
-                    {
-                        key: 'color-axis',
-                        label: 'Slice By Color',
-                        allowAttributeColumns: true,
-                        allowMeasureColumns: false,
-                        allowTimeSeriesColumns: false,
-                        // ✅ No maxColumnCount — unlimited slice by columns
-                    }
                 ],
             },
-        ],
-        visualPropEditorDefinition: {
-            elements: [
-                {
-                    key: 'numberFormat',
-                    type: 'text',
-                    defaultValue: '0.[0]a',
-                    label: 'Number Format',
-                },
-                {
-                    key: 'DatalabelsToggle',
-                    type: 'checkbox',
-                    defaultValue: true,
-                    label: 'Column Total Labels',
-                },
-            ],
-        },
-    });
+        });
 
-    renderChart(ctx);
+        renderChart(ctx);
+    } catch (err) {
+        console.error('Failed to initialize ThoughtSpot chart context:', err);
+    }
 })();

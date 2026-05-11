@@ -1,7 +1,7 @@
 {
     "defaultLocale": "en_US",
-    "name": "Custom Treemap",
-    "description": "Treemap chart created using D3.js for ThoughtSpot using BYOC",
+    "name": "Custom Bar Chart",
+    "description": "Bar/column chart with dynamic measure selection and slice-by support for ThoughtSpot using BYOC",
     "author": {
         "name": "Your Name",
         "email": "your.email@example.com",
