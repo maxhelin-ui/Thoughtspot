@@ -7,470 +7,293 @@ import {
     ChartConfig,
     DataPointsArray,
     Query,
-    ChartColumn,
-    AxisMenuActions,
-    getCustomCalendarGuidFromColumn,
-    AppConfig,
 } from '@thoughtspot/ts-chart-sdk';
-import {
-    getDataFormatter,
-    generateMapOptions,
-} from '@thoughtspot/ts-chart-sdk/src/utils/formatting-util';
-import Highcharts from 'highcharts';
-import HighchartsMore from 'highcharts/highcharts-more';
 import numeral from 'numeral';
-import * as _ from 'lodash';
-import HighchartsCustomEvents from 'highcharts-custom-events';
 
-HighchartsMore(Highcharts);
-HighchartsCustomEvents(Highcharts);
+declare const Highcharts: any;
 
 interface VisualProps {
     numberFormat?: string;
-    DatalabelsToggle?: boolean;
+    colorPositive?: string;
+    colorNegative?: string;
+    colorTotal?: string;
+    showDataLabels?: boolean;
 }
 
-// Utility function to format numbers
+let globalChartReference: any = null;
+
 function formatNumber(value: number, format: string): string {
     try {
         return numeral(value).format(format).replace('k', 'K').replace('m', 'M').replace('b', 'B');
-    } catch (error) {
-        console.error("Error formatting number:", error);
-        return value.toString();
+    } catch {
+        return value?.toString() ?? '0';
     }
 }
 
-function getDataForColumn(column: ChartColumn, dataArr: DataPointsArray) {
-    const formatter = getDataFormatter(column, { isMillisIncluded: false });
-    const idx = _.findIndex(dataArr.columns, (colId) => column.id === colId);
-    const dataForCol = _.map(dataArr.dataValue, (row) => row[idx]);
-    const options = generateMapOptions(appConfigGlobal, column, dataForCol);
-    return _.map(dataArr.dataValue, (row) => {
-        const val = row[idx];
-        if (getCustomCalendarGuidFromColumn(column))
-            return formatter(val.v.s, options);
-        return formatter(val, options);
+function getDataModel(chartModel: ChartModel) {
+    const dataArr: DataPointsArray =
+        chartModel.data?.[chartModel.data.length - 1]?.data ?? { columns: [], dataValue: [] };
+
+    const yColumns =
+        chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
+
+    const values = yColumns.map(col => {
+        const colIdx = dataArr.columns.indexOf(col.id);
+        if (colIdx < 0) return 0;
+        return dataArr.dataValue.reduce(
+            (sum, row) => sum + (parseFloat(String(row[colIdx] ?? 0)) || 0),
+            0,
+        );
     });
+
+    return { values, names: yColumns.map(col => col.name) };
 }
 
-let appConfigGlobal: AppConfig;
+function render(ctx: CustomChartContext) {
+    const chartModel   = ctx.getChartModel();
+    const { values, names } = getDataModel(chartModel);
+    const visualProps  = (chartModel.visualProps ?? {}) as VisualProps;
 
-function getDimensionByKey(chartModel: ChartModel, key: string) {
-    return chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === key);
-}
+    const numberFormat   = visualProps.numberFormat   ?? '0.[0]a';
+    const colorPositive  = visualProps.colorPositive  ?? '#378ADD';
+    const colorNegative  = visualProps.colorNegative  ?? '#E24B4A';
+    const colorTotal     = visualProps.colorTotal     ?? '#534AB7';
+    const showDataLabels = visualProps.showDataLabels ?? true;
 
-const SLICE_KEY_SEPARATOR = ' | ';
+    if (values.length < 2) return;
 
-// Extract data from ThoughtSpot ChartModel
-function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
-    const dataArr = chartModel.data?.[chartModel.data?.length - 1]?.data ?? { columns: [], dataValue: [] };
+    const startValue = values[0];
+    const endValue   = values[values.length - 1];
 
-    const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
-    const sliceByColumns = getDimensionByKey(chartModel, 'sliceBy')?.columns ?? [];
+    // Middle values are deltas; compute running totals from startValue
+    const deltas     = values.slice(1, -1);
+    const deltaNames = names.slice(1, -1);
 
-    // Measures-only mode: render as a waterfall.
-    // First measure = START (raw value, gray pill), middle measures = floating deltas,
-    // last measure = END (auto-summed via isSum, gray pill).
-    if (!xAxisColumn) {
-        const yColumns = getDimensionByKey(chartModel, 'y')?.columns || [];
+    const runningTotals: number[] = [startValue];
+    let cum = startValue;
+    for (const d of deltas) {
+        cum += d;
+        runningTotals.push(cum);
+    }
 
-        const measureValues = yColumns.map(measureCol => {
-            const colIdx = dataArr.columns.indexOf(measureCol.id);
-            if (colIdx < 0) return 0;
-            return dataArr.dataValue.reduce(
-                (sum, row) => sum + (parseFloat(row[colIdx]) || 0),
-                0,
-            );
-        });
-
-        const lastIdx = yColumns.length - 1;
-        const startValue = measureValues[0] ?? 0;
-
-        // Walk the cumulative path so we can pin the y-axis to the actual data
-        // range (no empty 0-to-startValue gap below the chart).
-        const cumulatives: number[] = [startValue];
-        let cum = startValue;
-        for (let i = 1; i < lastIdx; i++) {
-            cum += measureValues[i];
-            cumulatives.push(cum);
-        }
-        const endValue = cum;
-        const minCum = Math.min(...cumulatives);
-        const maxCum = Math.max(...cumulatives);
-        const span = maxCum - minCum;
-        const pad = span > 0 ? span * 0.1 : Math.max(Math.abs(maxCum) * 0.05, 1);
-        const yAxisMin = Math.max(0, minCum - pad);
-        const yAxisMax = maxCum + pad;
-
-        const xAxisLabels = yColumns.map((col, i) => {
-            if (i === 0) return '__START__';
-            if (i === lastIdx && yColumns.length > 1) return '__END__';
-            return col.name;
-        });
-
-        const waterfallPoints = yColumns.map((col, i) => {
-            if (i === lastIdx && yColumns.length > 1) {
-                return { name: col.name, isSum: true, color: '#9CA3AF', borderRadius: 30 };
-            }
-            if (i === 0) {
-                return { name: col.name, y: measureValues[i], color: '#9CA3AF', borderRadius: 30 };
-            }
-            return { name: col.name, y: measureValues[i] };
-        });
-
-        const seriesData = [{
-            name: 'Waterfall',
-            type: 'waterfall' as const,
-            data: waterfallPoints,
-            upColor: '#7CB5EC',
-            color: '#F45B5B',
-        }];
+    const movements = deltaNames.map((name, i) => {
+        const delta = deltas[i];
+        const from  = runningTotals[i];
+        const to    = runningTotals[i + 1];
         return {
-            xAxisLabels,
-            seriesData,
-            isWaterfall: true,
-            startValue,
-            endValue,
-            startName: yColumns[0]?.name ?? '',
-            endName: yColumns[lastIdx]?.name ?? '',
-            lastIdx,
-            yAxisMin,
-            yAxisMax,
+            name,
+            low:   Math.min(from, to),
+            high:  Math.max(from, to),
+            delta,
+            color: delta >= 0 ? colorPositive : colorNegative,
         };
-    }
-
-    const measureColumn = chartModel.columns.find(col => col.id === selectedMeasureId);
-    if (!measureColumn) {
-        console.error('Selected measure not found.');
-        return { xAxisLabels: [], seriesData: [] };
-    }
-
-    const xAxisLabels = _.uniq(getDataForColumn(xAxisColumn, dataArr));
-    const xAxisFormattedValues = getDataForColumn(xAxisColumn, dataArr);
-
-    // Combine all slice-by columns row-by-row into a single compound key
-    const sliceByPerColumn = sliceByColumns.map(col => getDataForColumn(col, dataArr));
-    const sliceByCombined = sliceByColumns.length > 0
-        ? xAxisFormattedValues.map((_label, rowIdx) =>
-            sliceByPerColumn.map(values => values[rowIdx]).join(SLICE_KEY_SEPARATOR))
-        : [];
-
-    const sliceByValues = sliceByColumns.length > 0
-        ? _.uniq(sliceByCombined)
-        : ['Default'];
-
-    const seriesData = sliceByValues.map(slice => ({
-        name: slice,
-        data: xAxisLabels.map(label => {
-            const index = xAxisFormattedValues.findIndex((formattedLabel, idx) =>
-                formattedLabel === label &&
-                (sliceByColumns.length > 0 ? sliceByCombined[idx] === slice : true)
-            );
-            if (index === -1) return 0;
-            const row = dataArr.dataValue[index];
-            return row
-                ? parseFloat(row[dataArr.columns.indexOf(measureColumn.id)]) || 0
-                : 0;
-        }),
-    }));
-
-    return { xAxisLabels, seriesData, isWaterfall: false };
-}
-
-// ✅ All measure columns, no cap
-function getMeasureColumns(chartModel: ChartModel) {
-    return chartModel.columns.filter(col => col.type === ColumnType.MEASURE);
-}
-
-function createMeasureButtons(
-    chartModel: ChartModel,
-    updateChart: (selectedMeasure: string) => void,
-    selectedMeasure?: string
-) {
-    const measureContainer = document.getElementById('buttonContainer');
-
-    if (!measureContainer) {
-        console.error("❌ Error: 'buttonContainer' container not found.");
-        return;
-    }
-
-    measureContainer.innerHTML = '';
-
-    const measureColumns = getMeasureColumns(chartModel);
-    const defaultMeasure = selectedMeasure || measureColumns[0]?.id;
-
-    measureColumns.forEach((measure) => {
-        const button = document.createElement('button');
-        button.innerText = measure.name;
-        button.classList.add('measure-button');
-
-        if (measure.id === defaultMeasure) {
-            button.classList.add('active-measure');
-        }
-
-        button.onclick = () => {
-            document.querySelectorAll('.measure-button').forEach(btn => btn.classList.remove('active-measure'));
-            button.classList.add('active-measure');
-            updateChart(measure.id);
-        };
-
-        measureContainer.appendChild(button);
     });
-}
 
-function render(ctx: CustomChartContext, selectedMeasure?: string) {
-    const chartModel = ctx.getChartModel();
-    appConfigGlobal = ctx.getAppConfig();
-    const measureColumns = getMeasureColumns(chartModel);
-    const visualProps = chartModel.visualProps as VisualProps;
-    const datalablestoggle = visualProps?.DatalabelsToggle ?? true;
+    const allValues = [...runningTotals, endValue];
+    const yMin      = Math.min(...allValues);
+    const yMax      = Math.max(...allValues);
+    const padding   = (yMax - yMin) * 0.15;
 
-    if (measureColumns.length === 0) {
-        console.warn('No measure columns available.');
-        return;
+    const categories = [
+        'START\n' + formatNumber(startValue, numberFormat),
+        ...movements.map(m => m.name),
+        'END\n' + formatNumber(endValue, numberFormat),
+    ];
+
+    const seriesData = [
+        { low: startValue, high: startValue, color: 'transparent', delta: startValue, isTotal: true },
+        ...movements.map(m => ({ low: m.low, high: m.high, color: m.color, delta: m.delta, isTotal: false })),
+        { low: endValue,   high: endValue,   color: 'transparent', delta: endValue,   isTotal: true },
+    ];
+
+    // Connector line follows the running total: top of up-bars, bottom of down-bars
+    const connectorY = [
+        startValue,
+        ...movements.map(m => m.delta >= 0 ? m.high : m.low),
+        endValue,
+    ];
+
+    if (globalChartReference) {
+        globalChartReference.destroy();
+        globalChartReference = null;
     }
 
-    const firstMeasure = selectedMeasure || measureColumns[0]?.id;
-    const selectedMeasureColumn = measureColumns.find(m => m.id === firstMeasure);
-    const selectedMeasureName = selectedMeasureColumn ? selectedMeasureColumn.name : 'Measure';
-
-    const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
-    const sliceByColumns = getDimensionByKey(chartModel, 'sliceBy')?.columns ?? [];
-    const measuresOnlyMode = !xAxisColumn;
-
-    const xAxisTitle = xAxisColumn ? xAxisColumn.name : 'Measure';
-    const yAxisTitle = measuresOnlyMode ? 'Value' : selectedMeasureName;
-    const sliceByColumnName = sliceByColumns.length > 0
-        ? sliceByColumns.map(c => c.name).join(' / ')
-        : 'Category Group';
-
-    if (measuresOnlyMode) {
-        const measureContainer = document.getElementById('buttonContainer');
-        if (measureContainer) measureContainer.innerHTML = '';
-    } else {
-        createMeasureButtons(chartModel, (newMeasure) => render(ctx, newMeasure), firstMeasure);
-    }
-
-    const dataModel = getDataModel(chartModel, firstMeasure);
-    const numberFormat = (chartModel.visualProps as any)?.numberFormat || '0.[0]a';
-
-    const chartType: 'waterfall' | 'column' = dataModel.isWaterfall ? 'waterfall' : 'column';
-
-    Highcharts.chart({
+    globalChartReference = Highcharts.chart('chart', {
         chart: {
-            renderTo: 'chart',
-            type: chartType,
-            height: window.innerHeight * 0.9,
-            events: {
-                load: function () {
-                    const chartInstance = this;
+            type: 'columnrange',
+            marginLeft:   80,
+            marginRight:  40,
+            marginBottom: 100,
+        },
+        title:   { text: '' },
+        credits: { enabled: false },
 
-                    chartInstance.container.addEventListener('contextmenu', function (event) {
-                        event.preventDefault();
+        xAxis: {
+            categories,
+            lineWidth:     1,
+            lineColor:     '#ddd',
+            gridLineWidth: 0,
+            title:         { text: '' },
+            labels: {
+                useHTML: true,
+                style: { fontSize: '11px' },
+                formatter: function (this: any) {
+                    const cat = this.value as string;
+                    const isStartEnd = cat.startsWith('START') || cat.startsWith('END');
+                    const parts = cat.split('\n');
+                    if (isStartEnd) {
+                        return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;">
+                            <div style="font-size:10px;color:#888;text-transform:uppercase;font-weight:600;">${parts[0]}</div>
+                            <div style="font-size:13px;font-weight:700;color:${colorTotal};">${parts[1] ?? ''}</div>
+                        </div>`;
+                    }
+                    return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;font-size:11px;font-weight:600;color:#333;">${cat}</div>`;
+                },
+            },
+        },
 
-                        let clickedPoint: any = null;
+        yAxis: {
+            min:           yMin - padding,
+            max:           yMax + padding,
+            title:         { text: 'Value', style: { fontWeight: 'bold' } },
+            gridLineWidth: 1,
+            gridLineColor: '#f0f0f0',
+            labels: {
+                formatter: function (this: any) {
+                    return formatNumber(this.value, numberFormat);
+                },
+            },
+        },
 
-                        chartInstance.series.forEach((series) => {
-                            series.points.forEach((point) => {
-                                if (point.graphic && point.graphic.element === event.target) {
-                                    clickedPoint = point;
-                                }
-                            });
-                        });
+        legend: { enabled: false },
 
-                        if (clickedPoint) {
-                            const xAxisCol = getDimensionByKey(chartModel, 'x')?.columns?.[0];
-                            const measureCols = getDimensionByKey(chartModel, 'y')?.columns || [];
-                            const measureCol = measureCols[0];
+        tooltip: {
+            backgroundColor: '#3A3F48',
+            borderColor:     '#FFD700',
+            borderRadius:    4,
+            borderWidth:     1,
+            style: { color: '#FFFFFF', fontSize: '12px' },
+            useHTML: true,
+            formatter: function (this: any) {
+                const point = this.point as any;
+                if (point.isTotal) return false;
+                const delta = point.delta ?? 0;
+                const sign  = delta >= 0 ? '+' : '';
+                const runningTotal = delta >= 0 ? point.high : point.low;
+                return `<b>${categories[point.x]}</b><br/>
+                    <b>Change:</b> ${sign}${formatNumber(delta, numberFormat)}<br/>
+                    <b>Running total:</b> ${formatNumber(runningTotal, numberFormat)}`;
+            },
+        },
 
+        plotOptions: {
+            columnrange: {
+                borderWidth:  0,
+                pointPadding: 0.05,
+                groupPadding: 0.1,
+                dataLabels: {
+                    enabled:      showDataLabels,
+                    inside:       true,
+                    verticalAlign: 'middle',
+                    style: { fontWeight: '600', fontSize: '11px', color: '#fff', textOutline: 'none' },
+                    formatter: function (this: any) {
+                        const point = this.point as any;
+                        if (point.isTotal) return '';
+                        const delta = point.delta ?? 0;
+                        const sign  = delta >= 0 ? '+' : '-';
+                        return sign + formatNumber(Math.abs(delta), numberFormat);
+                    },
+                },
+                point: {
+                    events: {
+                        contextmenu: function (e: MouseEvent) {
+                            e.preventDefault();
+                            const point = this as any;
+                            const yColumns =
+                                chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
                             ctx.emitEvent(ChartToTSEvent.OpenContextMenu, {
-                                event: {
-                                    clientX: event.clientX,
-                                    clientY: event.clientY,
-                                },
+                                event: { clientX: e.clientX, clientY: e.clientY },
                                 clickedPoint: {
                                     tuple: [
-                                        {
-                                            columnId: xAxisCol?.id ?? '',
-                                            value: clickedPoint?.category || clickedPoint?.name,
-                                        },
-                                        {
-                                            columnId: measureCol?.id ?? '',
-                                            value: clickedPoint?.y,
-                                        },
+                                        { columnId: yColumns[0]?.id ?? '', value: categories[point.x] },
+                                        { columnId: yColumns[yColumns.length - 1]?.id ?? '', value: point.high },
                                     ],
                                 },
                             });
-                        }
-                    });
-                },
-            },
-        },
-        title: { text: '' },
-        xAxis: {
-            categories: dataModel.xAxisLabels,
-            title: dataModel.isWaterfall
-                ? { text: '' }
-                : ({
-                    text: xAxisTitle,
-                    style: { fontWeight: 'bold' },
-                    events: {
-                        click: function (e) {
-                            const columnIds = getDimensionByKey(chartModel, 'x')?.columns.map(col => col.id) || [];
-                            ctx.emitEvent(ChartToTSEvent.OpenAxisMenu, {
-                                columnIds,
-                                event: { clientX: e.clientX, clientY: e.clientY },
-                                selectedActions: AxisMenuActions[this.value],
-                            });
                         },
                     },
-                } as any),
-            gridLineWidth: 0,
-            minorGridLineWidth: 0,
-            lineWidth: 0,
-            labels: dataModel.isWaterfall
-                ? {
-                    useHTML: true,
-                    rotation: 0,
-                    style: { fontSize: '11px', color: '#1F2937' },
-                    formatter: function () {
-                        const text = String(this.value);
-                        if (text === '__START__') {
-                            return `<div style="text-align:center;width:90px"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">START</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.startValue ?? 0, numberFormat)}</div></div>`;
-                        }
-                        if (text === '__END__') {
-                            return `<div style="text-align:center;width:90px"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">END</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.endValue ?? 0, numberFormat)}</div></div>`;
-                        }
-                        return `<div style="text-align:center;font-size:11px;color:#1F2937;width:90px;white-space:normal;line-height:1.25;font-weight:600">${text}</div>`;
-                    },
-                }
-                : undefined,
-        },
-        yAxis: {
-            min: dataModel.isWaterfall ? dataModel.yAxisMin : 0,
-            max: dataModel.isWaterfall ? dataModel.yAxisMax : undefined,
-            startOnTick: !dataModel.isWaterfall,
-            endOnTick: !dataModel.isWaterfall,
-            gridLineWidth: dataModel.isWaterfall ? 1 : 0,
-            gridLineColor: '#E5E7EB',
-            gridLineDashStyle: 'Dot',
-            title: {
-                text: yAxisTitle,
-                style: { fontWeight: 'bold' },
-                events: {
-                    click: function (e) {
-                        const columnIds = getDimensionByKey(chartModel, 'y')?.columns.map(col => col.id) || [];
-                        ctx.emitEvent(ChartToTSEvent.OpenAxisMenu, {
-                            columnIds,
-                            event: { clientX: e.clientX, clientY: e.clientY },
-                            selectedActions: AxisMenuActions[this.value],
-                        });
-                    },
-                },
-            } as any,
-            labels: {
-                formatter: function () {
-                    return formatNumber(this.value as number, numberFormat);
                 },
             },
-        },
-        legend: {
-            enabled: !dataModel.isWaterfall,
-            align: 'center',
-            layout: 'horizontal',
-            verticalAlign: 'top',
-            itemMarginBottom: 5,
-            floating: true,
-            x: 0,
-            title: {
-                text: sliceByColumnName,
+            line: {
+                marker:             { enabled: false },
+                enableMouseTracking: false,
+                states:             { hover: { enabled: false } },
             },
         },
-        credits: { enabled: false },
-        tooltip: {
-            followPointer: true,
-            padding: 10,
-            shadow: true,
-            backgroundColor: '#3A3F48',
-            borderColor: '#808080',
-            borderRadius: 4,
-            borderWidth: 1,
-            style: {
-                color: '#FFFFFF',
-                fontSize: '12px',
-                fontFamily: '"Helvetica Neue", Helvetica, Arial, sans-serif',
-                fontWeight: 'normal',
-                textAlign: 'left',
-            },
-            useHTML: true,
-            formatter: function () {
-                const point = this;
-                const series = this.series;
-                const chart = series.chart;
 
-                const xAxis = Array.isArray(chart.options.xAxis) ? chart.options.xAxis[0] : chart.options.xAxis;
-                const yAxis = Array.isArray(chart.options.yAxis) ? chart.options.yAxis[0] : chart.options.yAxis;
-
-                const xAxisName = xAxis?.title?.text || "X-Axis";
-                const yAxisName = yAxis?.title?.text || "Measure";
-                const xValue = point.key || 'N/A';
-
-                return `
-                    <b>${xAxisName}:</b><br> ${xValue}<br><br>
-                    <b>${yAxisName}:</b><br> ${formatNumber(point.y || 0, numberFormat)}
-                `;
+        series: [
+            {
+                type:         'columnrange',
+                name:         'Movements',
+                data:         seriesData.map(d => ({
+                    low:     d.low,
+                    high:    d.high,
+                    color:   d.color,
+                    delta:   d.delta,
+                    isTotal: d.isTotal,
+                })),
+                showInLegend: false,
             },
-        },
-        plotOptions: {
-            column: {
-                grouping: true,
-                pointPadding: 0.1,
-                groupPadding: 0.275,
-                pointWidth: 20,
-                dataLabels: {
-                    enabled: datalablestoggle,
-                    formatter: function () {
-                        return formatNumber(this.y, numberFormat);
-                    },
-                },
-                borderWidth: 0,
+            {
+                type:                'line',
+                name:                'connector',
+                data:                connectorY.map((y, i) => ({ x: i, y })),
+                color:               '#bbb',
+                dashStyle:           'Dot',
+                lineWidth:           1,
+                marker:              { enabled: false },
+                showInLegend:        false,
+                enableMouseTracking: false,
             },
-            waterfall: {
-                pointPadding: 0.05,
-                borderRadius: 8,
-                borderWidth: 0,
-                lineWidth: 2,
-                lineColor: '#9CA3AF',
-                dashStyle: 'Dot',
-                dataLabels: {
-                    enabled: datalablestoggle,
-                    inside: true,
-                    color: '#FFFFFF',
-                    style: {
-                        textOutline: 'none',
-                        fontWeight: 'bold',
-                        fontSize: '12px',
-                    },
-                    formatter: function () {
-                        const p = this.point as any;
-                        if (p.isSum || p.isIntermediateSum) {
-                            return formatNumber(p.y, numberFormat);
-                        }
-                        if (p.x === 0) {
-                            return formatNumber(this.y as number, numberFormat);
-                        }
-                        const value = this.y as number;
-                        const sign = value > 0 ? '+' : '';
-                        return sign + formatNumber(value, numberFormat);
-                    },
-                },
+            {
+                type:                'scatter',
+                name:                'start-marker',
+                data:                [{ x: 0, y: startValue }],
+                marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                showInLegend:        false,
+                enableMouseTracking: false,
             },
-        },
-        series: dataModel.seriesData.map(series => ({
-            type: chartType,
-            ...series,
-        })) as Highcharts.SeriesOptionsType[],
+            {
+                type:                'scatter',
+                name:                'end-marker',
+                data:                [{ x: categories.length - 1, y: endValue }],
+                marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                showInLegend:        false,
+                enableMouseTracking: false,
+            },
+        ],
     });
+
+    // Draw SVG pill callouts on top of the START and END bars
+    const chart    = globalChartReference;
+    const xAxisObj = chart.xAxis[0];
+    const yAxisObj = chart.yAxis[0];
+
+    const drawCallout = (xCat: number, yVal: number, label: string, color: string) => {
+        const px = xAxisObj.toPixels(xCat, false);
+        const py = yAxisObj.toPixels(yVal, false);
+        const w = 80, h = 28, r = 14;
+        chart.renderer.rect(px - w / 2, py - h / 2, w, h, r)
+            .attr({ fill: color, zIndex: 5 })
+            .add();
+        chart.renderer.text(label, px, py + 5)
+            .attr({ align: 'center', zIndex: 6 })
+            .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
+            .add();
+    };
+
+    drawCallout(0,                     startValue, formatNumber(startValue, numberFormat), colorTotal);
+    drawCallout(categories.length - 1, endValue,   formatNumber(endValue,   numberFormat), colorTotal);
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
@@ -485,91 +308,57 @@ const renderChart = async (ctx: CustomChartContext) => {
 };
 
 (async () => {
-    try {
-        const ctx = await getChartContext({
-            getDefaultChartConfig: (chartModel: ChartModel) => {
-                const cols = chartModel.columns;
-                const attributeColumns = cols.filter(col => col.type === ColumnType.ATTRIBUTE);
-                const measureColumns = cols.filter(col => col.type === ColumnType.MEASURE);
-                const xColumns = attributeColumns.length > 0 ? [attributeColumns[0]] : [];
-                const sliceByColumns = attributeColumns.slice(1);
-
-                if (measureColumns.length < 1) {
-                    throw new Error('At least one measure is required for the chart.');
-                }
-
-                return [
-                    {
-                        key: 'column',
-                        dimensions: [
-                            { key: 'x', columns: xColumns },
-                            { key: 'y', columns: measureColumns },
-                            { key: 'sliceBy', columns: sliceByColumns },
-                        ],
-                    },
-                ];
-            },
-            getQueriesFromChartConfig: (chartConfig: ChartConfig[]) => {
-                return chartConfig.map(config =>
-                    config.dimensions.reduce(
-                        (acc: Query, dimension) => ({
-                            queryColumns: [...acc.queryColumns, ...dimension.columns],
-                        }),
-                        { queryColumns: [] } as Query
-                    )
-                );
-            },
-            renderChart,
-            chartConfigEditorDefinition: [
+    const ctx = await getChartContext({
+        getDefaultChartConfig: (chartModel: ChartModel) => {
+            const measureColumns = chartModel.columns.filter(col => col.type === ColumnType.MEASURE);
+            if (measureColumns.length < 1) {
+                throw new Error('At least one measure is required.');
+            }
+            return [
                 {
                     key: 'column',
-                    label: 'Column Chart Configuration',
-                    descriptionText: 'Configure the X-axis and Measures for your chart.',
-                    columnSections: [
-                        {
-                            key: 'x',
-                            label: 'X-Axis (Category)',
-                            allowAttributeColumns: true,
-                            allowMeasureColumns: false,
-                            allowTimeSeriesColumns: true,
-                            maxColumnCount: 1,
-                        },
-                        {
-                            key: 'y',
-                            label: 'Measure (Y-Axis)',
-                            allowAttributeColumns: false,
-                            allowMeasureColumns: true,
-                        },
-                        {
-                            key: 'sliceBy',
-                            label: 'Slice By Color',
-                            allowAttributeColumns: true,
-                            allowMeasureColumns: false,
-                            allowTimeSeriesColumns: false,
-                        }
+                    dimensions: [
+                        { key: 'y', columns: measureColumns },
                     ],
                 },
-            ],
-            visualPropEditorDefinition: {
-                elements: [
+            ];
+        },
+        getQueriesFromChartConfig: (chartConfig: ChartConfig[]): Array<Query> => {
+            return chartConfig.map(config =>
+                config.dimensions.reduce(
+                    (acc: Query, dimension) => ({
+                        queryColumns: [...acc.queryColumns, ...dimension.columns],
+                    }),
+                    { queryColumns: [] } as Query,
+                ),
+            );
+        },
+        renderChart,
+        chartConfigEditorDefinition: [
+            {
+                key:             'column',
+                label:           'Waterfall Chart Configuration',
+                descriptionText: 'Add measures in order: Start value → deltas → End value.',
+                columnSections: [
                     {
-                        key: 'numberFormat',
-                        type: 'text',
-                        defaultValue: '0.[0]a',
-                        label: 'Number Format',
-                    },
-                    {
-                        key: 'DatalabelsToggle',
-                        type: 'checkbox',
-                        defaultValue: true,
-                        label: 'Column Total Labels',
+                        key:                   'y',
+                        label:                 'Measures (Start → deltas → End)',
+                        allowAttributeColumns: false,
+                        allowMeasureColumns:   true,
                     },
                 ],
             },
-        });
+        ],
+        visualPropEditorDefinition: {
+            elements: [
+                { key: 'numberFormat',   type: 'text',     defaultValue: '0.[0]a',  label: 'Number Format' },
+                { key: 'colorPositive',  type: 'text',     defaultValue: '#378ADD', label: 'Positive bar colour (HEX)' },
+                { key: 'colorNegative',  type: 'text',     defaultValue: '#E24B4A', label: 'Negative bar colour (HEX)' },
+                { key: 'colorTotal',     type: 'text',     defaultValue: '#534AB7', label: 'Total bar colour (HEX)' },
+                { key: 'showDataLabels', type: 'checkbox', defaultValue: true,      label: 'Show data labels' },
+            ],
+        },
+    });
 
-        renderChart(ctx);
-    } catch (err) {
-        console.error('Failed to initialize ThoughtSpot chart context:', err);
-    }
+    renderChart(ctx);
 })();
