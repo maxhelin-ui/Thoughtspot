@@ -60,11 +60,10 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
     const sliceByColumns = getDimensionByKey(chartModel, 'sliceBy')?.columns ?? [];
 
     // Measures-only mode: render as a waterfall.
-    // First measure = START (raw value, gray), middle measures = floating deltas,
-    // last measure = END (auto-summed via isSum, gray).
+    // First measure = START (raw value, gray pill), middle measures = floating deltas,
+    // last measure = END (auto-summed via isSum, gray pill).
     if (!xAxisColumn) {
         const yColumns = getDimensionByKey(chartModel, 'y')?.columns || [];
-        const xAxisLabels = yColumns.map(c => c.name);
 
         const measureValues = yColumns.map(measureCol => {
             const colIdx = dataArr.columns.indexOf(measureCol.id);
@@ -76,12 +75,23 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
         });
 
         const lastIdx = yColumns.length - 1;
+        const startValue = measureValues[0] ?? 0;
+        const endValue = measureValues
+            .slice(0, Math.max(lastIdx, 0))
+            .reduce((s, v) => s + v, 0);
+
+        const xAxisLabels = yColumns.map((col, i) => {
+            if (i === 0) return '__START__';
+            if (i === lastIdx && yColumns.length > 1) return '__END__';
+            return col.name;
+        });
+
         const waterfallPoints = yColumns.map((col, i) => {
             if (i === lastIdx && yColumns.length > 1) {
-                return { name: col.name, isSum: true, color: '#9CA3AF' };
+                return { name: col.name, isSum: true, color: '#9CA3AF', borderRadius: 30 };
             }
             if (i === 0) {
-                return { name: col.name, y: measureValues[i], color: '#9CA3AF' };
+                return { name: col.name, y: measureValues[i], color: '#9CA3AF', borderRadius: 30 };
             }
             return { name: col.name, y: measureValues[i] };
         });
@@ -93,7 +103,16 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
             upColor: '#7CB5EC',
             color: '#F45B5B',
         }];
-        return { xAxisLabels, seriesData, isWaterfall: true };
+        return {
+            xAxisLabels,
+            seriesData,
+            isWaterfall: true,
+            startValue,
+            endValue,
+            startName: yColumns[0]?.name ?? '',
+            endName: yColumns[lastIdx]?.name ?? '',
+            lastIdx,
+        };
     }
 
     const measureColumn = chartModel.columns.find(col => col.id === selectedMeasureId);
@@ -265,25 +284,41 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
         title: { text: '' },
         xAxis: {
             categories: dataModel.xAxisLabels,
-            title: {
-                text: xAxisTitle,
-                style: { fontWeight: 'bold' },
-                events: {
-                    click: function (e) {
-                        const columnIds = getDimensionByKey(chartModel, 'x')?.columns.map(col => col.id) || [];
-                        ctx.emitEvent(ChartToTSEvent.OpenAxisMenu, {
-                            columnIds,
-                            event: { clientX: e.clientX, clientY: e.clientY },
-                            selectedActions: AxisMenuActions[this.value],
-                        });
+            title: dataModel.isWaterfall
+                ? { text: '' }
+                : ({
+                    text: xAxisTitle,
+                    style: { fontWeight: 'bold' },
+                    events: {
+                        click: function (e) {
+                            const columnIds = getDimensionByKey(chartModel, 'x')?.columns.map(col => col.id) || [];
+                            ctx.emitEvent(ChartToTSEvent.OpenAxisMenu, {
+                                columnIds,
+                                event: { clientX: e.clientX, clientY: e.clientY },
+                                selectedActions: AxisMenuActions[this.value],
+                            });
+                        },
                     },
-                },
-            } as any,
+                } as any),
             gridLineWidth: 0,
             minorGridLineWidth: 0,
             lineWidth: 0,
             labels: dataModel.isWaterfall
-                ? { rotation: 0, style: { fontSize: '11px', color: '#6B7280' } }
+                ? {
+                    useHTML: true,
+                    rotation: 0,
+                    style: { fontSize: '11px', color: '#4B5563' },
+                    formatter: function () {
+                        const text = String(this.value);
+                        if (text === '__START__') {
+                            return `<div style="text-align:center"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">START</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.startValue ?? 0, numberFormat)}</div></div>`;
+                        }
+                        if (text === '__END__') {
+                            return `<div style="text-align:center"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">END</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.endValue ?? 0, numberFormat)}</div></div>`;
+                        }
+                        return `<div style="text-align:center;font-size:11px;color:#1F2937">${text}</div>`;
+                    },
+                }
                 : undefined,
         },
         yAxis: {
@@ -376,7 +411,7 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 pointPadding: 0.05,
                 borderRadius: 8,
                 borderWidth: 0,
-                lineWidth: 1,
+                lineWidth: 2,
                 lineColor: '#9CA3AF',
                 dashStyle: 'Dot',
                 dataLabels: {
@@ -392,6 +427,9 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                         const p = this.point as any;
                         if (p.isSum || p.isIntermediateSum) {
                             return formatNumber(p.y, numberFormat);
+                        }
+                        if (p.x === 0) {
+                            return formatNumber(this.y as number, numberFormat);
                         }
                         const value = this.y as number;
                         const sign = value > 0 ? '+' : '';
