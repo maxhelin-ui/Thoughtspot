@@ -76,9 +76,22 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
 
         const lastIdx = yColumns.length - 1;
         const startValue = measureValues[0] ?? 0;
-        const endValue = measureValues
-            .slice(0, Math.max(lastIdx, 0))
-            .reduce((s, v) => s + v, 0);
+
+        // Walk the cumulative path so we can pin the y-axis to the actual data
+        // range (no empty 0-to-startValue gap below the chart).
+        const cumulatives: number[] = [startValue];
+        let cum = startValue;
+        for (let i = 1; i < lastIdx; i++) {
+            cum += measureValues[i];
+            cumulatives.push(cum);
+        }
+        const endValue = cum;
+        const minCum = Math.min(...cumulatives);
+        const maxCum = Math.max(...cumulatives);
+        const span = maxCum - minCum;
+        const pad = span > 0 ? span * 0.1 : Math.max(Math.abs(maxCum) * 0.05, 1);
+        const yAxisMin = Math.max(0, minCum - pad);
+        const yAxisMax = maxCum + pad;
 
         const xAxisLabels = yColumns.map((col, i) => {
             if (i === 0) return '__START__';
@@ -112,6 +125,8 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
             startName: yColumns[0]?.name ?? '',
             endName: yColumns[lastIdx]?.name ?? '',
             lastIdx,
+            yAxisMin,
+            yAxisMax,
         };
     }
 
@@ -307,22 +322,25 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 ? {
                     useHTML: true,
                     rotation: 0,
-                    style: { fontSize: '11px', color: '#4B5563' },
+                    style: { fontSize: '11px', color: '#1F2937' },
                     formatter: function () {
                         const text = String(this.value);
                         if (text === '__START__') {
-                            return `<div style="text-align:center"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">START</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.startValue ?? 0, numberFormat)}</div></div>`;
+                            return `<div style="text-align:center;width:90px"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">START</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.startValue ?? 0, numberFormat)}</div></div>`;
                         }
                         if (text === '__END__') {
-                            return `<div style="text-align:center"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">END</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.endValue ?? 0, numberFormat)}</div></div>`;
+                            return `<div style="text-align:center;width:90px"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">END</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.endValue ?? 0, numberFormat)}</div></div>`;
                         }
-                        return `<div style="text-align:center;font-size:11px;color:#1F2937">${text}</div>`;
+                        return `<div style="text-align:center;font-size:11px;color:#1F2937;width:90px;white-space:normal;line-height:1.25;font-weight:600">${text}</div>`;
                     },
                 }
                 : undefined,
         },
         yAxis: {
-            min: dataModel.isWaterfall ? undefined : 0,
+            min: dataModel.isWaterfall ? dataModel.yAxisMin : 0,
+            max: dataModel.isWaterfall ? dataModel.yAxisMax : undefined,
+            startOnTick: !dataModel.isWaterfall,
+            endOnTick: !dataModel.isWaterfall,
             gridLineWidth: dataModel.isWaterfall ? 1 : 0,
             gridLineColor: '#E5E7EB',
             gridLineDashStyle: 'Dot',
