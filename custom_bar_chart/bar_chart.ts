@@ -9,7 +9,13 @@ import {
     Query,
     ChartColumn,
     AxisMenuActions,
+    getCustomCalendarGuidFromColumn,
+    AppConfig,
 } from '@thoughtspot/ts-chart-sdk';
+import {
+    getDataFormatter,
+    generateMapOptions,
+} from '@thoughtspot/ts-chart-sdk/src/utils/formatting-util';
 import Highcharts from 'highcharts';
 import HighchartsMore from 'highcharts/highcharts-more';
 import numeral from 'numeral';
@@ -34,18 +40,21 @@ function formatNumber(value: number, format: string): string {
     }
 }
 
-// Simple data extractor — no internal SDK utils needed
 function getDataForColumn(column: ChartColumn, dataArr: DataPointsArray) {
+    const formatter = getDataFormatter(column, { isMillisIncluded: false });
     const idx = _.findIndex(dataArr.columns, (colId) => column.id === colId);
+    const dataForCol = _.map(dataArr.dataValue, (row) => row[idx]);
+    const options = generateMapOptions(appConfigGlobal, column, dataForCol);
     return _.map(dataArr.dataValue, (row) => {
         const val = row[idx];
-        if (val === null || val === undefined) return '';
-        if (typeof val === 'object' && val.v) return String(val.v.s ?? val.v);
-        return String(val);
+        if (getCustomCalendarGuidFromColumn(column))
+            return formatter(val.v.s, options);
+        return formatter(val, options);
     });
 }
 
-// ✅ Look up dimensions by key name, not position
+let appConfigGlobal: AppConfig;
+
 function getDimensionByKey(chartModel: ChartModel, key: string) {
     return chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === key);
 }
@@ -211,6 +220,7 @@ function createMeasureButtons(
 
 function render(ctx: CustomChartContext, selectedMeasure?: string) {
     const chartModel = ctx.getChartModel();
+    appConfigGlobal = ctx.getAppConfig();
     const measureColumns = getMeasureColumns(chartModel);
     const visualProps = chartModel.visualProps as VisualProps;
     const datalablestoggle = visualProps?.DatalabelsToggle ?? true;
