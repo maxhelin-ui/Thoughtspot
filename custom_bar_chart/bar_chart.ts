@@ -297,7 +297,7 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 const xValue = point.key || 'N/A';
 
                 return `
-                    ${xAxisName}:</b><br> ${xValue}<br><br>
+                    <b>${xAxisName}:</b><br> ${xValue}<br><br>
                     <b>${yAxisName}:</b><br> ${formatNumber(point.y || 0, numberFormat)}
                 `;
             },
@@ -393,7 +393,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                         // ✅ No maxColumnCount — unlimited measures
                     },
                     {
-                        key: 'color-axis',
+                        key: 'sliceBy',
                         label: 'Slice By Color',
                         allowAttributeColumns: true,
                         allowMeasureColumns: false,
