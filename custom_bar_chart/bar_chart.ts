@@ -322,16 +322,16 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 ? {
                     useHTML: true,
                     rotation: 0,
-                    style: { fontSize: '11px', color: '#4B5563' },
+                    style: { fontSize: '11px', color: '#1F2937' },
                     formatter: function () {
                         const text = String(this.value);
                         if (text === '__START__') {
-                            return `<div style="text-align:center"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">START</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.startValue ?? 0, numberFormat)}</div></div>`;
+                            return `<div style="text-align:center;width:90px"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">START</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.startValue ?? 0, numberFormat)}</div></div>`;
                         }
                         if (text === '__END__') {
-                            return `<div style="text-align:center"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">END</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.endValue ?? 0, numberFormat)}</div></div>`;
+                            return `<div style="text-align:center;width:90px"><div style="color:#9CA3AF;font-size:10px;font-weight:bold;letter-spacing:1px">END</div><div style="color:#9CA3AF;font-weight:bold;font-size:13px">${formatNumber(dataModel.endValue ?? 0, numberFormat)}</div></div>`;
                         }
-                        return `<div style="text-align:center;font-size:11px;color:#1F2937">${text}</div>`;
+                        return `<div style="text-align:center;font-size:11px;color:#1F2937;width:90px;white-space:normal;line-height:1.25;font-weight:600">${text}</div>`;
                     },
                 }
                 : undefined,
