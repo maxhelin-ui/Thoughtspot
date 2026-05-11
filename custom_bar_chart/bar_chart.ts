@@ -52,17 +52,30 @@ function getDimensionByKey(chartModel: ChartModel, key: string) {
 function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
     const dataArr = chartModel.data?.[chartModel.data?.length - 1]?.data ?? { columns: [], dataValue: [] };
 
-    const measureColumn = chartModel.columns.find(col => col.id === selectedMeasureId);
-    if (!measureColumn) {
-        console.error('Selected measure not found.');
-        return { xAxisLabels: [], seriesData: [] };
-    }
-
     const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
     const sliceByColumn = getDimensionByKey(chartModel, 'sliceBy')?.columns?.[0];
 
+    // Measures-only mode: no attribute on the x-axis → one bar per measure
     if (!xAxisColumn) {
-        console.error('X-axis column is undefined.');
+        const yColumns = getDimensionByKey(chartModel, 'y')?.columns || [];
+        const xAxisLabels = yColumns.map(c => c.name);
+        const seriesData = [{
+            name: 'Values',
+            data: yColumns.map(measureCol => {
+                const colIdx = dataArr.columns.indexOf(measureCol.id);
+                if (colIdx < 0) return 0;
+                return dataArr.dataValue.reduce(
+                    (sum, row) => sum + (parseFloat(row[colIdx]) || 0),
+                    0,
+                );
+            }),
+        }];
+        return { xAxisLabels, seriesData };
+    }
+
+    const measureColumn = chartModel.columns.find(col => col.id === selectedMeasureId);
+    if (!measureColumn) {
+        console.error('Selected measure not found.');
         return { xAxisLabels: [], seriesData: [] };
     }
 
@@ -152,11 +165,18 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
 
     const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
     const sliceByColumn = getDimensionByKey(chartModel, 'sliceBy')?.columns?.[0];
+    const measuresOnlyMode = !xAxisColumn;
 
-    const xAxisTitle = xAxisColumn ? xAxisColumn.name : 'Categories';
+    const xAxisTitle = xAxisColumn ? xAxisColumn.name : 'Measure';
+    const yAxisTitle = measuresOnlyMode ? 'Value' : selectedMeasureName;
     const sliceByColumnName = sliceByColumn ? sliceByColumn.name : 'Category Group';
 
-    createMeasureButtons(chartModel, (newMeasure) => render(ctx, newMeasure), firstMeasure);
+    if (measuresOnlyMode) {
+        const measureContainer = document.getElementById('buttonContainer');
+        if (measureContainer) measureContainer.innerHTML = '';
+    } else {
+        createMeasureButtons(chartModel, (newMeasure) => render(ctx, newMeasure), firstMeasure);
+    }
 
     const dataModel = getDataModel(chartModel, firstMeasure);
     const numberFormat = (chartModel.visualProps as any)?.numberFormat || '0.[0]a';
@@ -236,7 +256,7 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
             min: 0,
             gridLineWidth: 0,
             title: {
-                text: selectedMeasureName,
+                text: yAxisTitle,
                 style: { fontWeight: 'bold' },
                 events: {
                     click: function (e) {
@@ -342,17 +362,18 @@ const renderChart = async (ctx: CustomChartContext) => {
                 const cols = chartModel.columns;
                 const attributeColumns = cols.filter(col => col.type === ColumnType.ATTRIBUTE);
                 const measureColumns = cols.filter(col => col.type === ColumnType.MEASURE).slice(0, 5);
+                const xColumns = attributeColumns.length > 0 ? [attributeColumns[0]] : [];
                 const sliceByColumns = attributeColumns.slice(1, 2);
 
-                if (attributeColumns.length < 1 || measureColumns.length < 1) {
-                    throw new Error('Insufficient attributes or measures for the chart.');
+                if (measureColumns.length < 1) {
+                    throw new Error('At least one measure is required for the chart.');
                 }
 
                 return [
                     {
                         key: 'column',
                         dimensions: [
-                            { key: 'x', columns: [attributeColumns[0]] },
+                            { key: 'x', columns: xColumns },
                             { key: 'y', columns: measureColumns },
                             { key: 'sliceBy', columns: sliceByColumns },
                         ],
