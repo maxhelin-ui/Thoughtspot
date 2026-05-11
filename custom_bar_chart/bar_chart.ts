@@ -48,12 +48,14 @@ function getDimensionByKey(chartModel: ChartModel, key: string) {
     return chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === key);
 }
 
+const SLICE_KEY_SEPARATOR = ' | ';
+
 // Extract data from ThoughtSpot ChartModel
 function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
     const dataArr = chartModel.data?.[chartModel.data?.length - 1]?.data ?? { columns: [], dataValue: [] };
 
     const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
-    const sliceByColumn = getDimensionByKey(chartModel, 'sliceBy')?.columns?.[0];
+    const sliceByColumns = getDimensionByKey(chartModel, 'sliceBy')?.columns ?? [];
 
     // Measures-only mode: no attribute on the x-axis → one bar per measure
     if (!xAxisColumn) {
@@ -80,21 +82,25 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
     }
 
     const xAxisLabels = _.uniq(getDataForColumn(xAxisColumn, dataArr));
-    const sliceByValues = sliceByColumn
-        ? _.uniq(getDataForColumn(sliceByColumn, dataArr))
-        : ['Default'];
-
     const xAxisFormattedValues = getDataForColumn(xAxisColumn, dataArr);
-    const sliceByFormattedValues = sliceByColumn
-        ? getDataForColumn(sliceByColumn, dataArr)
+
+    // Combine all slice-by columns row-by-row into a single compound key
+    const sliceByPerColumn = sliceByColumns.map(col => getDataForColumn(col, dataArr));
+    const sliceByCombined = sliceByColumns.length > 0
+        ? xAxisFormattedValues.map((_label, rowIdx) =>
+            sliceByPerColumn.map(values => values[rowIdx]).join(SLICE_KEY_SEPARATOR))
         : [];
+
+    const sliceByValues = sliceByColumns.length > 0
+        ? _.uniq(sliceByCombined)
+        : ['Default'];
 
     const seriesData = sliceByValues.map(slice => ({
         name: slice,
         data: xAxisLabels.map(label => {
             const index = xAxisFormattedValues.findIndex((formattedLabel, idx) =>
                 formattedLabel === label &&
-                (sliceByColumn ? sliceByFormattedValues[idx] === slice : true)
+                (sliceByColumns.length > 0 ? sliceByCombined[idx] === slice : true)
             );
             if (index === -1) return 0;
             const row = dataArr.dataValue[index];
@@ -164,12 +170,14 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
     const selectedMeasureName = selectedMeasureColumn ? selectedMeasureColumn.name : 'Measure';
 
     const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
-    const sliceByColumn = getDimensionByKey(chartModel, 'sliceBy')?.columns?.[0];
+    const sliceByColumns = getDimensionByKey(chartModel, 'sliceBy')?.columns ?? [];
     const measuresOnlyMode = !xAxisColumn;
 
     const xAxisTitle = xAxisColumn ? xAxisColumn.name : 'Measure';
     const yAxisTitle = measuresOnlyMode ? 'Value' : selectedMeasureName;
-    const sliceByColumnName = sliceByColumn ? sliceByColumn.name : 'Category Group';
+    const sliceByColumnName = sliceByColumns.length > 0
+        ? sliceByColumns.map(c => c.name).join(' / ')
+        : 'Category Group';
 
     if (measuresOnlyMode) {
         const measureContainer = document.getElementById('buttonContainer');
@@ -361,9 +369,9 @@ const renderChart = async (ctx: CustomChartContext) => {
             getDefaultChartConfig: (chartModel: ChartModel) => {
                 const cols = chartModel.columns;
                 const attributeColumns = cols.filter(col => col.type === ColumnType.ATTRIBUTE);
-                const measureColumns = cols.filter(col => col.type === ColumnType.MEASURE).slice(0, 5);
+                const measureColumns = cols.filter(col => col.type === ColumnType.MEASURE);
                 const xColumns = attributeColumns.length > 0 ? [attributeColumns[0]] : [];
-                const sliceByColumns = attributeColumns.slice(1, 2);
+                const sliceByColumns = attributeColumns.slice(1);
 
                 if (measureColumns.length < 1) {
                     throw new Error('At least one measure is required for the chart.');
@@ -410,7 +418,6 @@ const renderChart = async (ctx: CustomChartContext) => {
                             label: 'Measure (Y-Axis)',
                             allowAttributeColumns: false,
                             allowMeasureColumns: true,
-                            maxColumnCount: 5,
                         },
                         {
                             key: 'sliceBy',
@@ -418,7 +425,6 @@ const renderChart = async (ctx: CustomChartContext) => {
                             allowAttributeColumns: true,
                             allowMeasureColumns: false,
                             allowTimeSeriesColumns: false,
-                            maxColumnCount: 1,
                         }
                     ],
                 },
