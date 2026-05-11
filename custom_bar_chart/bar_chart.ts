@@ -8,16 +8,9 @@ import {
     DataPointsArray,
     Query,
     ChartColumn,
-    getCustomCalendarGuidFromColumn,
     AxisMenuActions,
-    ColumnProp,
-    AppConfig,
 } from '@thoughtspot/ts-chart-sdk';
 import Highcharts from 'highcharts';
-import {
-    generateMapOptions,
-    getDataFormatter,
-} from '@thoughtspot/ts-chart-sdk';
 import numeral from 'numeral';
 import * as _ from 'lodash';
 import HighchartsCustomEvents from 'highcharts-custom-events';
@@ -29,8 +22,6 @@ interface VisualProps {
     DatalabelsToggle?: boolean;
 }
 
-let appConfigGlobal: AppConfig;
-
 // Utility function to format numbers
 function formatNumber(value: number, format: string): string {
     try {
@@ -41,22 +32,15 @@ function formatNumber(value: number, format: string): string {
     }
 }
 
+// Simple data extractor — no internal SDK utils needed
 function getDataForColumn(column: ChartColumn, dataArr: DataPointsArray) {
-    const formatter = getDataFormatter(column, { isMillisIncluded: false });
     const idx = _.findIndex(dataArr.columns, (colId) => column.id === colId);
-    const dataForCol = _.map(dataArr.dataValue, (row) => {
-        const colValue = row[idx];
-        return colValue;
+    return _.map(dataArr.dataValue, (row) => {
+        const val = row[idx];
+        if (val === null || val === undefined) return '';
+        if (typeof val === 'object' && val.v) return String(val.v.s ?? val.v);
+        return String(val);
     });
-    const options = generateMapOptions(appConfigGlobal, column, dataForCol);
-    const formattedValuesForData = _.map(dataArr.dataValue, (row) => {
-        const colValue = row[idx];
-        if (getCustomCalendarGuidFromColumn(column))
-            return formatter(colValue.v.s, options);
-        return formatter(colValue, options);
-    });
-
-    return formattedValuesForData;
 }
 
 // ✅ Look up dimensions by key name, not position
@@ -74,12 +58,8 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
         return { xAxisLabels: [], seriesData: [] };
     }
 
-    // ✅ Look up by key, not hardcoded index
-    const xAxisDimension = getDimensionByKey(chartModel, 'x');
-    const sliceByDimension = getDimensionByKey(chartModel, 'sliceBy');
-
-    const xAxisColumn = xAxisDimension?.columns?.[0];
-    const sliceByColumn = sliceByDimension?.columns?.[0];
+    const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
+    const sliceByColumn = getDimensionByKey(chartModel, 'sliceBy')?.columns?.[0];
 
     if (!xAxisColumn) {
         console.error('X-axis column is undefined.');
@@ -157,7 +137,6 @@ function createMeasureButtons(
 
 function render(ctx: CustomChartContext, selectedMeasure?: string) {
     const chartModel = ctx.getChartModel();
-    appConfigGlobal = ctx.getAppConfig();
     const measureColumns = getMeasureColumns(chartModel);
     const visualProps = chartModel.visualProps as VisualProps;
     const datalablestoggle = visualProps?.DatalabelsToggle ?? true;
@@ -171,12 +150,8 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
     const selectedMeasureColumn = measureColumns.find(m => m.id === firstMeasure);
     const selectedMeasureName = selectedMeasureColumn ? selectedMeasureColumn.name : 'Measure';
 
-    // ✅ Look up by key
-    const xAxisDimension = getDimensionByKey(chartModel, 'x');
-    const sliceByDimension = getDimensionByKey(chartModel, 'sliceBy');
-
-    const xAxisColumn = xAxisDimension?.columns?.[0];
-    const sliceByColumn = sliceByDimension?.columns?.[0];
+    const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
+    const sliceByColumn = getDimensionByKey(chartModel, 'sliceBy')?.columns?.[0];
 
     const xAxisTitle = xAxisColumn ? xAxisColumn.name : 'Categories';
     const sliceByColumnName = sliceByColumn ? sliceByColumn.name : 'Category Group';
@@ -198,7 +173,6 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                     chartInstance.container.addEventListener('contextmenu', function (event) {
                         event.preventDefault();
 
-                        const pointerEvent = chartInstance.pointer.normalize(event);
                         let clickedPoint: any = null;
 
                         chartInstance.series.forEach((series) => {
@@ -210,7 +184,6 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                         });
 
                         if (clickedPoint) {
-                            // ✅ Look up by key
                             const xAxisCol = getDimensionByKey(chartModel, 'x')?.columns?.[0];
                             const measureCols = getDimensionByKey(chartModel, 'y')?.columns || [];
                             const measureCol = measureCols[0];
@@ -246,7 +219,6 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 style: { fontWeight: 'bold' },
                 events: {
                     click: function (e) {
-                        // ✅ Look up by key
                         const columnIds = getDimensionByKey(chartModel, 'x')?.columns.map(col => col.id) || [];
                         ctx.emitEvent(ChartToTSEvent.OpenAxisMenu, {
                             columnIds,
@@ -268,7 +240,6 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 style: { fontWeight: 'bold' },
                 events: {
                     click: function (e) {
-                        // ✅ Look up by key
                         const columnIds = getDimensionByKey(chartModel, 'y')?.columns.map(col => col.id) || [];
                         ctx.emitEvent(ChartToTSEvent.OpenAxisMenu, {
                             columnIds,
