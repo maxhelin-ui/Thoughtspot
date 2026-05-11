@@ -336,90 +336,92 @@ const renderChart = async (ctx: CustomChartContext) => {
 };
 
 (async () => {
-    const ctx = await getChartContext({
-        getDefaultChartConfig: (chartModel: ChartModel) => {
-            const cols = chartModel.columns;
-            const attributeColumns = cols.filter(col => col.type === ColumnType.ATTRIBUTE);
-            // ✅ No cap on measures
-            const measureColumns = cols.filter(col => col.type === ColumnType.MEASURE);
-            // ✅ All remaining attributes available for slice by
-            const sliceByColumns = attributeColumns.slice(1);
+    try {
+        const ctx = await getChartContext({
+            getDefaultChartConfig: (chartModel: ChartModel) => {
+                const cols = chartModel.columns;
+                const attributeColumns = cols.filter(col => col.type === ColumnType.ATTRIBUTE);
+                const measureColumns = cols.filter(col => col.type === ColumnType.MEASURE).slice(0, 5);
+                const sliceByColumns = attributeColumns.slice(1, 2);
 
-            if (attributeColumns.length < 1 || measureColumns.length < 1) {
-                throw new Error('Insufficient attributes or measures for the chart.');
-            }
+                if (attributeColumns.length < 1 || measureColumns.length < 1) {
+                    throw new Error('Insufficient attributes or measures for the chart.');
+                }
 
-            return [
+                return [
+                    {
+                        key: 'column',
+                        dimensions: [
+                            { key: 'x', columns: [attributeColumns[0]] },
+                            { key: 'y', columns: measureColumns },
+                            { key: 'sliceBy', columns: sliceByColumns },
+                        ],
+                    },
+                ];
+            },
+            getQueriesFromChartConfig: (chartConfig: ChartConfig[]) => {
+                return chartConfig.map(config =>
+                    config.dimensions.reduce(
+                        (acc: Query, dimension) => ({
+                            queryColumns: [...acc.queryColumns, ...dimension.columns],
+                        }),
+                        { queryColumns: [] } as Query
+                    )
+                );
+            },
+            renderChart,
+            chartConfigEditorDefinition: [
                 {
                     key: 'column',
-                    dimensions: [
-                        { key: 'x', columns: [attributeColumns[0]] },
-                        { key: 'y', columns: measureColumns },
-                        { key: 'sliceBy', columns: sliceByColumns },
+                    label: 'Column Chart Configuration',
+                    descriptionText: 'Configure the X-axis and Measures for your chart.',
+                    columnSections: [
+                        {
+                            key: 'x',
+                            label: 'X-Axis (Category)',
+                            allowAttributeColumns: true,
+                            allowMeasureColumns: false,
+                            allowTimeSeriesColumns: true,
+                            maxColumnCount: 1,
+                        },
+                        {
+                            key: 'y',
+                            label: 'Measure (Y-Axis)',
+                            allowAttributeColumns: false,
+                            allowMeasureColumns: true,
+                            maxColumnCount: 5,
+                        },
+                        {
+                            key: 'sliceBy',
+                            label: 'Slice By Color',
+                            allowAttributeColumns: true,
+                            allowMeasureColumns: false,
+                            allowTimeSeriesColumns: false,
+                            maxColumnCount: 1,
+                        }
                     ],
                 },
-            ];
-        },
-        getQueriesFromChartConfig: (chartConfig: ChartConfig[]) => {
-            return chartConfig.map(config =>
-                config.dimensions.reduce(
-                    (acc: Query, dimension) => ({
-                        queryColumns: [...acc.queryColumns, ...dimension.columns],
-                    }),
-                    { queryColumns: [] } as Query
-                )
-            );
-        },
-        renderChart,
-        chartConfigEditorDefinition: [
-            {
-                key: 'column',
-                label: 'Column Chart Configuration',
-                descriptionText: 'Configure the X-axis and Measures for your chart.',
-                columnSections: [
+            ],
+            visualPropEditorDefinition: {
+                elements: [
                     {
-                        key: 'x',
-                        label: 'X-Axis (Category)',
-                        allowAttributeColumns: true,
-                        allowMeasureColumns: false,
-                        allowTimeSeriesColumns: true,
-                        maxColumnCount: 1,
+                        key: 'numberFormat',
+                        type: 'text',
+                        defaultValue: '0.[0]a',
+                        label: 'Number Format',
                     },
                     {
-                        key: 'y',
-                        label: 'Measure (Y-Axis)',
-                        allowAttributeColumns: false,
-                        allowMeasureColumns: true,
-                        // ✅ No maxColumnCount — unlimited measures
+                        key: 'DatalabelsToggle',
+                        type: 'checkbox',
+                        defaultValue: true,
+                        label: 'Column Total Labels',
                     },
-                    {
-                        key: 'sliceBy',
-                        label: 'Slice By Color',
-                        allowAttributeColumns: true,
-                        allowMeasureColumns: false,
-                        allowTimeSeriesColumns: false,
-                        // ✅ No maxColumnCount — unlimited slice by columns
-                    }
                 ],
             },
-        ],
-        visualPropEditorDefinition: {
-            elements: [
-                {
-                    key: 'numberFormat',
-                    type: 'text',
-                    defaultValue: '0.[0]a',
-                    label: 'Number Format',
-                },
-                {
-                    key: 'DatalabelsToggle',
-                    type: 'checkbox',
-                    defaultValue: true,
-                    label: 'Column Total Labels',
-                },
-            ],
-        },
-    });
+        });
 
-    renderChart(ctx);
+        renderChart(ctx);
+    } catch (err) {
+        console.error('Failed to initialize ThoughtSpot chart context:', err);
+    }
 })();
