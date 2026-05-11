@@ -282,10 +282,15 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
             gridLineWidth: 0,
             minorGridLineWidth: 0,
             lineWidth: 0,
+            labels: dataModel.isWaterfall
+                ? { rotation: 0, style: { fontSize: '11px', color: '#6B7280' } }
+                : undefined,
         },
         yAxis: {
-            min: 0,
-            gridLineWidth: 0,
+            min: dataModel.isWaterfall ? undefined : 0,
+            gridLineWidth: dataModel.isWaterfall ? 1 : 0,
+            gridLineColor: '#E5E7EB',
+            gridLineDashStyle: 'Dot',
             title: {
                 text: yAxisTitle,
                 style: { fontWeight: 'bold' },
@@ -368,16 +373,31 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 borderWidth: 0,
             },
             waterfall: {
-                dataLabels: {
-                    enabled: datalablestoggle,
-                    formatter: function () {
-                        return formatNumber((this.point as any).isSum ? (this.point as any).y : this.y, numberFormat);
-                    },
-                },
+                pointPadding: 0.05,
+                borderRadius: 8,
+                borderWidth: 0,
                 lineWidth: 1,
                 lineColor: '#9CA3AF',
                 dashStyle: 'Dot',
-                borderWidth: 0,
+                dataLabels: {
+                    enabled: datalablestoggle,
+                    inside: true,
+                    color: '#FFFFFF',
+                    style: {
+                        textOutline: 'none',
+                        fontWeight: 'bold',
+                        fontSize: '12px',
+                    },
+                    formatter: function () {
+                        const p = this.point as any;
+                        if (p.isSum || p.isIntermediateSum) {
+                            return formatNumber(p.y, numberFormat);
+                        }
+                        const value = this.y as number;
+                        const sign = value > 0 ? '+' : '';
+                        return sign + formatNumber(value, numberFormat);
+                    },
+                },
             },
         },
         series: dataModel.seriesData.map(series => ({
