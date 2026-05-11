@@ -11,10 +11,12 @@ import {
     AxisMenuActions,
 } from '@thoughtspot/ts-chart-sdk';
 import Highcharts from 'highcharts';
+import HighchartsMore from 'highcharts/highcharts-more';
 import numeral from 'numeral';
 import * as _ from 'lodash';
 import HighchartsCustomEvents from 'highcharts-custom-events';
 
+HighchartsMore(Highcharts);
 HighchartsCustomEvents(Highcharts);
 
 interface VisualProps {
@@ -57,22 +59,41 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
     const xAxisColumn = getDimensionByKey(chartModel, 'x')?.columns?.[0];
     const sliceByColumns = getDimensionByKey(chartModel, 'sliceBy')?.columns ?? [];
 
-    // Measures-only mode: no attribute on the x-axis → one bar per measure
+    // Measures-only mode: render as a waterfall.
+    // First measure = START (raw value, gray), middle measures = floating deltas,
+    // last measure = END (auto-summed via isSum, gray).
     if (!xAxisColumn) {
         const yColumns = getDimensionByKey(chartModel, 'y')?.columns || [];
         const xAxisLabels = yColumns.map(c => c.name);
+
+        const measureValues = yColumns.map(measureCol => {
+            const colIdx = dataArr.columns.indexOf(measureCol.id);
+            if (colIdx < 0) return 0;
+            return dataArr.dataValue.reduce(
+                (sum, row) => sum + (parseFloat(row[colIdx]) || 0),
+                0,
+            );
+        });
+
+        const lastIdx = yColumns.length - 1;
+        const waterfallPoints = yColumns.map((col, i) => {
+            if (i === lastIdx && yColumns.length > 1) {
+                return { name: col.name, isSum: true, color: '#9CA3AF' };
+            }
+            if (i === 0) {
+                return { name: col.name, y: measureValues[i], color: '#9CA3AF' };
+            }
+            return { name: col.name, y: measureValues[i] };
+        });
+
         const seriesData = [{
-            name: 'Values',
-            data: yColumns.map(measureCol => {
-                const colIdx = dataArr.columns.indexOf(measureCol.id);
-                if (colIdx < 0) return 0;
-                return dataArr.dataValue.reduce(
-                    (sum, row) => sum + (parseFloat(row[colIdx]) || 0),
-                    0,
-                );
-            }),
+            name: 'Waterfall',
+            type: 'waterfall' as const,
+            data: waterfallPoints,
+            upColor: '#7CB5EC',
+            color: '#F45B5B',
         }];
-        return { xAxisLabels, seriesData };
+        return { xAxisLabels, seriesData, isWaterfall: true };
     }
 
     const measureColumn = chartModel.columns.find(col => col.id === selectedMeasureId);
@@ -110,7 +131,7 @@ function getDataModel(chartModel: ChartModel, selectedMeasureId: string) {
         }),
     }));
 
-    return { xAxisLabels, seriesData };
+    return { xAxisLabels, seriesData, isWaterfall: false };
 }
 
 // ✅ All measure columns, no cap
@@ -189,10 +210,12 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
     const dataModel = getDataModel(chartModel, firstMeasure);
     const numberFormat = (chartModel.visualProps as any)?.numberFormat || '0.[0]a';
 
+    const chartType: 'waterfall' | 'column' = dataModel.isWaterfall ? 'waterfall' : 'column';
+
     Highcharts.chart({
         chart: {
             renderTo: 'chart',
-            type: 'column',
+            type: chartType,
             height: window.innerHeight * 0.9,
             events: {
                 load: function () {
@@ -284,7 +307,7 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
             },
         },
         legend: {
-            enabled: true,
+            enabled: !dataModel.isWaterfall,
             align: 'center',
             layout: 'horizontal',
             verticalAlign: 'top',
@@ -344,10 +367,22 @@ function render(ctx: CustomChartContext, selectedMeasure?: string) {
                 },
                 borderWidth: 0,
             },
+            waterfall: {
+                dataLabels: {
+                    enabled: datalablestoggle,
+                    formatter: function () {
+                        return formatNumber((this.point as any).isSum ? (this.point as any).y : this.y, numberFormat);
+                    },
+                },
+                lineWidth: 1,
+                lineColor: '#9CA3AF',
+                dashStyle: 'Dot',
+                borderWidth: 0,
+            },
         },
         series: dataModel.seriesData.map(series => ({
+            type: chartType,
             ...series,
-            type: 'column'
         })) as Highcharts.SeriesOptionsType[],
     });
 }
