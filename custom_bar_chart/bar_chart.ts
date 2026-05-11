@@ -7,6 +7,7 @@ import {
     ChartConfig,
     DataPointsArray,
     Query,
+    RenderErrorEventPayload,
 } from '@thoughtspot/ts-chart-sdk';
 import numeral from 'numeral';
 
@@ -319,10 +320,13 @@ const renderChart = async (ctx: CustomChartContext) => {
     try {
         ctx.emitEvent(ChartToTSEvent.RenderStart);
         render(ctx);
+        ctx.emitEvent(ChartToTSEvent.RenderComplete);
     } catch (error) {
         console.error('Error during render:', error);
-    } finally {
-        ctx.emitEvent(ChartToTSEvent.RenderComplete);
+        ctx.emitEvent(ChartToTSEvent.RenderError, {
+            hasError: true,
+            error,
+        } as RenderErrorEventPayload);
     }
 };
 
@@ -342,7 +346,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                 },
             ];
         },
-        getQueriesFromChartConfig: (chartConfig: ChartConfig[]): Array<Query> => {
+        getQueriesFromChartConfig: (chartConfig: ChartConfig[], _chartModel: ChartModel): Array<Query> => {
             return chartConfig.map(config =>
                 config.dimensions.reduce(
                     (acc: Query, dimension) => ({
@@ -375,14 +379,14 @@ const renderChart = async (ctx: CustomChartContext) => {
                 { key: 'xAxisTitle',          type: 'text',     defaultValue: ' ',       label: 'X-axis title' },
                 { key: 'yAxisTitle',          type: 'text',     defaultValue: 'Value',   label: 'Y-axis title' },
                 { key: 'numberFormat',        type: 'text',     defaultValue: '0.[0]a',  label: 'Number format' },
-                { key: 'colorPositive',       type: 'text',     defaultValue: '#378ADD', label: 'Positive bar colour (HEX)' },
-                { key: 'colorNegative',       type: 'text',     defaultValue: '#E24B4A', label: 'Negative bar colour (HEX)' },
-                { key: 'colorTotal',          type: 'text',     defaultValue: '#534AB7', label: 'Total bar colour (HEX)' },
-                { key: 'showDataLabels',      type: 'checkbox', defaultValue: true,      label: 'Show data labels' },
-                { key: 'showConnector',       type: 'checkbox', defaultValue: true,      label: 'Show connector line' },
-                { key: 'showStartEndMarkers', type: 'checkbox', defaultValue: true,      label: 'Show start/end markers' },
-                { key: 'showStartEndPills',   type: 'checkbox', defaultValue: true,      label: 'Show start/end pill labels' },
-                { key: 'showGridLines',       type: 'checkbox', defaultValue: true,      label: 'Show grid lines' },
+                { key: 'colorPositive',       type: 'colorpicker', defaultValue: '#378ADD', label: 'Positive bar colour' },
+                { key: 'colorNegative',       type: 'colorpicker', defaultValue: '#E24B4A', label: 'Negative bar colour' },
+                { key: 'colorTotal',          type: 'colorpicker', defaultValue: '#534AB7', label: 'Total bar colour' },
+                { key: 'showDataLabels',      type: 'toggle',      defaultValue: true,      label: 'Show data labels' },
+                { key: 'showConnector',       type: 'toggle',      defaultValue: true,      label: 'Show connector line' },
+                { key: 'showStartEndMarkers', type: 'toggle',      defaultValue: true,      label: 'Show start/end markers' },
+                { key: 'showStartEndPills',   type: 'toggle',      defaultValue: true,      label: 'Show start/end pill labels' },
+                { key: 'showGridLines',       type: 'toggle',      defaultValue: true,      label: 'Show grid lines' },
             ],
         },
     });
