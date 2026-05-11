@@ -8,9 +8,13 @@ import {
     DataPointsArray,
     Query,
 } from '@thoughtspot/ts-chart-sdk';
+import Highcharts from 'highcharts';
+import HighchartsMore from 'highcharts/highcharts-more';
+import HighchartsCustomEvents from 'highcharts-custom-events';
 import numeral from 'numeral';
 
-declare const Highcharts: any;
+HighchartsMore(Highcharts);
+HighchartsCustomEvents(Highcharts);
 
 interface VisualProps {
     numberFormat?: string;
