@@ -8,13 +8,9 @@ import {
     DataPointsArray,
     Query,
 } from '@thoughtspot/ts-chart-sdk';
-import Highcharts from 'highcharts';
-import HighchartsMore from 'highcharts/highcharts-more';
-import HighchartsCustomEvents from 'highcharts-custom-events';
 import numeral from 'numeral';
 
-HighchartsMore(Highcharts);
-HighchartsCustomEvents(Highcharts);
+declare const Highcharts: any;
 
 interface VisualProps {
     numberFormat?: string;
@@ -153,9 +149,8 @@ function render(ctx: CustomChartContext) {
             gridLineWidth: 0,
             title:         { text: xAxisTitle, style: { fontWeight: 'bold' } },
             labels: {
-                useHTML:      true,
-                rotation:     0,
-                autoRotation: [0],
+                useHTML:   true,
+                rotation:  0,
                 style: { fontSize: '11px' },
                 formatter: function (this: any) {
                     const cat = this.value as string;
@@ -369,14 +364,15 @@ const renderChart = async (ctx: CustomChartContext) => {
                         label:                 'Measures (Start → deltas → End)',
                         allowAttributeColumns: false,
                         allowMeasureColumns:   true,
+                        maxColumnCount:        20,
                     },
                 ],
             },
         ],
         visualPropEditorDefinition: {
             elements: [
-                { key: 'chartTitle',          type: 'text',     defaultValue: '',        label: 'Chart title' },
-                { key: 'xAxisTitle',          type: 'text',     defaultValue: '',        label: 'X-axis title' },
+                { key: 'chartTitle',          type: 'text',     defaultValue: ' ',       label: 'Chart title' },
+                { key: 'xAxisTitle',          type: 'text',     defaultValue: ' ',       label: 'X-axis title' },
                 { key: 'yAxisTitle',          type: 'text',     defaultValue: 'Value',   label: 'Y-axis title' },
                 { key: 'numberFormat',        type: 'text',     defaultValue: '0.[0]a',  label: 'Number format' },
                 { key: 'colorPositive',       type: 'text',     defaultValue: '#378ADD', label: 'Positive bar colour (HEX)' },
