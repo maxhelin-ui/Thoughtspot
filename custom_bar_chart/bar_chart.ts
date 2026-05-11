@@ -26,6 +26,10 @@ interface VisualProps {
     showStartEndMarkers?: boolean;
     showStartEndPills?: boolean;
     showGridLines?: boolean;
+    connectorColor?: string;
+    connectorWidth?: number;
+    connectorStyle?: string;
+    [labelKey: string]: any;
 }
 
 let globalChartReference: any = null;
@@ -45,6 +49,8 @@ function getDataModel(chartModel: ChartModel) {
     const yColumns =
         chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
 
+    const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
+
     const values = yColumns.map(col => {
         const colIdx = dataArr.columns.indexOf(col.id);
         if (colIdx < 0) return 0;
@@ -54,7 +60,12 @@ function getDataModel(chartModel: ChartModel) {
         );
     });
 
-    return { values, names: yColumns.map(col => col.name) };
+    const names = yColumns.map(col => {
+        const override = visualProps[`label_${col.id}`];
+        return (typeof override === 'string' && override.trim()) ? override : col.name;
+    });
+
+    return { values, names };
 }
 
 function render(ctx: CustomChartContext) {
@@ -74,6 +85,9 @@ function render(ctx: CustomChartContext) {
     const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
     const showStartEndPills   = visualProps.showStartEndPills   ?? true;
     const showGridLines       = visualProps.showGridLines       ?? true;
+    const connectorColor      = visualProps.connectorColor      ?? '#bbbbbb';
+    const connectorWidth      = visualProps.connectorWidth      ?? 1;
+    const connectorStyle      = visualProps.connectorStyle      ?? 'Dot';
 
     if (values.length < 2) return;
 
@@ -264,9 +278,9 @@ function render(ctx: CustomChartContext) {
                 type:                'line',
                 name:                'connector',
                 data:                connectorY.map((y, i) => ({ x: i, y })),
-                color:               '#bbb',
-                dashStyle:           'Dot',
-                lineWidth:           1,
+                color:               connectorColor,
+                dashStyle:           connectorStyle,
+                lineWidth:           connectorWidth,
                 marker:              { enabled: false },
                 showInLegend:        false,
                 enableMouseTracking: false,
@@ -373,21 +387,35 @@ const renderChart = async (ctx: CustomChartContext) => {
                 ],
             },
         ],
-        visualPropEditorDefinition: {
-            elements: [
-                { key: 'chartTitle',          type: 'text',     defaultValue: ' ',       label: 'Chart title' },
-                { key: 'xAxisTitle',          type: 'text',     defaultValue: ' ',       label: 'X-axis title' },
-                { key: 'yAxisTitle',          type: 'text',     defaultValue: 'Value',   label: 'Y-axis title' },
-                { key: 'numberFormat',        type: 'text',     defaultValue: '0.[0]a',  label: 'Number format' },
-                { key: 'colorPositive',       type: 'colorpicker', defaultValue: '#378ADD', label: 'Positive bar colour' },
-                { key: 'colorNegative',       type: 'colorpicker', defaultValue: '#E24B4A', label: 'Negative bar colour' },
-                { key: 'colorTotal',          type: 'colorpicker', defaultValue: '#534AB7', label: 'Total bar colour' },
-                { key: 'showDataLabels',      type: 'toggle',      defaultValue: true,      label: 'Show data labels' },
-                { key: 'showConnector',       type: 'toggle',      defaultValue: true,      label: 'Show connector line' },
-                { key: 'showStartEndMarkers', type: 'toggle',      defaultValue: true,      label: 'Show start/end markers' },
-                { key: 'showStartEndPills',   type: 'toggle',      defaultValue: true,      label: 'Show start/end pill labels' },
-                { key: 'showGridLines',       type: 'toggle',      defaultValue: true,      label: 'Show grid lines' },
-            ],
+        visualPropEditorDefinition: (chartModel: ChartModel) => {
+            const yCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
+            const labelOverrides = yCols.map(col => ({
+                key:          `label_${col.id}`,
+                type:         'text' as const,
+                defaultValue: col.name,
+                label:        `Rename: ${col.name}`,
+            }));
+
+            return {
+                elements: [
+                    { key: 'chartTitle',          type: 'text',        defaultValue: ' ',       label: 'Chart title' },
+                    { key: 'xAxisTitle',          type: 'text',        defaultValue: ' ',       label: 'X-axis title' },
+                    { key: 'yAxisTitle',          type: 'text',        defaultValue: 'Value',   label: 'Y-axis title' },
+                    { key: 'numberFormat',        type: 'text',        defaultValue: '0.[0]a',  label: 'Number format' },
+                    { key: 'colorPositive',       type: 'colorpicker', defaultValue: '#378ADD', label: 'Positive bar colour' },
+                    { key: 'colorNegative',       type: 'colorpicker', defaultValue: '#E24B4A', label: 'Negative bar colour' },
+                    { key: 'colorTotal',          type: 'colorpicker', defaultValue: '#534AB7', label: 'Total bar colour' },
+                    { key: 'connectorColor',      type: 'colorpicker', defaultValue: '#bbbbbb', label: 'Connector line colour' },
+                    { key: 'connectorWidth',      type: 'number',      defaultValue: 1,         label: 'Connector line width' },
+                    { key: 'connectorStyle',      type: 'dropdown',    defaultValue: 'Dot',     values: ['Solid', 'Dot', 'Dash', 'DashDot', 'LongDash'], label: 'Connector line style' },
+                    { key: 'showDataLabels',      type: 'checkbox',    defaultValue: true,      label: 'Show data labels' },
+                    { key: 'showConnector',       type: 'checkbox',    defaultValue: true,      label: 'Show connector line' },
+                    { key: 'showStartEndMarkers', type: 'checkbox',    defaultValue: true,      label: 'Show start/end markers' },
+                    { key: 'showStartEndPills',   type: 'checkbox',    defaultValue: true,      label: 'Show start/end pill labels' },
+                    { key: 'showGridLines',       type: 'checkbox',    defaultValue: true,      label: 'Show grid lines' },
+                    ...labelOverrides,
+                ],
+            };
         },
     });
 
