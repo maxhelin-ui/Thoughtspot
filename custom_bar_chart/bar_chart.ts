@@ -40,6 +40,7 @@ const SLICE_PALETTE = [
 
 let globalChartReference: any = null;
 let runtimeSlicingOverride: boolean | null = null;
+let lastSeenSlicingDefault: boolean | undefined = undefined;
 
 function renderSliceToggle(
     sliceColumn: { name: string } | undefined,
@@ -146,7 +147,12 @@ function render(ctx: CustomChartContext) {
     const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
     const showStartEndPills   = visualProps.showStartEndPills   ?? true;
     const showGridLines       = visualProps.showGridLines       ?? true;
-    const baseShowSlicing     = runtimeSlicingOverride ?? visualProps.showSlicing ?? false;
+    const settingsDefault     = visualProps.showSlicing ?? false;
+    if (settingsDefault !== lastSeenSlicingDefault) {
+        runtimeSlicingOverride = null;
+        lastSeenSlicingDefault = settingsDefault;
+    }
+    const baseShowSlicing     = runtimeSlicingOverride ?? settingsDefault;
     const showSlicing         = baseShowSlicing && !!sliceColumn && sliceNames.length > 0;
 
     renderSliceToggle(sliceColumn, showSlicing, () => {
@@ -589,7 +595,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showStartEndMarkers', type: 'checkbox',    defaultValue: true,      label: 'Show start/end markers' },
                     { key: 'showStartEndPills',   type: 'checkbox',    defaultValue: true,      label: 'Show start/end pill labels' },
                     { key: 'showGridLines',       type: 'checkbox',    defaultValue: true,      label: 'Show grid lines' },
-                    { key: 'showSlicing',         type: 'checkbox',    defaultValue: false,     label: 'Slice middle bars by attribute' },
+                    { key: 'showSlicing',         type: 'checkbox',    defaultValue: false,     label: 'Slice middle bars by default' },
                     ...labelOverrides,
                     ...sliceColorPickers,
                 ],
