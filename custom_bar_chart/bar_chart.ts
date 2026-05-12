@@ -26,11 +26,17 @@ interface VisualProps {
     showStartEndMarkers?: boolean;
     showStartEndPills?: boolean;
     showGridLines?: boolean;
+    showSlicing?: boolean;
     connectorColor?: string;
     connectorWidth?: number;
     connectorStyle?: string;
     [labelKey: string]: any;
 }
+
+const SLICE_PALETTE = [
+    '#378ADD', '#E24B4A', '#534AB7', '#F0A937', '#52B788',
+    '#9B5DE5', '#00BBF9', '#FB6F92', '#80B918', '#F08080',
+];
 
 let globalChartReference: any = null;
 
@@ -49,6 +55,9 @@ function getDataModel(chartModel: ChartModel) {
     const yColumns =
         chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
 
+    const sliceColumn =
+        chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns?.[0];
+
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
     const values = yColumns.map(col => {
@@ -65,12 +74,41 @@ function getDataModel(chartModel: ChartModel) {
         return (typeof override === 'string' && override.trim()) ? override : col.name;
     });
 
-    return { values, names };
+    const sliceNames: string[] = [];
+    const sliceByColumn: number[][] = [];
+    if (sliceColumn) {
+        const sliceColIdx = dataArr.columns.indexOf(sliceColumn.id);
+        if (sliceColIdx >= 0) {
+            const seen = new Set<string>();
+            for (const row of dataArr.dataValue) {
+                const v = String(row[sliceColIdx] ?? '');
+                if (!seen.has(v)) {
+                    seen.add(v);
+                    sliceNames.push(v);
+                }
+            }
+            yColumns.forEach(col => {
+                const colIdx = dataArr.columns.indexOf(col.id);
+                if (colIdx < 0) {
+                    sliceByColumn.push(sliceNames.map(() => 0));
+                    return;
+                }
+                sliceByColumn.push(sliceNames.map(sliceName =>
+                    dataArr.dataValue.reduce((sum, row) => {
+                        if (String(row[sliceColIdx] ?? '') !== sliceName) return sum;
+                        return sum + (parseFloat(String(row[colIdx] ?? 0)) || 0);
+                    }, 0),
+                ));
+            });
+        }
+    }
+
+    return { values, names, sliceColumn, sliceNames, sliceByColumn };
 }
 
 function render(ctx: CustomChartContext) {
     const chartModel   = ctx.getChartModel();
-    const { values, names } = getDataModel(chartModel);
+    const { values, names, sliceColumn, sliceNames, sliceByColumn } = getDataModel(chartModel);
     const visualProps  = (chartModel.visualProps ?? {}) as VisualProps;
 
     const numberFormat        = visualProps.numberFormat        ?? '0.[0]a';
@@ -85,9 +123,14 @@ function render(ctx: CustomChartContext) {
     const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
     const showStartEndPills   = visualProps.showStartEndPills   ?? true;
     const showGridLines       = visualProps.showGridLines       ?? true;
+    const showSlicing         = (visualProps.showSlicing        ?? false) && !!sliceColumn && sliceNames.length > 0;
     const connectorColor      = visualProps.connectorColor      ?? '#bbbbbb';
     const connectorWidth      = visualProps.connectorWidth      ?? 1;
     const connectorStyle      = visualProps.connectorStyle      ?? 'Dot';
+
+    const sliceColors = sliceNames.map((s, i) =>
+        (visualProps[`sliceColor_${s}`] as string) ?? SLICE_PALETTE[i % SLICE_PALETTE.length],
+    );
 
     if (values.length < 2) return;
 
@@ -134,6 +177,40 @@ function render(ctx: CustomChartContext) {
         ...movements.map(m => ({ low: m.low, high: m.high, color: m.color, delta: m.delta, isTotal: false })),
         { low: endValue,   high: endValue,   color: 'transparent', delta: endValue,   isTotal: true },
     ];
+
+    // When slicing is enabled, each middle bar splits into per-slice columnrange segments.
+    // Same-sign within a column is assumed, so segments stack cleanly from running_total_before.
+    const sliceSeries: any[] = showSlicing ? sliceNames.map((sliceName, sIdx) => {
+        const data = categories.map((_, catIdx) => {
+            if (catIdx === 0 || catIdx === categories.length - 1) {
+                return { x: catIdx, low: null, high: null };
+            }
+            const deltaIdx     = catIdx - 1;
+            const yColIdx      = deltaIdx + 1;
+            const contribs     = sliceByColumn[yColIdx] ?? [];
+            let stackBase      = runningTotals[deltaIdx];
+            for (let i = 0; i < sIdx; i++) stackBase += contribs[i] ?? 0;
+            const contribution = contribs[sIdx] ?? 0;
+            const segStart     = stackBase;
+            const segEnd       = stackBase + contribution;
+            return {
+                x:            catIdx,
+                low:          Math.min(segStart, segEnd),
+                high:         Math.max(segStart, segEnd),
+                contribution,
+                sliceName,
+                isTotal:      false,
+                isSlice:      true,
+            };
+        });
+        return {
+            type:         'columnrange',
+            name:         sliceName,
+            data,
+            color:        sliceColors[sIdx],
+            showInLegend: true,
+        };
+    }) : [];
 
     // Connector line follows the running total: top of up-bars, bottom of down-bars
     const connectorY = [
@@ -195,7 +272,20 @@ function render(ctx: CustomChartContext) {
             },
         },
 
-        legend: { enabled: false },
+        legend: {
+            enabled:       showSlicing,
+            align:         'center',
+            verticalAlign: 'bottom',
+            layout:        'horizontal',
+            itemStyle:     { color: '#333', fontWeight: '500', fontSize: '12px' },
+            symbolRadius:  2,
+            symbolHeight:  10,
+            symbolWidth:   10,
+            itemDistance:  18,
+            margin:        12,
+            padding:       6,
+            title:         sliceColumn ? { text: sliceColumn.name, style: { fontWeight: '600', fontSize: '11px', color: '#666' } } : undefined,
+        },
 
         tooltip: {
             backgroundColor: '#3A3F48',
@@ -207,6 +297,13 @@ function render(ctx: CustomChartContext) {
             formatter: function (this: any) {
                 const point = this.point as any;
                 if (point.isTotal) return false;
+                if (point.isSlice) {
+                    const contribution = point.contribution ?? 0;
+                    const sign         = contribution >= 0 ? '+' : '';
+                    return `<b>${categories[point.x]}</b><br/>
+                        <b>${point.sliceName}:</b> ${sign}${formatNumber(contribution, numberFormat)}<br/>
+                        <b>Running total:</b> ${formatNumber(point.high, numberFormat)}`;
+                }
                 const delta = point.delta ?? 0;
                 const sign  = delta >= 0 ? '+' : '';
                 const runningTotal = delta >= 0 ? point.high : point.low;
@@ -221,6 +318,7 @@ function render(ctx: CustomChartContext) {
                 borderWidth:  0,
                 pointPadding: 0.05,
                 groupPadding: 0.1,
+                grouping:     false,
                 dataLabels: {
                     enabled:      showDataLabels,
                     inside:       true,
@@ -229,6 +327,12 @@ function render(ctx: CustomChartContext) {
                     formatter: function (this: any) {
                         const point = this.point as any;
                         if (point.isTotal) return '';
+                        if (point.isSlice) {
+                            const c = point.contribution ?? 0;
+                            if (c === 0) return '';
+                            const sign = c >= 0 ? '+' : '-';
+                            return sign + formatNumber(Math.abs(c), numberFormat);
+                        }
                         const delta = point.delta ?? 0;
                         const sign  = delta >= 0 ? '+' : '-';
                         return sign + formatNumber(Math.abs(delta), numberFormat);
@@ -265,15 +369,23 @@ function render(ctx: CustomChartContext) {
             {
                 type:         'columnrange',
                 name:         'Movements',
-                data:         seriesData.map(d => ({
-                    low:     d.low,
-                    high:    d.high,
-                    color:   d.color,
-                    delta:   d.delta,
-                    isTotal: d.isTotal,
-                })),
+                data:         seriesData.map((d, i) => {
+                    // When slicing, hide middle bars (slice series draws them instead)
+                    const isMiddle = i > 0 && i < seriesData.length - 1;
+                    if (showSlicing && isMiddle) {
+                        return { low: null, high: null, color: 'transparent', delta: d.delta, isTotal: false };
+                    }
+                    return {
+                        low:     d.low,
+                        high:    d.high,
+                        color:   d.color,
+                        delta:   d.delta,
+                        isTotal: d.isTotal,
+                    };
+                }),
                 showInLegend: false,
             },
+            ...sliceSeries,
             ...(showConnector ? [{
                 type:                'line',
                 name:                'connector',
@@ -355,7 +467,8 @@ const renderChart = async (ctx: CustomChartContext) => {
                 {
                     key: 'column',
                     dimensions: [
-                        { key: 'y', columns: measureColumns },
+                        { key: 'y',     columns: measureColumns },
+                        { key: 'slice', columns: [] },
                     ],
                 },
             ];
@@ -384,17 +497,51 @@ const renderChart = async (ctx: CustomChartContext) => {
                         allowMeasureColumns:   true,
                         maxColumnCount:        20,
                     },
+                    {
+                        key:                   'slice',
+                        label:                 'Slice middle bars by (optional)',
+                        allowAttributeColumns: true,
+                        allowMeasureColumns:   false,
+                        maxColumnCount:        1,
+                    },
                 ],
             },
         ],
         visualPropEditorDefinition: (chartModel: ChartModel) => {
             const yCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
+            const sliceCol = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns?.[0];
+
             const labelOverrides = yCols.map(col => ({
                 key:          `label_${col.id}`,
                 type:         'text' as const,
                 defaultValue: col.name,
                 label:        `Rename: ${col.name}`,
             }));
+
+            const sliceColorPickers: any[] = [];
+            if (sliceCol) {
+                const dataArr = chartModel.data?.[chartModel.data.length - 1]?.data;
+                if (dataArr) {
+                    const sliceColIdx = dataArr.columns.indexOf(sliceCol.id);
+                    if (sliceColIdx >= 0) {
+                        const seen = new Set<string>();
+                        const uniqueSlices: string[] = [];
+                        for (const row of dataArr.dataValue) {
+                            const v = String(row[sliceColIdx] ?? '');
+                            if (!seen.has(v)) {
+                                seen.add(v);
+                                uniqueSlices.push(v);
+                            }
+                        }
+                        uniqueSlices.forEach((s, i) => sliceColorPickers.push({
+                            key:          `sliceColor_${s}`,
+                            type:         'colorpicker' as const,
+                            defaultValue: SLICE_PALETTE[i % SLICE_PALETTE.length],
+                            label:        `Slice colour: ${s}`,
+                        }));
+                    }
+                }
+            }
 
             return {
                 elements: [
@@ -413,7 +560,9 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showStartEndMarkers', type: 'checkbox',    defaultValue: true,      label: 'Show start/end markers' },
                     { key: 'showStartEndPills',   type: 'checkbox',    defaultValue: true,      label: 'Show start/end pill labels' },
                     { key: 'showGridLines',       type: 'checkbox',    defaultValue: true,      label: 'Show grid lines' },
+                    { key: 'showSlicing',         type: 'checkbox',    defaultValue: false,     label: 'Slice middle bars by attribute' },
                     ...labelOverrides,
+                    ...sliceColorPickers,
                 ],
             };
         },
