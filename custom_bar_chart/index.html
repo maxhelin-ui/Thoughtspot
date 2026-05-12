@@ -32,6 +32,40 @@
                 color: white;
                 border-color: #1a73e8;
             }
+            .slice-toggle-btn {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 6px 14px;
+                border: 1px solid #d0d7de;
+                border-radius: 999px;
+                background: #fff;
+                color: #4a5568;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 500;
+                transition: all 0.15s ease;
+                font-family: inherit;
+            }
+            .slice-toggle-btn:hover {
+                border-color: #2d72d2;
+                color: #2d72d2;
+            }
+            .slice-toggle-btn.active {
+                background: #2d72d2;
+                border-color: #2d72d2;
+                color: #fff;
+            }
+            .slice-toggle-btn .dot {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: #d0d7de;
+            }
+            .slice-toggle-btn.active .dot {
+                background: #fff;
+            }
             #chart {
                 width: 100%;
                 height: 100%;

@@ -39,6 +39,29 @@ const SLICE_PALETTE = [
 ];
 
 let globalChartReference: any = null;
+let runtimeSlicingOverride: boolean | null = null;
+
+function renderSliceToggle(
+    sliceColumn: { name: string } | undefined,
+    isActive: boolean,
+    onToggle: () => void,
+) {
+    const container = document.getElementById('buttonContainer');
+    if (!container) return;
+    container.innerHTML = '';
+    if (!sliceColumn) {
+        container.style.display = 'none';
+        return;
+    }
+    container.style.display = 'flex';
+
+    const button = document.createElement('button');
+    button.className = 'slice-toggle-btn' + (isActive ? ' active' : '');
+    button.type = 'button';
+    button.innerHTML = `<span class="dot"></span>Slice by ${sliceColumn.name}`;
+    button.onclick = onToggle;
+    container.appendChild(button);
+}
 
 function formatNumber(value: number, format: string): string {
     try {
@@ -123,7 +146,13 @@ function render(ctx: CustomChartContext) {
     const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
     const showStartEndPills   = visualProps.showStartEndPills   ?? true;
     const showGridLines       = visualProps.showGridLines       ?? true;
-    const showSlicing         = (visualProps.showSlicing        ?? false) && !!sliceColumn && sliceNames.length > 0;
+    const baseShowSlicing     = runtimeSlicingOverride ?? visualProps.showSlicing ?? false;
+    const showSlicing         = baseShowSlicing && !!sliceColumn && sliceNames.length > 0;
+
+    renderSliceToggle(sliceColumn, showSlicing, () => {
+        runtimeSlicingOverride = !baseShowSlicing;
+        render(ctx);
+    });
     const connectorColor      = visualProps.connectorColor      ?? '#bbbbbb';
     const connectorWidth      = visualProps.connectorWidth      ?? 1;
     const connectorStyle      = visualProps.connectorStyle      ?? 'Dot';
