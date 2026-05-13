@@ -27,6 +27,7 @@ interface VisualProps {
     showStartEndPills?: boolean;
     showGridLines?: boolean;
     showSlicing?: boolean;
+    showNetChange?: boolean;
     connectorColor?: string;
     connectorWidth?: number;
     connectorStyle?: string;
@@ -37,6 +38,17 @@ const SLICE_PALETTE = [
     '#378ADD', '#E24B4A', '#534AB7', '#F0A937', '#52B788',
     '#9B5DE5', '#00BBF9', '#FB6F92', '#80B918', '#F08080',
 ];
+
+function resolveColor(hexInput: unknown, picker: unknown, fallback: string): string {
+    if (typeof hexInput === 'string') {
+        const trimmed = hexInput.trim();
+        const normalized = trimmed.startsWith('#') ? trimmed : '#' + trimmed;
+        if (/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(normalized)) {
+            return normalized;
+        }
+    }
+    return (typeof picker === 'string' && picker) ? picker : fallback;
+}
 
 let globalChartReference: any = null;
 let runtimeSlicingOverride: boolean | null = null;
@@ -139,11 +151,12 @@ function render(ctx: CustomChartContext) {
     const chartTitle          = visualProps.chartTitle          ?? '';
     const xAxisTitle          = visualProps.xAxisTitle          ?? '';
     const yAxisTitle          = visualProps.yAxisTitle          ?? 'Value';
-    const colorPositive       = visualProps.colorPositive       ?? '#378ADD';
-    const colorNegative       = visualProps.colorNegative       ?? '#E24B4A';
-    const colorTotal          = visualProps.colorTotal          ?? '#534AB7';
+    const colorPositive       = resolveColor(visualProps.colorPositiveHex,  visualProps.colorPositive,  '#378ADD');
+    const colorNegative       = resolveColor(visualProps.colorNegativeHex,  visualProps.colorNegative,  '#E24B4A');
+    const colorTotal          = resolveColor(visualProps.colorTotalHex,     visualProps.colorTotal,     '#534AB7');
     const showDataLabels      = visualProps.showDataLabels      ?? true;
     const showConnector       = visualProps.showConnector       ?? true;
+    const showNetChange       = visualProps.showNetChange       ?? false;
     const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
     const showStartEndPills   = visualProps.showStartEndPills   ?? true;
     const showGridLines       = visualProps.showGridLines       ?? true;
@@ -159,13 +172,15 @@ function render(ctx: CustomChartContext) {
         runtimeSlicingOverride = !baseShowSlicing;
         render(ctx);
     });
-    const connectorColor      = visualProps.connectorColor      ?? '#bbbbbb';
+    const connectorColor      = resolveColor(visualProps.connectorColorHex, visualProps.connectorColor, '#bbbbbb');
     const connectorWidth      = visualProps.connectorWidth      ?? 1;
     const connectorStyle      = visualProps.connectorStyle      ?? 'Dot';
 
-    const sliceColors = sliceNames.map((s, i) =>
-        (visualProps[`sliceColor_${s}`] as string) ?? SLICE_PALETTE[i % SLICE_PALETTE.length],
-    );
+    const sliceColors = sliceNames.map((s, i) => resolveColor(
+        visualProps[`sliceColorHex_${s}`],
+        visualProps[`sliceColor_${s}`],
+        SLICE_PALETTE[i % SLICE_PALETTE.length],
+    ));
 
     if (values.length < 2) return;
 
@@ -263,7 +278,7 @@ function render(ctx: CustomChartContext) {
         chart: {
             type: 'columnrange',
             marginLeft:   80,
-            marginRight:  40,
+            marginRight:  showNetChange ? 110 : 40,
             marginBottom: 100,
         },
         title:   { text: chartTitle, style: { fontWeight: 'bold', fontSize: '14px' } },
@@ -475,6 +490,32 @@ function render(ctx: CustomChartContext) {
         drawCallout(0,                     startValue, formatNumber(startValue, numberFormat), colorTotal);
         drawCallout(categories.length - 1, endValue,   formatNumber(endValue,   numberFormat), colorTotal);
     }
+
+    if (showNetChange) {
+        const netChange = endValue - startValue;
+        const isUp      = netChange >= 0;
+        const arrow     = isUp ? '▲' : '▼';
+        const startPx   = yAxisObj.toPixels(startValue, false);
+        const endPx     = yAxisObj.toPixels(endValue,   false);
+        const barX      = chart.plotLeft + chart.plotWidth + 35;
+        const barTop    = Math.min(startPx, endPx);
+        const barH      = Math.abs(startPx - endPx);
+
+        chart.renderer.rect(barX - 3, barTop, 6, barH)
+            .attr({ fill: colorTotal, zIndex: 5 })
+            .add();
+
+        const pillText = `${arrow}${formatNumber(Math.abs(netChange), numberFormat)}`;
+        const pillW = 80, pillH = 28, pillR = 14;
+        const pillY = barTop - pillH - 6;
+        chart.renderer.rect(barX - pillW / 2, pillY, pillW, pillH, pillR)
+            .attr({ fill: colorTotal, zIndex: 6 })
+            .add();
+        chart.renderer.text(pillText, barX, pillY + 18)
+            .attr({ align: 'center', zIndex: 7 })
+            .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
+            .add();
+    }
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
@@ -568,12 +609,21 @@ const renderChart = async (ctx: CustomChartContext) => {
                                 uniqueSlices.push(v);
                             }
                         }
-                        uniqueSlices.forEach((s, i) => sliceColorPickers.push({
-                            key:          `sliceColor_${s}`,
-                            type:         'colorpicker' as const,
-                            defaultValue: SLICE_PALETTE[i % SLICE_PALETTE.length],
-                            label:        `Slice colour: ${s}`,
-                        }));
+                        uniqueSlices.forEach((s, i) => {
+                            const defaultColor = SLICE_PALETTE[i % SLICE_PALETTE.length];
+                            sliceColorPickers.push({
+                                key:          `sliceColor_${s}`,
+                                type:         'colorpicker' as const,
+                                defaultValue: defaultColor,
+                                label:        `Slice colour: ${s}`,
+                            });
+                            sliceColorPickers.push({
+                                key:          `sliceColorHex_${s}`,
+                                type:         'text' as const,
+                                defaultValue: defaultColor,
+                                label:        `Slice colour hex: ${s}`,
+                            });
+                        });
                     }
                 }
             }
@@ -585,15 +635,20 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'yAxisTitle',          type: 'text',        defaultValue: 'Value',   label: 'Y-axis title' },
                     { key: 'numberFormat',        type: 'text',        defaultValue: '0.[0]a',  label: 'Number format' },
                     { key: 'colorPositive',       type: 'colorpicker', defaultValue: '#378ADD', label: 'Positive bar colour' },
+                    { key: 'colorPositiveHex',    type: 'text',        defaultValue: '#378ADD', label: 'Positive bar colour hex' },
                     { key: 'colorNegative',       type: 'colorpicker', defaultValue: '#E24B4A', label: 'Negative bar colour' },
+                    { key: 'colorNegativeHex',    type: 'text',        defaultValue: '#E24B4A', label: 'Negative bar colour hex' },
                     { key: 'colorTotal',          type: 'colorpicker', defaultValue: '#534AB7', label: 'Total bar colour' },
+                    { key: 'colorTotalHex',       type: 'text',        defaultValue: '#534AB7', label: 'Total bar colour hex' },
                     { key: 'connectorColor',      type: 'colorpicker', defaultValue: '#bbbbbb', label: 'Connector line colour' },
+                    { key: 'connectorColorHex',   type: 'text',        defaultValue: '#bbbbbb', label: 'Connector line colour hex' },
                     { key: 'connectorWidth',      type: 'number',      defaultValue: 1,         label: 'Connector line width' },
                     { key: 'connectorStyle',      type: 'dropdown',    defaultValue: 'Dot',     values: ['Solid', 'Dot', 'Dash', 'DashDot', 'LongDash'], label: 'Connector line style' },
                     { key: 'showDataLabels',      type: 'checkbox',    defaultValue: true,      label: 'Show data labels' },
                     { key: 'showConnector',       type: 'checkbox',    defaultValue: true,      label: 'Show connector line' },
                     { key: 'showStartEndMarkers', type: 'checkbox',    defaultValue: true,      label: 'Show start/end markers' },
                     { key: 'showStartEndPills',   type: 'checkbox',    defaultValue: true,      label: 'Show start/end pill labels' },
+                    { key: 'showNetChange',       type: 'checkbox',    defaultValue: false,     label: 'Show net change indicator (right)' },
                     { key: 'showGridLines',       type: 'checkbox',    defaultValue: true,      label: 'Show grid lines' },
                     { key: 'showSlicing',         type: 'checkbox',    defaultValue: false,     label: 'Slice middle bars by default' },
                     ...labelOverrides,
