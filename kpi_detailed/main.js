@@ -202,7 +202,15 @@ function renderSingle(vp, values, chartModel) {
   setText('singleValue', formatted);
   setText('singleSuffix', vp?.primarySuffix ?? '');
   setText('singleDescription', (vp?.primaryDescription ?? '').trim());
-  setText('singleFooter', (vp?.primaryFooter ?? '').trim());
+
+  const footerText = (vp?.primaryFooter ?? '').trim();
+  const avgFormatted = values.footerAvg != null
+    ? formatMetricValue(values.footerAvg, vp?.footerAvgFormat ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
+    : '';
+  const fullFooter = footerText && avgFormatted
+    ? `${footerText} ${avgFormatted}`
+    : (footerText || avgFormatted);
+  setText('singleFooter', fullFooter);
 
   const fraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
   setText('singlePercent', formatPercent(fraction));
@@ -282,6 +290,7 @@ function render(ctx) {
       secondaryPercent: sumForKey(chartModel, 'secondaryPercent'),
       metric1: sumForKey(chartModel, 'metric1'),
       metric2: sumForKey(chartModel, 'metric2'),
+      footerAvg: sumForKey(chartModel, 'footerAvg'),
     };
 
     renderHeader(vp, chartModel);
@@ -324,6 +333,7 @@ const renderChart = async (ctx) => {
             { key: 'secondaryPercent', columns: measureCols[3] ? [measureCols[3]] : [] },
             { key: 'metric1', columns: measureCols[4] ? [measureCols[4]] : [] },
             { key: 'metric2', columns: measureCols[5] ? [measureCols[5]] : [] },
+            { key: 'footerAvg', columns: measureCols[6] ? [measureCols[6]] : [] },
           ],
         },
       ];
@@ -394,12 +404,20 @@ const renderChart = async (ctx) => {
             allowTimeSeriesColumns: false,
             maxColumnCount: 1,
           },
+          {
+            key: 'footerAvg',
+            label: 'Footer avg value (appended to footer line)',
+            allowAttributeColumns: true,
+            allowMeasureColumns: true,
+            allowTimeSeriesColumns: false,
+            maxColumnCount: 1,
+          },
         ],
       },
     ],
     visualPropEditorDefinition: {
       elements: [
-        { key: 'mode', type: 'radio', label: 'Card layout', defaultValue: 'single', values: ['single', 'split'] },
+        { key: 'mode', type: 'dropdown', label: 'Card layout', defaultValue: 'single', values: ['single', 'split'] },
         // All free-text labels default to a single space ('' is rejected
         // by the SDK). When left blank, the render code falls back to the
         // bound column's display name.
@@ -411,13 +429,20 @@ const renderChart = async (ctx) => {
           defaultValue: 'trending-up',
           values: ['trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie', 'none'],
         },
-        { key: 'primarySuffix', type: 'text', label: 'Suffix after big number (e.g. "accts")', defaultValue: ' ' },
+        { key: 'primarySuffix', type: 'text', label: 'Suffix after big number', defaultValue: 'accounts' },
         { key: 'primaryDescription', type: 'text', label: 'Description (single layout)', defaultValue: ' ' },
         { key: 'primaryFooter', type: 'text', label: 'Footer line (single layout)', defaultValue: ' ' },
+        {
+          key: 'footerAvgFormat',
+          type: 'dropdown',
+          label: 'Footer avg value format',
+          defaultValue: 'currency',
+          values: ['currency', 'number', 'percent'],
+        },
         { key: 'leftLabel', type: 'text', label: 'Left label (split, blank = use Primary value column name)', defaultValue: ' ' },
         {
           key: 'primaryPercentMode',
-          type: 'radio',
+          type: 'dropdown',
           label: 'Primary bar calculation',
           defaultValue: 'ratio',
           values: ['ratio', 'as-is'],
@@ -425,11 +450,11 @@ const renderChart = async (ctx) => {
         { key: 'primaryAccentColor', type: 'colorpicker', label: 'Primary percent text color', defaultValue: '#534AB7' },
         { key: 'primaryBarColor', type: 'colorpicker', label: 'Primary bar color', defaultValue: '#7F77DD' },
         { key: 'primaryAsNumber', type: 'checkbox', label: 'Format primary value as number (currency + K/M/B)', defaultValue: false },
-        { key: 'secondarySuffix', type: 'text', label: 'Secondary suffix (split)', defaultValue: ' ' },
+        { key: 'secondarySuffix', type: 'text', label: 'Secondary suffix (split)', defaultValue: 'accounts' },
         { key: 'rightLabel', type: 'text', label: 'Right label (split, blank = use Secondary value column name)', defaultValue: ' ' },
         {
           key: 'secondaryPercentMode',
-          type: 'radio',
+          type: 'dropdown',
           label: 'Secondary bar calculation',
           defaultValue: 'ratio',
           values: ['ratio', 'as-is'],
