@@ -1,6 +1,7 @@
 import {
   ChartToTSEvent,
   ColumnType,
+  TSToChartEvent,
   getChartContext,
 } from '@thoughtspot/ts-chart-sdk';
 import _ from 'lodash';
@@ -490,6 +491,19 @@ const renderChart = async (ctx) => {
       ],
     },
     onPropChange: () => renderChart(ctx),
+  });
+
+  // Explicit subscriptions so the chart re-renders on data/model changes
+  // without a full iframe refresh. Without these the SDK falls back to
+  // a full reload, which can leave the canvas showing stale numbers when
+  // a worksheet formula or column binding changes.
+  ctx.on(TSToChartEvent.DataUpdate, () => {
+    renderChart(ctx);
+    return { triggerRenderChart: false };
+  });
+  ctx.on(TSToChartEvent.ChartModelUpdate, () => {
+    renderChart(ctx);
+    return { triggerRenderChart: false };
   });
 
   renderChart(ctx);
