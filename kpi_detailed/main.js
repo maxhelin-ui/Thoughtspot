@@ -86,6 +86,26 @@ function clampPercentFill(fraction) {
   return Math.max(0, Math.min(100, fraction * 100));
 }
 
+// Formats a single value for a footer metric tile. `mode` is one of:
+//   - "currency" : numberFormat + currency prefix + K/M/B
+//   - "number"   : numberFormat + K/M/B, no currency
+//   - "percent"  : auto-detect fraction (<=1) vs pre-scaled, append "%"
+function formatMetricValue(value, mode, numberFormat, currencySymbol) {
+  if (value == null || isNaN(value)) return '';
+  if (mode === 'percent') {
+    const pct = Math.abs(value) <= 1 ? value * 100 : value;
+    try {
+      return numeral(pct).format(numberFormat || '0.[0]') + '%';
+    } catch {
+      return Math.round(pct) + '%';
+    }
+  }
+  if (mode === 'number') {
+    return formatNumber(value, numberFormat, '');
+  }
+  return formatNumber(value, numberFormat, currencySymbol);
+}
+
 function computeBarFraction(value, base, mode) {
   if (base == null || isNaN(base)) return null;
   if (mode === 'as-is') {
@@ -240,12 +260,12 @@ function renderFooterMetrics(vp, values, chartModel) {
 
   setText('metric1Label', label1);
   setText('metric1Value', hasMetric1
-    ? formatNumber(values.metric1, vp?.numberFormat, vp?.currencySymbol)
+    ? formatMetricValue(values.metric1, vp?.metric1Format ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
     : '');
 
   setText('metric2Label', label2);
   setText('metric2Value', hasMetric2
-    ? formatNumber(values.metric2, vp?.numberFormat, vp?.currencySymbol)
+    ? formatMetricValue(values.metric2, vp?.metric2Format ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
     : '');
 }
 
@@ -417,7 +437,21 @@ const renderChart = async (ctx) => {
         { key: 'secondaryAccentColor', type: 'colorpicker', label: 'Secondary percent text color', defaultValue: '#5F5E5A' },
         { key: 'secondaryBarColor', type: 'colorpicker', label: 'Secondary bar color', defaultValue: '#888780' },
         { key: 'metric1Label', type: 'text', label: 'Metric 1 label (blank = use column name)', defaultValue: ' ' },
+        {
+          key: 'metric1Format',
+          type: 'dropdown',
+          label: 'Metric 1 format',
+          defaultValue: 'currency',
+          values: ['currency', 'number', 'percent'],
+        },
         { key: 'metric2Label', type: 'text', label: 'Metric 2 label (blank = use column name)', defaultValue: ' ' },
+        {
+          key: 'metric2Format',
+          type: 'dropdown',
+          label: 'Metric 2 format',
+          defaultValue: 'currency',
+          values: ['currency', 'number', 'percent'],
+        },
         { key: 'numberFormat', type: 'text', label: 'Numeral.js format', defaultValue: '0,0.[0]' },
         { key: 'currencySymbol', type: 'text', label: 'Currency symbol prefix', defaultValue: '€' },
       ],
