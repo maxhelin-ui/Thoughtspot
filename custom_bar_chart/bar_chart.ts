@@ -620,7 +620,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                             sliceColorPickers.push({
                                 key:          `sliceColorHex_${s}`,
                                 type:         'text' as const,
-                                defaultValue: '',
+                                defaultValue: ' ',
                                 label:        `Slice ${s} hex (overrides picker)`,
                             });
                         });
@@ -635,13 +635,13 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'yAxisTitle',          type: 'text',        defaultValue: 'Value',   label: 'Y-axis title' },
                     { key: 'numberFormat',        type: 'text',        defaultValue: '0.[0]a',  label: 'Number format' },
                     { key: 'colorPositive',       type: 'colorpicker', defaultValue: '#378ADD', label: 'Positive bar colour' },
-                    { key: 'colorPositiveHex',    type: 'text',        defaultValue: '',        label: 'Positive bar hex (overrides picker)' },
+                    { key: 'colorPositiveHex',    type: 'text',        defaultValue: ' ',       label: 'Positive bar hex (overrides picker)' },
                     { key: 'colorNegative',       type: 'colorpicker', defaultValue: '#E24B4A', label: 'Negative bar colour' },
-                    { key: 'colorNegativeHex',    type: 'text',        defaultValue: '',        label: 'Negative bar hex (overrides picker)' },
+                    { key: 'colorNegativeHex',    type: 'text',        defaultValue: ' ',       label: 'Negative bar hex (overrides picker)' },
                     { key: 'colorTotal',          type: 'colorpicker', defaultValue: '#534AB7', label: 'Total bar colour' },
-                    { key: 'colorTotalHex',       type: 'text',        defaultValue: '',        label: 'Total bar hex (overrides picker)' },
+                    { key: 'colorTotalHex',       type: 'text',        defaultValue: ' ',       label: 'Total bar hex (overrides picker)' },
                     { key: 'connectorColor',      type: 'colorpicker', defaultValue: '#bbbbbb', label: 'Connector line colour' },
-                    { key: 'connectorColorHex',   type: 'text',        defaultValue: '',        label: 'Connector line hex (overrides picker)' },
+                    { key: 'connectorColorHex',   type: 'text',        defaultValue: ' ',       label: 'Connector line hex (overrides picker)' },
                     { key: 'connectorWidth',      type: 'number',      defaultValue: 1,         label: 'Connector line width' },
                     { key: 'connectorStyle',      type: 'dropdown',    defaultValue: 'Dot',     values: ['Solid', 'Dot', 'Dash', 'DashDot', 'LongDash'], label: 'Connector line style' },
                     { key: 'showDataLabels',      type: 'checkbox',    defaultValue: true,      label: 'Show data labels' },
