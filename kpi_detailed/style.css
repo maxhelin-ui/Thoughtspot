@@ -30,7 +30,6 @@ body {
 
 .hidden { display: none !important; }
 
-/* Card shell */
 .ts-card {
   background: var(--ts-bg-primary);
   border: 0.5px solid var(--ts-border);
@@ -43,7 +42,6 @@ body {
   gap: 12px;
 }
 
-/* Header */
 .ts-card-header {
   display: flex;
   align-items: center;
@@ -55,21 +53,33 @@ body {
   letter-spacing: 0.05em;
 }
 
-.ts-card-header i {
-  font-size: 16px;
+.ts-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
   color: var(--ts-text-secondary);
+}
+
+.ts-icon svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
 }
 
 .ts-card-title { display: inline-block; }
 
-/* Inner detail card (the recessed grey block) */
 .ts-detail-card {
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
   padding: 16px;
 }
 
-/* Stat sizing */
 .ts-stat-row {
   display: flex;
   align-items: baseline;
@@ -107,7 +117,6 @@ body {
   margin-top: 4px;
 }
 
-/* Progress bar */
 .ts-progress-row {
   display: flex;
   align-items: center;
@@ -139,7 +148,6 @@ body {
   text-align: right;
 }
 
-/* Split layout */
 .ts-split-grid {
   display: flex;
   gap: 1rem;
@@ -164,7 +172,6 @@ body {
   align-self: stretch;
 }
 
-/* Footer metric tiles */
 .ts-footer-metrics {
   display: flex;
   gap: 8px;
@@ -191,7 +198,6 @@ body {
   color: var(--ts-text-primary);
 }
 
-/* Dense / small embed sizing */
 @media (max-width: 360px) {
   .ts-stat-big { font-size: 24px; }
   .ts-stat-medium { font-size: 20px; }
