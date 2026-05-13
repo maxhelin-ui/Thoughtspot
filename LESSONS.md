@@ -19,6 +19,9 @@ Compiled from building the waterfall chart. Read before starting a new viz.
 
 - `package.json` build script should be just `"vite build"`. Adding `tsc &&` upfront breaks because tsc in bundler mode rejects the SDK's internal paths.
 - If the chart lives in a subfolder, Vercel uses *that* folder's `package.json`.
+- **Every chart subfolder needs its own `package.json` with `vite build`** so Vercel bundles it. If you ship just `index.html` + `main.js` with no build, the browser sees the raw `import { ... } from '@thoughtspot/ts-chart-sdk'` and throws `Failed to resolve module specifier "@thoughtspot/ts-chart-sdk". Relative references must start with either "/", "./", or "../"`. Symptom: chart never renders, console shows that error. Fix: add a subfolder `package.json` (mirror `custom_bar_chart/package.json` — vite as devDep, sdk + lodash + numeral as deps) and re-deploy.
+- **Folder names: snake_case, no spaces.** A folder like `KPI - Detailed/` becomes `/KPI%20-%20Detailed/` in the BYOC URL and can break routing in deployed iframes. Stick to `kpi_detailed/` like the other charts.
+- **No external CDN scripts/styles if the deploy uses `default-src 'self'` CSP.** Either bundle the dependency from npm (preferred — works under any CSP) or relax the CSP. Icon webfonts and stylesheets from a CDN will silently fail under the default policy. Inline SVG icons are the safe default.
 - `vercel.json` needs `frame-ancestors *` (or specific TS domain) for the iframe to load.
 - Vercel Deployment Protection re-enables itself after every deploy by default — disable in the dashboard.
 
@@ -64,6 +67,8 @@ The `index.html` `#buttonContainer` div is mounted above the chart. Use it for d
 ## Debug checklist when the chart doesn't show
 
 1. Open the chart URL directly in a browser tab — if it 403s, it's deployment protection.
-2. If it loads but errors, check devtools console.
+2. If it loads but errors, check devtools console. Two errors to recognise:
+   - `Failed to resolve module specifier "@thoughtspot/ts-chart-sdk"` → chart isn't being bundled. Subfolder needs its own `package.json` + `vite build`.
+   - CSP `Refused to load the stylesheet/script` → external CDN blocked by `default-src 'self'`. Bundle from npm or drop the dependency.
 3. If TS shows nothing, check Vercel build log for a failed deploy.
 4. Verify the custom viz is pointed at the correct Vercel URL in TS settings.
