@@ -1,0 +1,13 @@
+{
+    "defaultLocale": "en_US",
+    "name": "KPI - Detailed",
+    "description": "Detailed KPI card with progress bars and footer metrics. Configurable as single-stat (e.g. Renewal uplift / Indexation) or split two-stat (e.g. Multi-year vs Single-year).",
+    "author": {
+        "name": "Your Name",
+        "email": "your.email@example.com",
+        "org": "Your Organization"
+    },
+    "sourceUrl": "TBD",
+    "iconUrl": "https://cdn-icons-png.flaticon.com/512/1828/1828817.png",
+    "manifestVersion": "v0.1"
+}

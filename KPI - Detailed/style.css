@@ -1,0 +1,200 @@
+/* KPI - Detailed
+   ThoughtSpot-style detailed KPI card.
+   Color tokens follow ThoughtSpot defaults; runtime overrides come from main.js. */
+
+:root {
+  --ts-bg-primary: #FFFFFF;
+  --ts-bg-secondary: #F7F8FA;
+  --ts-bg-track: #EAEDF2;
+  --ts-border: #EAEDF2;
+  --ts-text-primary: #1c2330;
+  --ts-text-secondary: #777e8b;
+  --ts-text-tertiary: #9CA3AF;
+  --ts-radius-sm: 4px;
+  --ts-radius-md: 8px;
+  --ts-radius-lg: 12px;
+  --ts-accent: #534AB7;
+  --ts-accent-bar: #7F77DD;
+  --ts-secondary-accent: #5F5E5A;
+  --ts-secondary-accent-bar: #888780;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background-color: var(--ts-bg-primary);
+  color: var(--ts-text-primary);
+  padding: 12px;
+}
+
+.hidden { display: none !important; }
+
+/* Card shell */
+.ts-card {
+  background: var(--ts-bg-primary);
+  border: 0.5px solid var(--ts-border);
+  border-radius: var(--ts-radius-lg);
+  padding: 20px;
+  width: 100%;
+  max-width: 520px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* Header */
+.ts-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ts-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.ts-card-header i {
+  font-size: 16px;
+  color: var(--ts-text-secondary);
+}
+
+.ts-card-title { display: inline-block; }
+
+/* Inner detail card (the recessed grey block) */
+.ts-detail-card {
+  background: var(--ts-bg-secondary);
+  border-radius: var(--ts-radius-md);
+  padding: 16px;
+}
+
+/* Stat sizing */
+.ts-stat-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.ts-stat-big {
+  font-size: 28px;
+  font-weight: 500;
+  color: var(--ts-text-primary);
+  line-height: 1.1;
+}
+
+.ts-stat-medium {
+  font-size: 24px;
+  font-weight: 500;
+  color: var(--ts-text-primary);
+  line-height: 1.1;
+}
+
+.ts-stat-suffix {
+  font-size: 14px;
+  color: var(--ts-text-secondary);
+}
+
+.ts-stat-desc {
+  font-size: 13px;
+  color: var(--ts-text-secondary);
+  margin-top: 4px;
+}
+
+.ts-stat-footer {
+  font-size: 12px;
+  color: var(--ts-text-tertiary);
+  margin-top: 4px;
+}
+
+/* Progress bar */
+.ts-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ts-progress-track {
+  flex: 1;
+  height: 6px;
+  background: var(--ts-bg-track);
+  border-radius: 99px;
+  overflow: hidden;
+}
+
+.ts-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--ts-accent-bar);
+  border-radius: 99px;
+  transition: width 240ms ease-out;
+}
+
+.ts-progress-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ts-accent);
+  min-width: 36px;
+  text-align: right;
+}
+
+/* Split layout */
+.ts-split-grid {
+  display: flex;
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.ts-split-side {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.ts-side-label {
+  font-size: 12px;
+  color: var(--ts-text-secondary);
+  margin-bottom: 4px;
+}
+
+.ts-split-divider {
+  width: 0.5px;
+  background: var(--ts-border);
+  align-self: stretch;
+}
+
+/* Footer metric tiles */
+.ts-footer-metrics {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ts-metric {
+  flex: 1;
+  min-width: 100px;
+  background: var(--ts-bg-secondary);
+  border-radius: var(--ts-radius-md);
+  padding: 12px 14px;
+}
+
+.ts-metric-label {
+  font-size: 12px;
+  color: var(--ts-text-secondary);
+  margin-bottom: 4px;
+}
+
+.ts-metric-value {
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--ts-text-primary);
+}
+
+/* Dense / small embed sizing */
+@media (max-width: 360px) {
+  .ts-stat-big { font-size: 24px; }
+  .ts-stat-medium { font-size: 20px; }
+  .ts-card { padding: 14px; }
+  .ts-detail-card { padding: 12px; }
+}
