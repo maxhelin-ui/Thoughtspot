@@ -207,9 +207,16 @@ function renderSingle(vp, values, chartModel) {
   const avgFormatted = values.footerAvg != null
     ? formatMetricValue(values.footerAvg, vp?.footerAvgFormat ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
     : '';
-  const fullFooter = footerText && avgFormatted
-    ? `${footerText} ${avgFormatted}`
-    : (footerText || avgFormatted);
+
+  let avgPart = '';
+  if (avgFormatted) {
+    const avgLabel = labelOrColumnName(vp?.footerAvgLabel, getColumnName(chartModel, 'footerAvg'));
+    avgPart = avgLabel ? `${avgLabel} ${avgFormatted}` : avgFormatted;
+  }
+
+  const fullFooter = footerText && avgPart
+    ? `${footerText} · ${avgPart}`
+    : (footerText || avgPart);
   setText('singleFooter', fullFooter);
 
   const fraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
@@ -432,6 +439,7 @@ const renderChart = async (ctx) => {
         { key: 'primarySuffix', type: 'text', label: 'Suffix after big number', defaultValue: 'accounts' },
         { key: 'primaryDescription', type: 'text', label: 'Description (single layout)', defaultValue: ' ' },
         { key: 'primaryFooter', type: 'text', label: 'Footer line (single layout)', defaultValue: ' ' },
+        { key: 'footerAvgLabel', type: 'text', label: 'Footer avg label (blank = use bound column name)', defaultValue: ' ' },
         {
           key: 'footerAvgFormat',
           type: 'dropdown',
