@@ -202,7 +202,8 @@ function renderSingle(vp, values, chartModel) {
 
   setText('singleValue', formatted);
   setText('singleSuffix', vp?.primarySuffix ?? '');
-  setText('singleDescription', (vp?.primaryDescription ?? '').trim());
+  const desc = (vp?.primaryDescription ?? '').trim();
+  setText('singleDescription', desc ? `· ${desc}` : '');
 
   const footerText = (vp?.primaryFooter ?? '').trim();
   const avgFormatted = values.footerAvg != null
