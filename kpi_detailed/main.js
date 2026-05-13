@@ -13,10 +13,23 @@ import numeral from 'numeral';
  *   - single-stat (e.g. Renewal uplift, Indexation)
  *   - split two-stat (e.g. Multi-year vs Single-year)
  *
- * Six measure slots: primary value / primary percent / secondary value /
- * secondary percent / footer metric 1 / footer metric 2. Everything else
- * (labels, suffixes, colors, icon, layout, formatting) is driven by visual
- * props.
+ * Six measure / formula slots:
+ *   - Primary value (numerator)
+ *   - Primary percent base
+ *   - Secondary value (numerator, split layout)
+ *   - Secondary percent base (split layout)
+ *   - Footer metric 1
+ *   - Footer metric 2
+ *
+ * The progress bar fills based on `primaryPercentMode`:
+ *   - "ratio" (default): bar = primaryValue / primaryPercent  (the typical
+ *      "41 uplifted accounts / 113 closed = 36%" pattern)
+ *   - "as-is": treat primaryPercent as the percent itself (fraction 0-1 or
+ *      pre-scaled 0-100)
+ *
+ * Label defaults: when the user hasn't typed a custom label, the chart
+ * falls back to the bound column's display name (e.g. the card title
+ * mirrors the Primary value column name).
  */
 
 // ---------- icons (inline SVG, no external font) ----------
@@ -58,40 +71,62 @@ function formatNumber(value, format, currency) {
   return (currency || '') + out;
 }
 
-function formatPercent(value) {
-  if (value == null || isNaN(value)) return '';
-  // Accept either fractions (0-1) or pre-scaled percents (0-100).
-  const pct = Math.abs(value) <= 1 ? value * 100 : value;
+// formatPercent / clampPercentFill operate on a fraction (e.g. 0.36 = 36%).
+function formatPercent(fraction) {
+  if (fraction == null || isNaN(fraction)) return '';
   try {
-    return numeral(pct).format('0') + '%';
+    return numeral(fraction * 100).format('0') + '%';
   } catch {
-    return Math.round(pct) + '%';
+    return Math.round(fraction * 100) + '%';
   }
 }
 
-function clampPercentFill(value) {
-  if (value == null || isNaN(value)) return 0;
-  const pct = Math.abs(value) <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, pct));
+function clampPercentFill(fraction) {
+  if (fraction == null || isNaN(fraction)) return 0;
+  return Math.max(0, Math.min(100, fraction * 100));
+}
+
+function computeBarFraction(value, base, mode) {
+  if (base == null || isNaN(base)) return null;
+  if (mode === 'as-is') {
+    // Accept a fraction (0..1) or a pre-scaled percent (0..100).
+    return Math.abs(base) <= 1 ? base : base / 100;
+  }
+  // 'ratio' mode (default): bar = value / base.
+  if (value == null || isNaN(value) || base === 0) return null;
+  return value / base;
 }
 
 // ---------- data access ----------
+
+function toNumber(v) {
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return isNaN(n) ? null : n;
+}
 
 function getDataForColumn(column, dataArr) {
   if (!column || !dataArr) return [];
   const idx = _.findIndex(dataArr.columns ?? [], (colId) => column.id === colId);
   if (idx === -1) return [];
-  return _.map(dataArr.dataValue ?? [], (row) => row?.[idx]);
+  return _.map(dataArr.dataValue ?? [], (row) => toNumber(row?.[idx]));
+}
+
+function getDimColumn(chartModel, key) {
+  const dims = chartModel?.config?.chartConfig?.[0]?.dimensions ?? [];
+  return dims.find((d) => d?.key === key)?.columns?.[0] ?? null;
+}
+
+function getColumnName(chartModel, key) {
+  return getDimColumn(chartModel, key)?.name ?? '';
 }
 
 function sumForKey(chartModel, key) {
   const dataArr = chartModel?.data?.[0]?.data ?? null;
   if (!dataArr) return null;
-  const dims = chartModel?.config?.chartConfig?.[0]?.dimensions ?? [];
-  const dim = dims.find((d) => d?.key === key);
-  const col = dim?.columns?.[0];
+  const col = getDimColumn(chartModel, key);
   if (!col) return null;
-  const values = getDataForColumn(col, dataArr);
+  const values = getDataForColumn(col, dataArr).filter((v) => v != null);
   if (!values.length) return null;
   return values.length === 1 ? values[0] : _.sum(values);
 }
@@ -117,8 +152,17 @@ function setHidden(id, hidden) {
   el.classList.toggle('hidden', hidden);
 }
 
-function renderHeader(vp) {
-  setText('cardTitle', (vp?.cardTitle ?? '').trim());
+// Use the user's typed value if non-empty, else fall back to the bound
+// column name, else ''. This is why the editor defaults are blank spaces
+// rather than hard-coded copy.
+function labelOrColumnName(userValue, columnName) {
+  const trimmed = (userValue ?? '').trim();
+  return trimmed !== '' ? trimmed : (columnName ?? '');
+}
+
+function renderHeader(vp, chartModel) {
+  const title = labelOrColumnName(vp?.cardTitle, getColumnName(chartModel, 'primaryValue'));
+  setText('cardTitle', title);
   const iconEl = document.getElementById('cardIcon');
   if (iconEl) {
     const key = vp?.icon ?? 'trending-up';
@@ -127,7 +171,7 @@ function renderHeader(vp) {
   }
 }
 
-function renderSingle(vp, values) {
+function renderSingle(vp, values, chartModel) {
   setHidden('singleLayout', false);
   setHidden('splitLayout', true);
 
@@ -139,18 +183,20 @@ function renderSingle(vp, values) {
   setText('singleSuffix', vp?.primarySuffix ?? '');
   setText('singleDescription', (vp?.primaryDescription ?? '').trim());
   setText('singleFooter', (vp?.primaryFooter ?? '').trim());
-  setText('singlePercent', formatPercent(values.primaryPercent));
+
+  const fraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
+  setText('singlePercent', formatPercent(fraction));
 
   const fill = document.getElementById('singleBarFill');
   if (fill) {
-    fill.style.width = clampPercentFill(values.primaryPercent) + '%';
+    fill.style.width = clampPercentFill(fraction) + '%';
     fill.style.background = 'var(--ts-accent-bar)';
   }
   const label = document.getElementById('singlePercent');
   if (label) label.style.color = 'var(--ts-accent)';
 }
 
-function renderSplit(vp, values) {
+function renderSplit(vp, values, chartModel) {
   setHidden('singleLayout', true);
   setHidden('splitLayout', false);
 
@@ -158,34 +204,36 @@ function renderSplit(vp, values) {
     ? formatNumber(v, vp?.numberFormat, vp?.currencySymbol)
     : (v == null ? '' : String(Math.round(v)));
 
-  setText('leftLabel', (vp?.leftLabel ?? '').trim());
+  setText('leftLabel', labelOrColumnName(vp?.leftLabel, getColumnName(chartModel, 'primaryValue')));
   setText('leftValue', fmt(values.primaryValue));
   setText('leftSuffix', vp?.primarySuffix ?? '');
-  setText('leftPercent', formatPercent(values.primaryPercent));
+  const leftFraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
+  setText('leftPercent', formatPercent(leftFraction));
   const leftFill = document.getElementById('leftBarFill');
   if (leftFill) {
-    leftFill.style.width = clampPercentFill(values.primaryPercent) + '%';
+    leftFill.style.width = clampPercentFill(leftFraction) + '%';
     leftFill.style.background = 'var(--ts-accent-bar)';
   }
-  const leftLabel = document.getElementById('leftPercent');
-  if (leftLabel) leftLabel.style.color = 'var(--ts-accent)';
+  const leftLabelEl = document.getElementById('leftPercent');
+  if (leftLabelEl) leftLabelEl.style.color = 'var(--ts-accent)';
 
-  setText('rightLabel', (vp?.rightLabel ?? '').trim());
+  setText('rightLabel', labelOrColumnName(vp?.rightLabel, getColumnName(chartModel, 'secondaryValue')));
   setText('rightValue', fmt(values.secondaryValue));
-  setText('rightSuffix', (vp?.secondarySuffix ?? vp?.primarySuffix ?? ''));
-  setText('rightPercent', formatPercent(values.secondaryPercent));
+  setText('rightSuffix', vp?.secondarySuffix ?? vp?.primarySuffix ?? '');
+  const rightFraction = computeBarFraction(values.secondaryValue, values.secondaryPercent, vp?.secondaryPercentMode ?? 'ratio');
+  setText('rightPercent', formatPercent(rightFraction));
   const rightFill = document.getElementById('rightBarFill');
   if (rightFill) {
-    rightFill.style.width = clampPercentFill(values.secondaryPercent) + '%';
+    rightFill.style.width = clampPercentFill(rightFraction) + '%';
     rightFill.style.background = 'var(--ts-secondary-accent-bar)';
   }
-  const rightLabel = document.getElementById('rightPercent');
-  if (rightLabel) rightLabel.style.color = 'var(--ts-secondary-accent)';
+  const rightLabelEl = document.getElementById('rightPercent');
+  if (rightLabelEl) rightLabelEl.style.color = 'var(--ts-secondary-accent)';
 }
 
-function renderFooterMetrics(vp, values) {
-  const label1 = (vp?.metric1Label ?? '').trim();
-  const label2 = (vp?.metric2Label ?? '').trim();
+function renderFooterMetrics(vp, values, chartModel) {
+  const label1 = labelOrColumnName(vp?.metric1Label, getColumnName(chartModel, 'metric1'));
+  const label2 = labelOrColumnName(vp?.metric2Label, getColumnName(chartModel, 'metric2'));
   const hasMetric1 = values.metric1 != null && label1 !== '';
   const hasMetric2 = values.metric2 != null && label2 !== '';
   setHidden('footerMetrics', !(hasMetric1 || hasMetric2));
@@ -203,8 +251,6 @@ function renderFooterMetrics(vp, values) {
 
 function render(ctx) {
   const maybeModel = ctx.getChartModel();
-  // The SDK has returned either a Promise or a sync value depending on version,
-  // so normalize both cases.
   return Promise.resolve(maybeModel).then((chartModel) => {
     const vp = chartModel?.visualProps ?? {};
     applyCardStyles(vp);
@@ -218,20 +264,18 @@ function render(ctx) {
       metric2: sumForKey(chartModel, 'metric2'),
     };
 
-    renderHeader(vp);
+    renderHeader(vp, chartModel);
 
     if ((vp?.mode ?? 'single') === 'split') {
-      renderSplit(vp, values);
+      renderSplit(vp, values, chartModel);
     } else {
-      renderSingle(vp, values);
+      renderSingle(vp, values, chartModel);
     }
 
-    renderFooterMetrics(vp, values);
+    renderFooterMetrics(vp, values, chartModel);
   });
 }
 
-// Render event order: emit RenderComplete only after success.
-// RenderError is reserved for the catch path.
 const renderChart = async (ctx) => {
   try {
     ctx.emitEvent(ChartToTSEvent.RenderStart);
@@ -280,20 +324,20 @@ const renderChart = async (ctx) => {
         key: 'column',
         label: 'Measures',
         descriptionText:
-          'Bind the measures that drive this card. Primary value is the big number; Primary percent fills its bar. Secondary measures are used by the Split layout. Footer metrics fill the two small tiles.',
+          'Bind measures or formulas. By default the bar = Primary value / Primary percent base (e.g. uplifted accounts / total closed accounts). Change "Percent calculation" in the visual props if your base column is already a percent. Secondary slots are used by the Split layout.',
         columnSections: [
           {
             key: 'primaryValue',
-            label: 'Primary value (big number)',
-            allowAttributeColumns: false,
+            label: 'Primary value (numerator / big number)',
+            allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
             maxColumnCount: 1,
           },
           {
             key: 'primaryPercent',
-            label: 'Primary percent (drives bar)',
-            allowAttributeColumns: false,
+            label: 'Primary percent base (denominator that drives the bar)',
+            allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
             maxColumnCount: 1,
@@ -301,15 +345,15 @@ const renderChart = async (ctx) => {
           {
             key: 'secondaryValue',
             label: 'Secondary value (split layout)',
-            allowAttributeColumns: false,
+            allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
             maxColumnCount: 1,
           },
           {
             key: 'secondaryPercent',
-            label: 'Secondary percent (split layout)',
-            allowAttributeColumns: false,
+            label: 'Secondary percent base (split layout)',
+            allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
             maxColumnCount: 1,
@@ -317,7 +361,7 @@ const renderChart = async (ctx) => {
           {
             key: 'metric1',
             label: 'Footer metric 1',
-            allowAttributeColumns: false,
+            allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
             maxColumnCount: 1,
@@ -325,7 +369,7 @@ const renderChart = async (ctx) => {
           {
             key: 'metric2',
             label: 'Footer metric 2',
-            allowAttributeColumns: false,
+            allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
             maxColumnCount: 1,
@@ -336,7 +380,10 @@ const renderChart = async (ctx) => {
     visualPropEditorDefinition: {
       elements: [
         { key: 'mode', type: 'radio', label: 'Card layout', defaultValue: 'single', values: ['single', 'split'] },
-        { key: 'cardTitle', type: 'text', label: 'Card title', defaultValue: 'Renewal uplift' },
+        // All free-text labels default to a single space ('' is rejected
+        // by the SDK). When left blank, the render code falls back to the
+        // bound column's display name.
+        { key: 'cardTitle', type: 'text', label: 'Card title (blank = use Primary value column name)', defaultValue: ' ' },
         {
           key: 'icon',
           type: 'dropdown',
@@ -344,19 +391,33 @@ const renderChart = async (ctx) => {
           defaultValue: 'trending-up',
           values: ['trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie', 'none'],
         },
-        { key: 'primarySuffix', type: 'text', label: 'Suffix after big number', defaultValue: 'accts' },
-        { key: 'primaryDescription', type: 'text', label: 'Description (single layout)', defaultValue: 'with renewal uplift applied' },
-        { key: 'primaryFooter', type: 'text', label: 'Footer line (single layout)', defaultValue: 'of closed accounts' },
-        { key: 'leftLabel', type: 'text', label: 'Left label (split layout)', defaultValue: 'Multi-year' },
+        { key: 'primarySuffix', type: 'text', label: 'Suffix after big number (e.g. "accts")', defaultValue: ' ' },
+        { key: 'primaryDescription', type: 'text', label: 'Description (single layout)', defaultValue: ' ' },
+        { key: 'primaryFooter', type: 'text', label: 'Footer line (single layout)', defaultValue: ' ' },
+        { key: 'leftLabel', type: 'text', label: 'Left label (split, blank = use Primary value column name)', defaultValue: ' ' },
+        {
+          key: 'primaryPercentMode',
+          type: 'radio',
+          label: 'Primary bar calculation',
+          defaultValue: 'ratio',
+          values: ['ratio', 'as-is'],
+        },
         { key: 'primaryAccentColor', type: 'colorpicker', label: 'Primary percent text color', defaultValue: '#534AB7' },
         { key: 'primaryBarColor', type: 'colorpicker', label: 'Primary bar color', defaultValue: '#7F77DD' },
         { key: 'primaryAsNumber', type: 'checkbox', label: 'Format primary value as number (currency + K/M/B)', defaultValue: false },
-        { key: 'secondarySuffix', type: 'text', label: 'Secondary suffix (split)', defaultValue: 'accts' },
-        { key: 'rightLabel', type: 'text', label: 'Right label (split)', defaultValue: 'Single-year' },
+        { key: 'secondarySuffix', type: 'text', label: 'Secondary suffix (split)', defaultValue: ' ' },
+        { key: 'rightLabel', type: 'text', label: 'Right label (split, blank = use Secondary value column name)', defaultValue: ' ' },
+        {
+          key: 'secondaryPercentMode',
+          type: 'radio',
+          label: 'Secondary bar calculation',
+          defaultValue: 'ratio',
+          values: ['ratio', 'as-is'],
+        },
         { key: 'secondaryAccentColor', type: 'colorpicker', label: 'Secondary percent text color', defaultValue: '#5F5E5A' },
         { key: 'secondaryBarColor', type: 'colorpicker', label: 'Secondary bar color', defaultValue: '#888780' },
-        { key: 'metric1Label', type: 'text', label: 'Metric 1 label', defaultValue: 'Total uplift ARR' },
-        { key: 'metric2Label', type: 'text', label: 'Metric 2 label', defaultValue: 'Avg uplift %' },
+        { key: 'metric1Label', type: 'text', label: 'Metric 1 label (blank = use column name)', defaultValue: ' ' },
+        { key: 'metric2Label', type: 'text', label: 'Metric 2 label (blank = use column name)', defaultValue: ' ' },
         { key: 'numberFormat', type: 'text', label: 'Numeral.js format', defaultValue: '0,0.[0]' },
         { key: 'currencySymbol', type: 'text', label: 'Currency symbol prefix', defaultValue: '€' },
       ],
