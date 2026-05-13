@@ -142,6 +142,12 @@ function getColumnName(chartModel, key) {
   return getDimColumn(chartModel, key)?.name ?? '';
 }
 
+// Aggregate this column's values into a single number for the card.
+// Single-row results (the common case for a KPI with no group-by) just
+// return that one value. Multi-row results get aggregated according to
+// the column's declared aggregationType — averaging an AVERAGE/MEDIAN
+// column instead of naively summing it, which is why the chart number
+// could disagree with the worksheet table.
 function sumForKey(chartModel, key) {
   const dataArr = chartModel?.data?.[0]?.data ?? null;
   if (!dataArr) return null;
@@ -149,7 +155,20 @@ function sumForKey(chartModel, key) {
   if (!col) return null;
   const values = getDataForColumn(col, dataArr).filter((v) => v != null);
   if (!values.length) return null;
-  return values.length === 1 ? values[0] : _.sum(values);
+  if (values.length === 1) return values[0];
+
+  const aggName = String(col.aggregationType ?? '').toUpperCase();
+  const isAvgLike =
+    aggName.includes('AVERAGE') ||
+    aggName.includes('MEDIAN') ||
+    aggName.includes('PERCENTILE');
+  const isMin = aggName.includes('MIN');
+  const isMax = aggName.includes('MAX');
+
+  if (isAvgLike) return _.sum(values) / values.length;
+  if (isMin) return _.min(values);
+  if (isMax) return _.max(values);
+  return _.sum(values);
 }
 
 // ---------- rendering ----------
@@ -286,9 +305,17 @@ function renderFooterMetrics(vp, values, chartModel) {
     : '');
 }
 
-function render(ctx) {
-  const maybeModel = ctx.getChartModel();
-  return Promise.resolve(maybeModel).then((chartModel) => {
+let lastModel = null;
+
+function render(ctx, providedModel) {
+  // When DataUpdate / ChartModelUpdate fires we pass the fresh model/data
+  // straight in; otherwise fetch from ctx. Avoids races where
+  // getChartModel() returns stale numbers after a formula edit.
+  const modelPromise = providedModel
+    ? Promise.resolve(providedModel)
+    : Promise.resolve(ctx.getChartModel());
+  return modelPromise.then((chartModel) => {
+    lastModel = chartModel;
     const vp = chartModel?.visualProps ?? {};
     applyCardStyles(vp);
 
@@ -314,10 +341,10 @@ function render(ctx) {
   });
 }
 
-const renderChart = async (ctx) => {
+const renderChart = async (ctx, providedModel) => {
   try {
     ctx.emitEvent(ChartToTSEvent.RenderStart);
-    await render(ctx);
+    await render(ctx, providedModel);
     ctx.emitEvent(ChartToTSEvent.RenderComplete);
   } catch (error) {
     console.error('KPI - Detailed render error:', error);
@@ -327,26 +354,26 @@ const renderChart = async (ctx) => {
 
 (async () => {
   const ctx = await getChartContext({
-    getDefaultChartConfig: (chartModel) => {
-      const measureCols = _.filter(
-        chartModel?.columns ?? [],
-        (col) => col?.type === ColumnType.MEASURE,
-      );
-      return [
-        {
-          key: 'column',
-          dimensions: [
-            { key: 'primaryValue', columns: measureCols[0] ? [measureCols[0]] : [] },
-            { key: 'primaryPercent', columns: measureCols[1] ? [measureCols[1]] : [] },
-            { key: 'secondaryValue', columns: measureCols[2] ? [measureCols[2]] : [] },
-            { key: 'secondaryPercent', columns: measureCols[3] ? [measureCols[3]] : [] },
-            { key: 'metric1', columns: measureCols[4] ? [measureCols[4]] : [] },
-            { key: 'metric2', columns: measureCols[5] ? [measureCols[5]] : [] },
-            { key: 'footerAvg', columns: measureCols[6] ? [measureCols[6]] : [] },
-          ],
-        },
-      ];
-    },
+    // Leave every slot empty by default. Previously this auto-bound
+    // measureCols[0..6] to slots in order, which meant adding or removing
+    // a column in the worksheet would shift every binding (e.g. removing
+    // the first measure would slide everything one slot to the left).
+    // Empty defaults force the user to bind each slot explicitly so the
+    // layout stays exactly where they put it, regardless of worksheet edits.
+    getDefaultChartConfig: () => [
+      {
+        key: 'column',
+        dimensions: [
+          { key: 'primaryValue', columns: [] },
+          { key: 'primaryPercent', columns: [] },
+          { key: 'secondaryValue', columns: [] },
+          { key: 'secondaryPercent', columns: [] },
+          { key: 'metric1', columns: [] },
+          { key: 'metric2', columns: [] },
+          { key: 'footerAvg', columns: [] },
+        ],
+      },
+    ],
     getQueriesFromChartConfig: (chartConfig) =>
       (chartConfig ?? []).map((config) =>
         _.reduce(
@@ -494,16 +521,19 @@ const renderChart = async (ctx) => {
     onPropChange: () => renderChart(ctx),
   });
 
-  // Explicit subscriptions so the chart re-renders on data/model changes
-  // without a full iframe refresh. Without these the SDK falls back to
-  // a full reload, which can leave the canvas showing stale numbers when
-  // a worksheet formula or column binding changes.
-  ctx.on(TSToChartEvent.DataUpdate, () => {
-    renderChart(ctx);
+  // Use the event payload directly when the SDK pushes an update — the
+  // cached chartModel returned by ctx.getChartModel() can lag behind the
+  // payload by a tick, which is how a formula edit ended up rendering a
+  // stale number.
+  ctx.on(TSToChartEvent.DataUpdate, (payload) => {
+    const merged = lastModel
+      ? { ...lastModel, data: payload?.data ?? lastModel.data }
+      : null;
+    renderChart(ctx, merged);
     return { triggerRenderChart: false };
   });
-  ctx.on(TSToChartEvent.ChartModelUpdate, () => {
-    renderChart(ctx);
+  ctx.on(TSToChartEvent.ChartModelUpdate, (payload) => {
+    renderChart(ctx, payload?.chartModel);
     return { triggerRenderChart: false };
   });
 
