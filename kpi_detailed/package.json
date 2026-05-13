@@ -1,0 +1,21 @@
+{
+    "name": "kpi-detailed",
+    "version": "1.0.0",
+    "description": "ThoughtSpot BYOC: KPI - Detailed card",
+    "main": "dist/index.html",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "author": "Max",
+    "license": "ISC",
+    "devDependencies": {
+        "vite": "^4.3.5"
+    },
+    "dependencies": {
+        "@thoughtspot/ts-chart-sdk": "latest",
+        "lodash": "^4.17.21",
+        "numeral": "^2.0.6"
+    }
+}
