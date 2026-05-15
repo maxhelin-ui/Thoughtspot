@@ -261,7 +261,8 @@ function render(ctx: CustomChartContext) {
     ];
 
     // When slicing is enabled, each middle bar splits into per-slice columnrange segments.
-    // Same-sign within a column is assumed, so segments stack cleanly from running_total_before.
+    // Same-sign within a column is assumed. Stack from the bar's low edge upward using
+    // |contribution|, so the first slice is always at the bottom regardless of direction.
     const sliceSeries: any[] = showSlicing ? sliceNames.map((sliceName, sIdx) => {
         const data = categories.map((_, catIdx) => {
             if (catIdx === 0 || catIdx === categories.length - 1) {
@@ -270,19 +271,26 @@ function render(ctx: CustomChartContext) {
             const deltaIdx     = catIdx - 1;
             const yColIdx      = deltaIdx + 1;
             const contribs     = sliceByColumn[yColIdx] ?? [];
-            let stackBase      = runningTotals[deltaIdx];
-            for (let i = 0; i < sIdx; i++) stackBase += contribs[i] ?? 0;
-            const contribution = contribs[sIdx] ?? 0;
-            const segStart     = stackBase;
-            const segEnd       = stackBase + contribution;
+            const before       = runningTotals[deltaIdx];
+            const after        = runningTotals[deltaIdx + 1];
+            const lowY         = Math.min(before, after);
+            let stackBase      = lowY;
+            let signedCumul    = 0;
+            for (let i = 0; i < sIdx; i++) {
+                stackBase   += Math.abs(contribs[i] ?? 0);
+                signedCumul += contribs[i] ?? 0;
+            }
+            const contribution      = contribs[sIdx] ?? 0;
+            const runningTotalAfter = before + signedCumul + contribution;
             return {
-                x:            catIdx,
-                low:          Math.min(segStart, segEnd),
-                high:         Math.max(segStart, segEnd),
+                x:                 catIdx,
+                low:               stackBase,
+                high:              stackBase + Math.abs(contribution),
                 contribution,
+                runningTotalAfter,
                 sliceName,
-                isTotal:      false,
-                isSlice:      true,
+                isTotal:           false,
+                isSlice:           true,
             };
         });
         return {
@@ -384,7 +392,7 @@ function render(ctx: CustomChartContext) {
                     const sign         = contribution >= 0 ? '+' : '';
                     return `<b>${categories[point.x]}</b><br/>
                         <b>${point.sliceName}:</b> ${sign}${formatNumber(contribution, numberFormat)}<br/>
-                        <b>Running total:</b> ${formatNumber(point.high, numberFormat)}`;
+                        <b>Running total:</b> ${formatNumber(point.runningTotalAfter ?? point.high, numberFormat)}`;
                 }
                 const delta = point.delta ?? 0;
                 const sign  = delta >= 0 ? '+' : '';
