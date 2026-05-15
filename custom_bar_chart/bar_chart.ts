@@ -598,24 +598,25 @@ function render(ctx: CustomChartContext) {
     }
 
     if (showNetChange) {
-        const netChange = endValue - startValue;
-        const isUp      = netChange >= 0;
-        const arrow     = isUp ? '▲' : '▼';
-        const startPx   = yAxisObj.toPixels(startValue, false);
-        const endPx     = yAxisObj.toPixels(endValue,   false);
-        const barX      = chart.plotLeft + chart.plotWidth + 35;
-        const barTop    = Math.min(startPx, endPx);
-        const barH      = Math.abs(startPx - endPx);
+        const netChange   = endValue - startValue;
+        const isUp        = netChange >= 0;
+        const arrow       = isUp ? '▲' : '▼';
+        const deltaColor  = isUp ? colorPositive : colorNegative;
+        const startPx     = yAxisObj.toPixels(startValue, false);
+        const endPx       = yAxisObj.toPixels(endValue,   false);
+        const barX        = chart.plotLeft + chart.plotWidth + 35;
+        const barTop      = Math.min(startPx, endPx);
+        const barH        = Math.abs(startPx - endPx);
 
         chart.renderer.rect(barX - 3, barTop, 6, barH)
-            .attr({ fill: colorTotal, zIndex: 5 })
+            .attr({ fill: deltaColor, zIndex: 5 })
             .add();
 
         const pillText = `${arrow}${formatNumber(Math.abs(netChange), numberFormat)}`;
         const pillW = 80, pillH = 28, pillR = 14;
         const pillY = barTop - pillH - 6;
         chart.renderer.rect(barX - pillW / 2, pillY, pillW, pillH, pillR)
-            .attr({ fill: colorTotal, zIndex: 6 })
+            .attr({ fill: deltaColor, zIndex: 6 })
             .add();
         chart.renderer.text(pillText, barX, pillY + 18)
             .attr({ align: 'center', zIndex: 7 })
