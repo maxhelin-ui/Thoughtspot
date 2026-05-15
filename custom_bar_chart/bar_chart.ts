@@ -136,13 +136,15 @@ function adjustButtonContainer(hasContent: boolean, marginRight: number) {
     // dropped onto its own row) or inner items (toggles/legend items
     // wrapped within their container) — drop the right padding so the
     // legend can spill to the chart's right edge.
+    // Use a tolerance for the outer check because align-items: center
+    // can offset the shorter container by a few pixels even on the same row.
     const isWrapped = (el: HTMLElement): boolean => {
         const items = Array.from(el.children) as HTMLElement[];
         if (items.length < 2) return false;
         const firstTop = items[0].offsetTop;
-        return items.some(item => item.offsetTop !== firstTop);
+        return items.some(item => Math.abs(item.offsetTop - firstTop) > 4);
     };
-    const outerWrapped = legend.offsetTop > 0 || toggles.offsetTop > 0;
+    const outerWrapped = Math.abs(legend.offsetTop - toggles.offsetTop) > 15;
     if (outerWrapped || isWrapped(legend) || isWrapped(toggles)) {
         container.style.paddingRight = '6px';
     }
