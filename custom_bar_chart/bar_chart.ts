@@ -375,27 +375,46 @@ function render(ctx: CustomChartContext) {
 
         tooltip: {
             backgroundColor: '#3A3F48',
-            borderColor:     '#FFD700',
-            borderRadius:    4,
-            borderWidth:     1,
-            style: { color: '#FFFFFF', fontSize: '12px' },
+            borderColor:     '#52B788',
+            borderRadius:    8,
+            borderWidth:     2,
+            padding:         12,
+            shadow:          false,
+            style: { color: '#FFFFFF', fontSize: '13px' },
             useHTML: true,
             formatter: function (this: any) {
                 const point = this.point as any;
                 if (point.isTotal) return false;
+
+                const rows: Array<{ label: string; value: string }> = [];
                 if (point.isSlice) {
                     const contribution = point.contribution ?? 0;
                     const sign         = contribution >= 0 ? '+' : '';
-                    return `<b>${categories[point.x]}</b><br/>
-                        <b>${point.sliceName}:</b> ${sign}${formatNumber(contribution, numberFormat)}<br/>
-                        <b>Running total:</b> ${formatNumber(point.runningTotalAfter ?? point.high, numberFormat)}`;
+                    rows.push({
+                        label: `${point.sliceName}:`,
+                        value: `${sign}${formatNumber(contribution, numberFormat)}`,
+                    });
+                    rows.push({
+                        label: 'Running total:',
+                        value: formatNumber(point.runningTotalAfter ?? point.high, numberFormat),
+                    });
+                } else {
+                    const delta = point.delta ?? 0;
+                    const sign  = delta >= 0 ? '+' : '';
+                    const runningTotal = delta >= 0 ? point.high : point.low;
+                    rows.push({
+                        label: `${categories[point.x] ?? ''}:`,
+                        value: `${sign}${formatNumber(delta, numberFormat)}`,
+                    });
+                    rows.push({
+                        label: 'Running total:',
+                        value: formatNumber(runningTotal, numberFormat),
+                    });
                 }
-                const delta = point.delta ?? 0;
-                const sign  = delta >= 0 ? '+' : '';
-                const runningTotal = delta >= 0 ? point.high : point.low;
-                return `<b>${categories[point.x]}</b><br/>
-                    <b>Change:</b> ${sign}${formatNumber(delta, numberFormat)}<br/>
-                    <b>Running total:</b> ${formatNumber(runningTotal, numberFormat)}`;
+
+                return rows.map(({ label, value }, i) =>
+                    `<div style="${i > 0 ? 'margin-top:10px;' : ''}font-weight:600;">${label}<br/><span style="font-weight:700;">${value}</span></div>`,
+                ).join('');
             },
         },
 
