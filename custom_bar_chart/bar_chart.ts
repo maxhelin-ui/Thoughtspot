@@ -64,6 +64,16 @@ function pickColor(picker: unknown, fallback: string): string {
 let globalChartReference: any = null;
 let activeSliceColumnId: string | null = null;
 let lastSeenSlicingDefault: boolean | undefined = undefined;
+const hiddenSlicesByColumn = new Map<string, Set<string>>();
+
+function getHiddenSet(columnId: string): Set<string> {
+    let set = hiddenSlicesByColumn.get(columnId);
+    if (!set) {
+        set = new Set<string>();
+        hiddenSlicesByColumn.set(columnId, set);
+    }
+    return set;
+}
 
 function renderSliceToggles(
     sliceColumns: Array<{ id: string; name: string }>,
@@ -85,13 +95,21 @@ function renderSliceToggles(
     });
 }
 
-function renderCustomLegend(sliceNames: string[], sliceColors: string[]) {
+function renderCustomLegend(
+    sliceColumnId: string | null,
+    sliceNames: string[],
+    sliceColors: string[],
+    onToggle: (sliceName: string) => void,
+) {
     const legendEl = document.getElementById('customLegend');
     if (!legendEl) return;
     legendEl.innerHTML = '';
+    if (!sliceColumnId) return;
+    const hidden = getHiddenSet(sliceColumnId);
     sliceNames.forEach((name, i) => {
-        const item = document.createElement('div');
-        item.className = 'legend-item';
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'legend-item' + (hidden.has(name) ? ' legend-hidden' : '');
         const swatch = document.createElement('span');
         swatch.className = 'legend-swatch';
         swatch.style.background = sliceColors[i] ?? '#999';
@@ -99,6 +117,7 @@ function renderCustomLegend(sliceNames: string[], sliceColors: string[]) {
         label.textContent = name;
         item.appendChild(swatch);
         item.appendChild(label);
+        item.onclick = () => onToggle(name);
         legendEl.appendChild(item);
     });
 }
@@ -229,7 +248,26 @@ function render(ctx: CustomChartContext) {
         SLICE_PALETTE[i % SLICE_PALETTE.length],
     )) : [];
 
-    renderCustomLegend(activeSlice ? activeSlice.sliceNames : [], sliceColors);
+    renderCustomLegend(
+        activeSlice ? activeSlice.column.id : null,
+        activeSlice ? activeSlice.sliceNames : [],
+        sliceColors,
+        (sliceName) => {
+            if (!activeSlice || !globalChartReference) return;
+            const set = getHiddenSet(activeSlice.column.id);
+            if (set.has(sliceName)) set.delete(sliceName);
+            else set.add(sliceName);
+            const series = globalChartReference.series.find((s: any) => s.name === sliceName);
+            if (series) series.setVisible(!set.has(sliceName));
+            // Update legend item style without re-rendering the chart
+            const legendEl = document.getElementById('customLegend');
+            const items = legendEl?.querySelectorAll<HTMLElement>('.legend-item');
+            items?.forEach((item, idx) => {
+                const itemName = activeSlice.sliceNames[idx];
+                item.classList.toggle('legend-hidden', set.has(itemName));
+            });
+        },
+    );
     adjustButtonContainer(sliceColumns.length > 0, showNetChange ? 110 : 40);
 
     if (values.length < 2) return;
@@ -311,12 +349,14 @@ function render(ctx: CustomChartContext) {
                 isSlice:           true,
             };
         });
+        const hidden = activeSlice ? getHiddenSet(activeSlice.column.id).has(sliceName) : false;
         return {
             type:         'columnrange',
             name:         sliceName,
             data,
             color:        sliceColors[sIdx],
-            showInLegend: true,
+            showInLegend: false,
+            visible:      !hidden,
         };
     }) : [];
 
