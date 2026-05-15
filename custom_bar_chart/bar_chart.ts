@@ -319,7 +319,7 @@ function render(ctx: CustomChartContext) {
             type: 'columnrange',
             marginLeft:   80,
             marginRight:  showNetChange ? 110 : 40,
-            marginBottom: 100,
+            marginBottom: showSlicing ? 80 : 50,
         },
         title:   { text: chartTitle, style: { fontWeight: 'bold', fontSize: '14px' } },
         credits: { enabled: false },
