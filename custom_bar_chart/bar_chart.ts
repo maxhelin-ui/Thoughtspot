@@ -143,10 +143,7 @@ function adjustButtonContainer(hasContent: boolean, marginRight: number) {
         return items.some(item => item.offsetTop !== firstTop);
     };
     if (isWrapped(legend) || isWrapped(toggles)) {
-        // When the net change pill is shown, align with its right edge
-        // (35px from canvas). Otherwise, push to within 6px of canvas right.
-        const expandedRight = marginRight > 100 ? 35 : 6;
-        container.style.paddingRight = expandedRight + 'px';
+        container.style.paddingRight = '6px';
     }
 }
 
