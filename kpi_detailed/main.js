@@ -224,7 +224,25 @@ function renderSingle(vp, values, chartModel) {
   const desc = (vp?.primaryDescription ?? '').trim();
   setText('singleDescription', desc ? `· ${desc}` : '');
 
-  const footerText = (vp?.primaryFooter ?? '').trim();
+  const fraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
+
+  // Tokens the user can drop into the footer text. The {base} token is
+  // the most common — it pulls the denominator value (e.g. "of {base}
+  // closed accounts" -> "of 557 closed accounts") so the footer stays
+  // in sync with the data.
+  const baseFormatted = values.primaryPercent != null
+    ? formatMetricValue(values.primaryPercent, 'number', vp?.numberFormat, vp?.currencySymbol)
+    : '';
+  const valueFormatted = values.primaryValue != null
+    ? formatMetricValue(values.primaryValue, 'number', vp?.numberFormat, vp?.currencySymbol)
+    : '';
+  const percentFormatted = formatPercent(fraction);
+
+  const footerText = (vp?.primaryFooter ?? '').trim()
+    .replace(/\{base\}/g, baseFormatted)
+    .replace(/\{value\}/g, valueFormatted)
+    .replace(/\{percent\}/g, percentFormatted);
+
   const avgFormatted = values.footerAvg != null
     ? formatMetricValue(values.footerAvg, vp?.footerAvgFormat ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
     : '';
@@ -240,8 +258,7 @@ function renderSingle(vp, values, chartModel) {
     : (footerText || avgPart);
   setText('singleFooter', fullFooter);
 
-  const fraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
-  setText('singlePercent', formatPercent(fraction));
+  setText('singlePercent', percentFormatted);
 
   const fill = document.getElementById('singleBarFill');
   if (fill) {
@@ -480,7 +497,7 @@ const renderChart = async (ctx, providedModel) => {
         },
         { key: 'primarySuffix', type: 'text', label: 'Suffix after big number', defaultValue: 'accounts' },
         { key: 'primaryDescription', type: 'text', label: 'Description (single layout)', defaultValue: ' ' },
-        { key: 'primaryFooter', type: 'text', label: 'Footer line (single layout)', defaultValue: ' ' },
+        { key: 'primaryFooter', type: 'text', label: 'Footer line — tokens: {base}, {value}, {percent}', defaultValue: 'of {base} closed accounts' },
         { key: 'footerAvgLabel', type: 'text', label: 'Footer avg label (blank = use bound column name)', defaultValue: ' ' },
         {
           key: 'footerAvgFormat',
