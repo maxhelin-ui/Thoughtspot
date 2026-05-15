@@ -156,10 +156,19 @@ function getDataModel(chartModel: ChartModel) {
 
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
+    // Filter rows by the active slicer's hidden values so totals/deltas/running
+    // totals/y-axis all reflect the visible subset.
+    const activeSliceCol    = activeSliceColumnId ? sliceColumns.find(c => c.id === activeSliceColumnId) : null;
+    const activeSliceColIdx = activeSliceCol ? dataArr.columns.indexOf(activeSliceCol.id) : -1;
+    const activeHidden      = activeSliceColumnId ? hiddenSlicesByColumn.get(activeSliceColumnId) : undefined;
+    const visibleRows = (activeSliceCol && activeSliceColIdx >= 0 && activeHidden && activeHidden.size > 0)
+        ? dataArr.dataValue.filter(row => !activeHidden.has(String(row[activeSliceColIdx] ?? '')))
+        : dataArr.dataValue;
+
     const values = yColumns.map(col => {
         const colIdx = dataArr.columns.indexOf(col.id);
         if (colIdx < 0) return 0;
-        return dataArr.dataValue.reduce(
+        return visibleRows.reduce(
             (sum, row) => sum + (parseFloat(String(row[colIdx] ?? 0)) || 0),
             0,
         );
@@ -175,6 +184,7 @@ function getDataModel(chartModel: ChartModel) {
         const contribsByMeasure: number[][] = [];
         const sliceColIdx = dataArr.columns.indexOf(sliceColumn.id);
         if (sliceColIdx >= 0) {
+            // Names from ALL rows so hidden slices still appear in the legend
             const seen = new Set<string>();
             for (const row of dataArr.dataValue) {
                 const v = String(row[sliceColIdx] ?? '');
@@ -183,6 +193,7 @@ function getDataModel(chartModel: ChartModel) {
                     sliceNames.push(v);
                 }
             }
+            // Contributions from the filtered subset
             yColumns.forEach(col => {
                 const colIdx = dataArr.columns.indexOf(col.id);
                 if (colIdx < 0) {
@@ -190,7 +201,7 @@ function getDataModel(chartModel: ChartModel) {
                     return;
                 }
                 contribsByMeasure.push(sliceNames.map(sliceName =>
-                    dataArr.dataValue.reduce((sum, row) => {
+                    visibleRows.reduce((sum, row) => {
                         if (String(row[sliceColIdx] ?? '') !== sliceName) return sum;
                         return sum + (parseFloat(String(row[colIdx] ?? 0)) || 0);
                     }, 0),
@@ -253,19 +264,11 @@ function render(ctx: CustomChartContext) {
         activeSlice ? activeSlice.sliceNames : [],
         sliceColors,
         (sliceName) => {
-            if (!activeSlice || !globalChartReference) return;
+            if (!activeSlice) return;
             const set = getHiddenSet(activeSlice.column.id);
             if (set.has(sliceName)) set.delete(sliceName);
             else set.add(sliceName);
-            const series = globalChartReference.series.find((s: any) => s.name === sliceName);
-            if (series) series.setVisible(!set.has(sliceName));
-            // Update legend item style without re-rendering the chart
-            const legendEl = document.getElementById('customLegend');
-            const items = legendEl?.querySelectorAll<HTMLElement>('.legend-item');
-            items?.forEach((item, idx) => {
-                const itemName = activeSlice.sliceNames[idx];
-                item.classList.toggle('legend-hidden', set.has(itemName));
-            });
+            render(ctx);
         },
     );
     adjustButtonContainer(sliceColumns.length > 0, showNetChange ? 110 : 40);
