@@ -132,17 +132,18 @@ function adjustButtonContainer(hasContent: boolean, marginRight: number) {
     container.style.paddingRight = marginRight + 'px';
     if (!hasContent || !toggles || !legend) return;
 
-    // If either the toggles row or the legend row has wrapped onto a second
-    // line, drop the right padding so the legend can spill to the chart's
-    // right edge. Using offsetTop comparison because flex-wrap makes
-    // scrollWidth reflect the post-wrap width (which always fits).
+    // If the layout had to wrap — either the outer container (legend
+    // dropped onto its own row) or inner items (toggles/legend items
+    // wrapped within their container) — drop the right padding so the
+    // legend can spill to the chart's right edge.
     const isWrapped = (el: HTMLElement): boolean => {
         const items = Array.from(el.children) as HTMLElement[];
         if (items.length < 2) return false;
         const firstTop = items[0].offsetTop;
         return items.some(item => item.offsetTop !== firstTop);
     };
-    if (isWrapped(legend) || isWrapped(toggles)) {
+    const outerWrapped = legend.offsetTop > 0 || toggles.offsetTop > 0;
+    if (outerWrapped || isWrapped(legend) || isWrapped(toggles)) {
         container.style.paddingRight = '6px';
     }
 }
