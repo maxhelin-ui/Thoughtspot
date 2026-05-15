@@ -39,17 +39,6 @@ const SLICE_PALETTE = [
     '#9B5DE5', '#00BBF9', '#FB6F92', '#80B918', '#F08080',
 ];
 
-type ColorSource = 'picker' | 'hex';
-const colorSourceHistory = new Map<string, { picker: string; hex: string; source: ColorSource }>();
-
-function normalizeHex(v: unknown): string | null {
-    if (typeof v !== 'string') return null;
-    const trimmed = v.trim();
-    if (!trimmed) return null;
-    const normalized = trimmed.startsWith('#') ? trimmed : '#' + trimmed;
-    return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(normalized) ? normalized : null;
-}
-
 function withAlpha(color: string, alpha: number): string {
     if (typeof color !== 'string' || !color.startsWith('#')) return color;
     const clean = color.slice(1);
@@ -68,35 +57,8 @@ function withAlpha(color: string, alpha: number): string {
     return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function resolveColor(key: string, pickerInput: unknown, hexInput: unknown, fallback: string): string {
-    const currentPicker = (typeof pickerInput === 'string' && pickerInput) ? pickerInput : fallback;
-    const currentHex    = normalizeHex(hexInput);
-    const last          = colorSourceHistory.get(key);
-
-    let source: ColorSource;
-    if (!last) {
-        source = currentHex ? 'hex' : 'picker';
-    } else {
-        const pickerChanged = currentPicker !== last.picker;
-        const hexChanged    = (currentHex ?? '') !== last.hex;
-        if (currentHex === null && last.source === 'hex') {
-            source = 'picker';
-        } else if (pickerChanged && !hexChanged) {
-            source = 'picker';
-        } else if (hexChanged && !pickerChanged) {
-            source = currentHex ? 'hex' : 'picker';
-        } else {
-            source = last.source;
-        }
-    }
-
-    colorSourceHistory.set(key, {
-        picker: currentPicker,
-        hex:    currentHex ?? '',
-        source,
-    });
-
-    return (source === 'hex' && currentHex) ? currentHex : currentPicker;
+function pickColor(picker: unknown, fallback: string): string {
+    return (typeof picker === 'string' && picker) ? picker : fallback;
 }
 
 let globalChartReference: any = null;
@@ -210,9 +172,9 @@ function render(ctx: CustomChartContext) {
     const chartTitle          = visualProps.chartTitle          ?? '';
     const xAxisTitle          = visualProps.xAxisTitle          ?? '';
     const yAxisTitle          = visualProps.yAxisTitle          ?? 'Value';
-    const colorPositive       = resolveColor('colorPositive', visualProps.colorPositive, visualProps.colorPositiveHex, '#378ADD');
-    const colorNegative       = resolveColor('colorNegative', visualProps.colorNegative, visualProps.colorNegativeHex, '#E24B4A');
-    const colorTotal          = resolveColor('colorTotal',    visualProps.colorTotal,    visualProps.colorTotalHex,    '#534AB7');
+    const colorPositive       = pickColor(visualProps.colorPositive, '#378ADD');
+    const colorNegative       = pickColor(visualProps.colorNegative, '#E24B4A');
+    const colorTotal          = pickColor(visualProps.colorTotal,    '#534AB7');
     const showDataLabels      = visualProps.showDataLabels      ?? true;
     const showConnector       = visualProps.showConnector       ?? true;
     const showNetChange       = visualProps.showNetChange       ?? false;
@@ -237,14 +199,12 @@ function render(ctx: CustomChartContext) {
         render(ctx);
     });
 
-    const connectorColor      = resolveColor('connectorColor', visualProps.connectorColor, visualProps.connectorColorHex, '#bbbbbb');
+    const connectorColor      = pickColor(visualProps.connectorColor, '#bbbbbb');
     const connectorWidth      = visualProps.connectorWidth      ?? 1;
     const connectorStyle      = visualProps.connectorStyle      ?? 'Dot';
 
-    const sliceColors = activeSlice ? activeSlice.sliceNames.map((s, i) => resolveColor(
-        `sliceColor_${activeSlice.column.id}_${s}`,
+    const sliceColors = activeSlice ? activeSlice.sliceNames.map((s, i) => pickColor(
         visualProps[`sliceColor_${activeSlice.column.id}_${s}`],
-        visualProps[`sliceColorHex_${activeSlice.column.id}_${s}`],
         SLICE_PALETTE[i % SLICE_PALETTE.length],
     )) : [];
 
@@ -705,18 +665,11 @@ const renderChart = async (ctx: CustomChartContext) => {
                         }
                     }
                     uniqueSlices.forEach((s, i) => {
-                        const defaultColor = SLICE_PALETTE[i % SLICE_PALETTE.length];
                         sliceColorPickers.push({
                             key:          `sliceColor_${sliceCol.id}_${s}`,
                             type:         'colorpicker' as const,
-                            defaultValue: defaultColor,
+                            defaultValue: SLICE_PALETTE[i % SLICE_PALETTE.length],
                             label:        `${sliceCol.name} — ${s}`,
-                        });
-                        sliceColorPickers.push({
-                            key:          `sliceColorHex_${sliceCol.id}_${s}`,
-                            type:         'text' as const,
-                            defaultValue: ' ',
-                            label:        `${sliceCol.name} — ${s} hex`,
                         });
                     });
                 });
@@ -729,13 +682,9 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'yAxisTitle',          type: 'text',        defaultValue: 'Value',   label: 'Y-axis title' },
                     { key: 'numberFormat',        type: 'text',        defaultValue: '0.[0]a',  label: 'Number format' },
                     { key: 'colorPositive',       type: 'colorpicker', defaultValue: '#378ADD', label: 'Positive bar colour' },
-                    { key: 'colorPositiveHex',    type: 'text',        defaultValue: ' ',       label: 'Positive bar hex' },
                     { key: 'colorNegative',       type: 'colorpicker', defaultValue: '#E24B4A', label: 'Negative bar colour' },
-                    { key: 'colorNegativeHex',    type: 'text',        defaultValue: ' ',       label: 'Negative bar hex' },
                     { key: 'colorTotal',          type: 'colorpicker', defaultValue: '#534AB7', label: 'Total bar colour' },
-                    { key: 'colorTotalHex',       type: 'text',        defaultValue: ' ',       label: 'Total bar hex' },
                     { key: 'connectorColor',      type: 'colorpicker', defaultValue: '#bbbbbb', label: 'Connector line colour' },
-                    { key: 'connectorColorHex',   type: 'text',        defaultValue: ' ',       label: 'Connector line hex' },
                     { key: 'connectorWidth',      type: 'number',      defaultValue: 1,         label: 'Connector line width' },
                     { key: 'connectorStyle',      type: 'dropdown',    defaultValue: 'Dot',     values: ['Solid', 'Dot', 'Dash', 'DashDot', 'LongDash'], label: 'Connector line style' },
                     { key: 'showDataLabels',      type: 'checkbox',    defaultValue: true,      label: 'Show data labels' },
