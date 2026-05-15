@@ -124,10 +124,21 @@ function renderCustomLegend(
 
 function adjustButtonContainer(hasContent: boolean, marginRight: number) {
     const container = document.getElementById('buttonContainer');
+    const toggles   = document.getElementById('sliceToggles');
+    const legend    = document.getElementById('customLegend');
     if (!container) return;
     container.style.display = hasContent ? 'flex' : 'none';
     container.style.paddingLeft  = '80px';
     container.style.paddingRight = marginRight + 'px';
+    if (!hasContent || !toggles || !legend) return;
+
+    // If toggles + legend don't fit within the plot-area-constrained space,
+    // drop the right padding so the legend can spill to the chart's right edge.
+    const innerWidth   = container.clientWidth - 80 - marginRight;
+    const contentWidth = toggles.scrollWidth + 12 + legend.scrollWidth;
+    if (contentWidth > innerWidth) {
+        container.style.paddingRight = '6px';
+    }
 }
 
 function formatNumber(value: number, format: string): string {
