@@ -348,14 +348,11 @@ function render(ctx: CustomChartContext) {
         globalChartReference = null;
     }
 
-    const hasSliceColumns = sliceColumns.length > 0;
-    const rightMargin = 40 + (hasSliceColumns ? 150 : 0) + (showNetChange ? 70 : 0);
-
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type: 'columnrange',
             marginLeft:   80,
-            marginRight:  rightMargin,
+            marginRight:  showNetChange ? 110 : 40,
             marginBottom: 50,
         },
         title:   { text: chartTitle, style: { fontWeight: 'bold', fontSize: '14px' } },
@@ -396,19 +393,21 @@ function render(ctx: CustomChartContext) {
         },
 
         legend: {
-            enabled:       showSlicing,
-            align:         'right',
-            verticalAlign: 'bottom',
-            layout:        'vertical',
-            itemStyle:     { color: '#333', fontWeight: '500', fontSize: '12px' },
-            symbolRadius:  2,
-            symbolHeight:  10,
-            symbolWidth:   10,
+            enabled:         showSlicing,
+            align:           'right',
+            verticalAlign:   'bottom',
+            layout:          'vertical',
+            floating:        true,
+            backgroundColor: 'rgba(255,255,255,0.85)',
+            borderRadius:    4,
+            itemStyle:       { color: '#333', fontWeight: '500', fontSize: '12px' },
+            symbolRadius:    2,
+            symbolHeight:    10,
+            symbolWidth:     10,
             itemMarginBottom: 4,
-            margin:        8,
-            padding:       6,
-            x:             -4,
-            y:             -4,
+            padding:         6,
+            x:               -8,
+            y:               -8,
         },
 
         tooltip: {
