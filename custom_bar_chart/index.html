@@ -15,9 +15,39 @@
             }
             #buttonContainer {
                 display: flex;
-                flex-wrap: wrap;
+                justify-content: space-between;
+                align-items: center;
+                gap: 12px;
+                padding: 4px 40px 4px 80px;
+                box-sizing: border-box;
+            }
+            #sliceToggles {
+                display: flex;
                 gap: 6px;
-                padding: 2px 4px;
+                flex-wrap: wrap;
+                align-items: center;
+            }
+            #customLegend {
+                display: flex;
+                gap: 14px;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: flex-end;
+            }
+            .legend-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                font-size: 12px;
+                color: #333;
+                font-weight: 500;
+            }
+            .legend-swatch {
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                border-radius: 2px;
+                flex: 0 0 auto;
             }
             .measure-button {
                 padding: 6px 12px;
@@ -63,7 +93,10 @@
     </head>
     <body>
         <div style="width: 100vw; height: 100vh; position: relative; display: flex; flex-direction: column;">
-            <div id="buttonContainer"></div>
+            <div id="buttonContainer">
+                <div id="sliceToggles"></div>
+                <div id="customLegend"></div>
+            </div>
             <div id="chart" style="flex: 1; min-height: 0;"></div>
         </div>
         <script type="module" src="bar_chart.ts"></script>
