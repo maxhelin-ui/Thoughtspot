@@ -329,6 +329,19 @@ function render(ctx, providedModel) {
       footerAvg: sumForKey(chartModel, 'footerAvg'),
     };
 
+    // Surface the raw query result + computed values so any chart-vs-
+    // table discrepancy can be traced from the browser devtools.
+    const dims = chartModel?.config?.chartConfig?.[0]?.dimensions ?? [];
+    console.log('[KPI - Detailed]', {
+      bindings: dims.map((d) => ({
+        slot: d?.key,
+        column: d?.columns?.[0]?.name,
+        aggregationType: d?.columns?.[0]?.aggregationType,
+      })),
+      rawRows: chartModel?.data?.[0]?.data?.dataValue,
+      computedValues: values,
+    });
+
     renderHeader(vp, chartModel);
 
     if ((vp?.mode ?? 'single') === 'split') {
