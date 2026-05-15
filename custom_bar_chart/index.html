@@ -16,8 +16,8 @@
             #buttonContainer {
                 display: flex;
                 flex-wrap: wrap;
-                gap: 8px;
-                padding: 8px;
+                gap: 6px;
+                padding: 2px 4px;
             }
             .measure-button {
                 padding: 6px 12px;
@@ -35,8 +35,7 @@
             .slice-toggle-btn {
                 display: inline-flex;
                 align-items: center;
-                gap: 8px;
-                padding: 6px 14px;
+                padding: 5px 14px;
                 border: 1px solid #d0d7de;
                 border-radius: 999px;
                 background: #fff;
@@ -56,16 +55,6 @@
                 border-color: #2d72d2;
                 color: #fff;
             }
-            .slice-toggle-btn .dot {
-                display: inline-block;
-                width: 8px;
-                height: 8px;
-                border-radius: 50%;
-                background: #d0d7de;
-            }
-            .slice-toggle-btn.active .dot {
-                background: #fff;
-            }
             #chart {
                 width: 100%;
                 height: 100%;
@@ -73,9 +62,9 @@
         </style>
     </head>
     <body>
-        <div style="width: 99vw; height: 95vh; position: relative; display: flex; flex-direction: column;">
+        <div style="width: 100vw; height: 100vh; position: relative; display: flex; flex-direction: column;">
             <div id="buttonContainer"></div>
-            <div id="chart" style="flex: 1;"></div>
+            <div id="chart" style="flex: 1; min-height: 0;"></div>
         </div>
         <script type="module" src="bar_chart.ts"></script>
     </body>
