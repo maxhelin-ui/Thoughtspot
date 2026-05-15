@@ -100,29 +100,32 @@ function resolveColor(key: string, pickerInput: unknown, hexInput: unknown, fall
 }
 
 let globalChartReference: any = null;
-let runtimeSlicingOverride: boolean | null = null;
+let activeSliceColumnId: string | null = null;
 let lastSeenSlicingDefault: boolean | undefined = undefined;
 
-function renderSliceToggle(
-    sliceColumn: { name: string } | undefined,
-    isActive: boolean,
-    onToggle: () => void,
+function renderSliceToggles(
+    sliceColumns: Array<{ id: string; name: string }>,
+    activeId: string | null,
+    onToggle: (columnId: string) => void,
 ) {
     const container = document.getElementById('buttonContainer');
     if (!container) return;
     container.innerHTML = '';
-    if (!sliceColumn) {
+    if (sliceColumns.length === 0) {
         container.style.display = 'none';
         return;
     }
     container.style.display = 'flex';
 
-    const button = document.createElement('button');
-    button.className = 'slice-toggle-btn' + (isActive ? ' active' : '');
-    button.type = 'button';
-    button.innerHTML = `<span class="dot"></span>Slice by ${sliceColumn.name}`;
-    button.onclick = onToggle;
-    container.appendChild(button);
+    sliceColumns.forEach(col => {
+        const isActive = col.id === activeId;
+        const button   = document.createElement('button');
+        button.className = 'slice-toggle-btn' + (isActive ? ' active' : '');
+        button.type      = 'button';
+        button.textContent = `Slice by ${col.name}`;
+        button.onclick   = () => onToggle(col.id);
+        container.appendChild(button);
+    });
 }
 
 function formatNumber(value: number, format: string): string {
@@ -133,6 +136,12 @@ function formatNumber(value: number, format: string): string {
     }
 }
 
+type SliceInfo = {
+    column: { id: string; name: string };
+    sliceNames: string[];
+    contribsByMeasure: number[][];
+};
+
 function getDataModel(chartModel: ChartModel) {
     const dataArr: DataPointsArray =
         chartModel.data?.[chartModel.data.length - 1]?.data ?? { columns: [], dataValue: [] };
@@ -140,8 +149,8 @@ function getDataModel(chartModel: ChartModel) {
     const yColumns =
         chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
 
-    const sliceColumn =
-        chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns?.[0];
+    const sliceColumns =
+        chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns ?? [];
 
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
@@ -159,9 +168,9 @@ function getDataModel(chartModel: ChartModel) {
         return (typeof override === 'string' && override.trim()) ? override : col.name;
     });
 
-    const sliceNames: string[] = [];
-    const sliceByColumn: number[][] = [];
-    if (sliceColumn) {
+    const slicesByColumn: SliceInfo[] = sliceColumns.map(sliceColumn => {
+        const sliceNames: string[] = [];
+        const contribsByMeasure: number[][] = [];
         const sliceColIdx = dataArr.columns.indexOf(sliceColumn.id);
         if (sliceColIdx >= 0) {
             const seen = new Set<string>();
@@ -175,10 +184,10 @@ function getDataModel(chartModel: ChartModel) {
             yColumns.forEach(col => {
                 const colIdx = dataArr.columns.indexOf(col.id);
                 if (colIdx < 0) {
-                    sliceByColumn.push(sliceNames.map(() => 0));
+                    contribsByMeasure.push(sliceNames.map(() => 0));
                     return;
                 }
-                sliceByColumn.push(sliceNames.map(sliceName =>
+                contribsByMeasure.push(sliceNames.map(sliceName =>
                     dataArr.dataValue.reduce((sum, row) => {
                         if (String(row[sliceColIdx] ?? '') !== sliceName) return sum;
                         return sum + (parseFloat(String(row[colIdx] ?? 0)) || 0);
@@ -186,14 +195,15 @@ function getDataModel(chartModel: ChartModel) {
                 ));
             });
         }
-    }
+        return { column: { id: sliceColumn.id, name: sliceColumn.name }, sliceNames, contribsByMeasure };
+    });
 
-    return { values, names, sliceColumn, sliceNames, sliceByColumn };
+    return { values, names, sliceColumns, slicesByColumn };
 }
 
 function render(ctx: CustomChartContext) {
     const chartModel   = ctx.getChartModel();
-    const { values, names, sliceColumn, sliceNames, sliceByColumn } = getDataModel(chartModel);
+    const { values, names, sliceColumns, slicesByColumn } = getDataModel(chartModel);
     const visualProps  = (chartModel.visualProps ?? {}) as VisualProps;
 
     const numberFormat        = visualProps.numberFormat        ?? '0.[0]a';
@@ -209,28 +219,34 @@ function render(ctx: CustomChartContext) {
     const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
     const showStartEndPills   = visualProps.showStartEndPills   ?? true;
     const showGridLines       = visualProps.showGridLines       ?? true;
+
     const settingsDefault     = visualProps.showSlicing ?? false;
     if (settingsDefault !== lastSeenSlicingDefault) {
-        runtimeSlicingOverride = null;
+        activeSliceColumnId = settingsDefault && sliceColumns.length > 0 ? sliceColumns[0].id : null;
         lastSeenSlicingDefault = settingsDefault;
     }
-    const baseShowSlicing     = runtimeSlicingOverride ?? settingsDefault;
-    const showSlicing         = baseShowSlicing && !!sliceColumn && sliceNames.length > 0;
+    // Drop the active id if the user removed that slice column
+    if (activeSliceColumnId && !sliceColumns.some(c => c.id === activeSliceColumnId)) {
+        activeSliceColumnId = null;
+    }
+    const activeSlice = slicesByColumn.find(s => s.column.id === activeSliceColumnId);
+    const showSlicing = !!activeSlice && activeSlice.sliceNames.length > 0;
 
-    renderSliceToggle(sliceColumn, showSlicing, () => {
-        runtimeSlicingOverride = !baseShowSlicing;
+    renderSliceToggles(sliceColumns, activeSliceColumnId, (columnId) => {
+        activeSliceColumnId = (activeSliceColumnId === columnId) ? null : columnId;
         render(ctx);
     });
+
     const connectorColor      = resolveColor('connectorColor', visualProps.connectorColor, visualProps.connectorColorHex, '#bbbbbb');
     const connectorWidth      = visualProps.connectorWidth      ?? 1;
     const connectorStyle      = visualProps.connectorStyle      ?? 'Dot';
 
-    const sliceColors = sliceNames.map((s, i) => resolveColor(
-        `sliceColor_${s}`,
-        visualProps[`sliceColor_${s}`],
-        visualProps[`sliceColorHex_${s}`],
+    const sliceColors = activeSlice ? activeSlice.sliceNames.map((s, i) => resolveColor(
+        `sliceColor_${activeSlice.column.id}_${s}`,
+        visualProps[`sliceColor_${activeSlice.column.id}_${s}`],
+        visualProps[`sliceColorHex_${activeSlice.column.id}_${s}`],
         SLICE_PALETTE[i % SLICE_PALETTE.length],
-    ));
+    )) : [];
 
     if (values.length < 2) return;
 
@@ -281,14 +297,14 @@ function render(ctx: CustomChartContext) {
     // When slicing is enabled, each middle bar splits into per-slice columnrange segments.
     // Same-sign within a column is assumed. Stack from the bar's low edge upward using
     // |contribution|, so the first slice is always at the bottom regardless of direction.
-    const sliceSeries: any[] = showSlicing ? sliceNames.map((sliceName, sIdx) => {
+    const sliceSeries: any[] = (showSlicing && activeSlice) ? activeSlice.sliceNames.map((sliceName, sIdx) => {
         const data = categories.map((_, catIdx) => {
             if (catIdx === 0 || catIdx === categories.length - 1) {
                 return { x: catIdx, low: null, high: null };
             }
             const deltaIdx     = catIdx - 1;
             const yColIdx      = deltaIdx + 1;
-            const contribs     = sliceByColumn[yColIdx] ?? [];
+            const contribs     = activeSlice.contribsByMeasure[yColIdx] ?? [];
             const before       = runningTotals[deltaIdx];
             const after        = runningTotals[deltaIdx + 1];
             const lowY         = Math.min(before, after);
@@ -388,7 +404,7 @@ function render(ctx: CustomChartContext) {
             itemDistance:  18,
             margin:        12,
             padding:       6,
-            title:         sliceColumn ? { text: sliceColumn.name, style: { fontWeight: '600', fontSize: '11px', color: '#666' } } : undefined,
+            title:         activeSlice ? { text: activeSlice.column.name, style: { fontWeight: '600', fontSize: '11px', color: '#666' } } : undefined,
         },
 
         tooltip: {
@@ -651,17 +667,17 @@ const renderChart = async (ctx: CustomChartContext) => {
                     },
                     {
                         key:                   'slice',
-                        label:                 'Slice middle bars by (optional)',
+                        label:                 'Slice middle bars by (optional, multiple allowed)',
                         allowAttributeColumns: true,
                         allowMeasureColumns:   false,
-                        maxColumnCount:        1,
+                        maxColumnCount:        5,
                     },
                 ],
             },
         ],
         visualPropEditorDefinition: (chartModel: ChartModel) => {
             const yCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
-            const sliceCol = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns?.[0];
+            const sliceCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns ?? [];
 
             const labelOverrides = yCols.map(col => ({
                 key:          `label_${col.id}`,
@@ -671,37 +687,36 @@ const renderChart = async (ctx: CustomChartContext) => {
             }));
 
             const sliceColorPickers: any[] = [];
-            if (sliceCol) {
-                const dataArr = chartModel.data?.[chartModel.data.length - 1]?.data;
-                if (dataArr) {
+            const dataArr = chartModel.data?.[chartModel.data.length - 1]?.data;
+            if (dataArr) {
+                sliceCols.forEach(sliceCol => {
                     const sliceColIdx = dataArr.columns.indexOf(sliceCol.id);
-                    if (sliceColIdx >= 0) {
-                        const seen = new Set<string>();
-                        const uniqueSlices: string[] = [];
-                        for (const row of dataArr.dataValue) {
-                            const v = String(row[sliceColIdx] ?? '');
-                            if (!seen.has(v)) {
-                                seen.add(v);
-                                uniqueSlices.push(v);
-                            }
+                    if (sliceColIdx < 0) return;
+                    const seen = new Set<string>();
+                    const uniqueSlices: string[] = [];
+                    for (const row of dataArr.dataValue) {
+                        const v = String(row[sliceColIdx] ?? '');
+                        if (!seen.has(v)) {
+                            seen.add(v);
+                            uniqueSlices.push(v);
                         }
-                        uniqueSlices.forEach((s, i) => {
-                            const defaultColor = SLICE_PALETTE[i % SLICE_PALETTE.length];
-                            sliceColorPickers.push({
-                                key:          `sliceColor_${s}`,
-                                type:         'colorpicker' as const,
-                                defaultValue: defaultColor,
-                                label:        `Slice colour: ${s}`,
-                            });
-                            sliceColorPickers.push({
-                                key:          `sliceColorHex_${s}`,
-                                type:         'text' as const,
-                                defaultValue: ' ',
-                                label:        `Slice ${s} hex`,
-                            });
-                        });
                     }
-                }
+                    uniqueSlices.forEach((s, i) => {
+                        const defaultColor = SLICE_PALETTE[i % SLICE_PALETTE.length];
+                        sliceColorPickers.push({
+                            key:          `sliceColor_${sliceCol.id}_${s}`,
+                            type:         'colorpicker' as const,
+                            defaultValue: defaultColor,
+                            label:        `${sliceCol.name} — ${s}`,
+                        });
+                        sliceColorPickers.push({
+                            key:          `sliceColorHex_${sliceCol.id}_${s}`,
+                            type:         'text' as const,
+                            defaultValue: ' ',
+                            label:        `${sliceCol.name} — ${s} hex`,
+                        });
+                    });
+                });
             }
 
             return {
