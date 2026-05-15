@@ -89,7 +89,7 @@ function renderSliceToggles(
         const button   = document.createElement('button');
         button.className = 'slice-toggle-btn' + (isActive ? ' active' : '');
         button.type      = 'button';
-        button.textContent = `Slice by ${col.name}`;
+        button.textContent = col.name;
         button.onclick   = () => onToggle(col.id);
         togglesEl.appendChild(button);
     });
