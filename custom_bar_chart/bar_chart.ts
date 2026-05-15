@@ -70,14 +70,9 @@ function renderSliceToggles(
     activeId: string | null,
     onToggle: (columnId: string) => void,
 ) {
-    const container = document.getElementById('buttonContainer');
-    if (!container) return;
-    container.innerHTML = '';
-    if (sliceColumns.length === 0) {
-        container.style.display = 'none';
-        return;
-    }
-    container.style.display = 'flex';
+    const togglesEl = document.getElementById('sliceToggles');
+    if (!togglesEl) return;
+    togglesEl.innerHTML = '';
 
     sliceColumns.forEach(col => {
         const isActive = col.id === activeId;
@@ -86,8 +81,34 @@ function renderSliceToggles(
         button.type      = 'button';
         button.textContent = `Slice by ${col.name}`;
         button.onclick   = () => onToggle(col.id);
-        container.appendChild(button);
+        togglesEl.appendChild(button);
     });
+}
+
+function renderCustomLegend(sliceNames: string[], sliceColors: string[]) {
+    const legendEl = document.getElementById('customLegend');
+    if (!legendEl) return;
+    legendEl.innerHTML = '';
+    sliceNames.forEach((name, i) => {
+        const item = document.createElement('div');
+        item.className = 'legend-item';
+        const swatch = document.createElement('span');
+        swatch.className = 'legend-swatch';
+        swatch.style.background = sliceColors[i] ?? '#999';
+        const label = document.createElement('span');
+        label.textContent = name;
+        item.appendChild(swatch);
+        item.appendChild(label);
+        legendEl.appendChild(item);
+    });
+}
+
+function adjustButtonContainer(hasContent: boolean, marginRight: number) {
+    const container = document.getElementById('buttonContainer');
+    if (!container) return;
+    container.style.display = hasContent ? 'flex' : 'none';
+    container.style.paddingLeft  = '80px';
+    container.style.paddingRight = marginRight + 'px';
 }
 
 function formatNumber(value: number, format: string): string {
@@ -207,6 +228,9 @@ function render(ctx: CustomChartContext) {
         visualProps[`sliceColor_${activeSlice.column.id}_${s}`],
         SLICE_PALETTE[i % SLICE_PALETTE.length],
     )) : [];
+
+    renderCustomLegend(activeSlice ? activeSlice.sliceNames : [], sliceColors);
+    adjustButtonContainer(sliceColumns.length > 0, showNetChange ? 110 : 40);
 
     if (values.length < 2) return;
 
@@ -352,23 +376,7 @@ function render(ctx: CustomChartContext) {
             },
         },
 
-        legend: {
-            enabled:         showSlicing,
-            align:           'right',
-            verticalAlign:   'bottom',
-            layout:          'vertical',
-            floating:        true,
-            backgroundColor: 'rgba(255,255,255,0.85)',
-            borderRadius:    4,
-            itemStyle:       { color: '#333', fontWeight: '500', fontSize: '12px' },
-            symbolRadius:    2,
-            symbolHeight:    10,
-            symbolWidth:     10,
-            itemMarginBottom: 4,
-            padding:         6,
-            x:               -8,
-            y:               -8,
-        },
+        legend: { enabled: false },
 
         tooltip: {
             backgroundColor: 'rgba(0,0,0,0)',
@@ -413,7 +421,7 @@ function render(ctx: CustomChartContext) {
                     `<div style="${i > 0 ? 'margin-top:10px;' : ''}font-weight:600;">${label}<br/><span style="font-weight:700;">${value}</span></div>`,
                 ).join('');
 
-                return `<div style="border:1px solid ${withAlpha(borderColor, 0.45)};border-radius:8px;background:#3A3F48;padding:12px;color:#FFFFFF;font-size:13px;">${rowsHtml}</div>`;
+                return `<div style="border:1px solid ${withAlpha(borderColor, 0.75)};border-radius:8px;background:#3A3F48;padding:12px;color:#FFFFFF;font-size:13px;">${rowsHtml}</div>`;
             },
         },
 
