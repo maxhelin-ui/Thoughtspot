@@ -211,6 +211,10 @@ function getDataModel(chartModel: ChartModel) {
                     sliceNames.push(v);
                 }
             }
+            // Sort with natural order so tier_1 < tier_2 < tier_10, etc.
+            sliceNames.sort((a, b) =>
+                a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+            );
             // Contributions from the filtered subset
             yColumns.forEach(col => {
                 const colIdx = dataArr.columns.indexOf(col.id);
@@ -734,6 +738,9 @@ const renderChart = async (ctx: CustomChartContext) => {
                             uniqueSlices.push(v);
                         }
                     }
+                    uniqueSlices.sort((a, b) =>
+                        a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+                    );
                     uniqueSlices.forEach((s, i) => {
                         sliceColorPickers.push({
                             key:          `sliceColor_${sliceCol.id}_${s}`,
