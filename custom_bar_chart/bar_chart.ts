@@ -50,6 +50,24 @@ function normalizeHex(v: unknown): string | null {
     return /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/.test(normalized) ? normalized : null;
 }
 
+function withAlpha(color: string, alpha: number): string {
+    if (typeof color !== 'string' || !color.startsWith('#')) return color;
+    const clean = color.slice(1);
+    let r = 0, g = 0, b = 0;
+    if (clean.length === 3) {
+        r = parseInt(clean[0] + clean[0], 16);
+        g = parseInt(clean[1] + clean[1], 16);
+        b = parseInt(clean[2] + clean[2], 16);
+    } else if (clean.length === 6 || clean.length === 8) {
+        r = parseInt(clean.slice(0, 2), 16);
+        g = parseInt(clean.slice(2, 4), 16);
+        b = parseInt(clean.slice(4, 6), 16);
+    } else {
+        return color;
+    }
+    return `rgba(${r},${g},${b},${alpha})`;
+}
+
 function resolveColor(key: string, pickerInput: unknown, hexInput: unknown, fallback: string): string {
     const currentPicker = (typeof pickerInput === 'string' && pickerInput) ? pickerInput : fallback;
     const currentHex    = normalizeHex(hexInput);
@@ -374,17 +392,17 @@ function render(ctx: CustomChartContext) {
         },
 
         tooltip: {
-            backgroundColor: '#3A3F48',
-            borderColor:     '#52B788',
-            borderRadius:    8,
-            borderWidth:     2,
-            padding:         12,
-            shadow:          false,
+            backgroundColor: 'rgba(0,0,0,0)',
+            borderWidth:     0,
+            shadow:           false,
+            padding:          0,
             style: { color: '#FFFFFF', fontSize: '13px' },
             useHTML: true,
             formatter: function (this: any) {
                 const point = this.point as any;
                 if (point.isTotal) return false;
+
+                const borderColor = point.color ?? point.series?.color ?? '#52B788';
 
                 const rows: Array<{ label: string; value: string }> = [];
                 if (point.isSlice) {
@@ -412,9 +430,11 @@ function render(ctx: CustomChartContext) {
                     });
                 }
 
-                return rows.map(({ label, value }, i) =>
+                const rowsHtml = rows.map(({ label, value }, i) =>
                     `<div style="${i > 0 ? 'margin-top:10px;' : ''}font-weight:600;">${label}<br/><span style="font-weight:700;">${value}</span></div>`,
                 ).join('');
+
+                return `<div style="border:1px solid ${withAlpha(borderColor, 0.45)};border-radius:8px;background:#3A3F48;padding:12px;color:#FFFFFF;font-size:13px;">${rowsHtml}</div>`;
             },
         },
 
