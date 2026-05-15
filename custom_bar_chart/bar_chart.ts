@@ -249,9 +249,9 @@ function render(ctx: CustomChartContext) {
     const padding   = (yMax - yMin) * 0.15;
 
     const categories = [
-        names[0] + '\n' + formatNumber(startValue, numberFormat),
+        names[0],
         ...movements.map(m => m.name),
-        names[names.length - 1] + '\n' + formatNumber(endValue, numberFormat),
+        names[names.length - 1],
     ];
 
     const seriesData = [
@@ -337,12 +337,8 @@ function render(ctx: CustomChartContext) {
                 formatter: function (this: any) {
                     const cat = this.value as string;
                     const isStartEnd = this.pos === 0 || this.pos === categories.length - 1;
-                    const parts = cat.split('\n');
                     if (isStartEnd) {
-                        return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;">
-                            <div style="font-size:10px;color:#888;text-transform:uppercase;font-weight:600;">${parts[0]}</div>
-                            <div style="font-size:13px;font-weight:700;color:${colorTotal};">${parts[1] ?? ''}</div>
-                        </div>`;
+                        return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;font-size:10px;color:#888;text-transform:uppercase;font-weight:600;">${cat}</div>`;
                     }
                     return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;font-size:11px;font-weight:600;color:#333;">${cat}</div>`;
                 },
@@ -405,10 +401,11 @@ function render(ctx: CustomChartContext) {
 
         plotOptions: {
             columnrange: {
-                borderWidth:  0,
-                pointPadding: 0.05,
-                groupPadding: 0.1,
-                grouping:     false,
+                borderWidth:     0,
+                pointPadding:    0.05,
+                groupPadding:    0.1,
+                grouping:        false,
+                stickyTracking:  false,
                 dataLabels: {
                     enabled:      showDataLabels,
                     inside:       true,
