@@ -249,9 +249,9 @@ function render(ctx: CustomChartContext) {
     const padding   = (yMax - yMin) * 0.15;
 
     const categories = [
-        'START\n' + formatNumber(startValue, numberFormat),
+        names[0] + '\n' + formatNumber(startValue, numberFormat),
         ...movements.map(m => m.name),
-        'END\n' + formatNumber(endValue, numberFormat),
+        names[names.length - 1] + '\n' + formatNumber(endValue, numberFormat),
     ];
 
     const seriesData = [
@@ -336,7 +336,7 @@ function render(ctx: CustomChartContext) {
                 style: { fontSize: '11px' },
                 formatter: function (this: any) {
                     const cat = this.value as string;
-                    const isStartEnd = cat.startsWith('START') || cat.startsWith('END');
+                    const isStartEnd = this.pos === 0 || this.pos === categories.length - 1;
                     const parts = cat.split('\n');
                     if (isStartEnd) {
                         return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;">
