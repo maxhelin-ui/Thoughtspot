@@ -135,7 +135,7 @@ function adjustButtonContainer(hasContent: boolean, marginRight: number) {
     // If toggles + legend don't fit within the plot-area-constrained space,
     // drop the right padding so the legend can spill to the chart's right edge.
     const innerWidth   = container.clientWidth - 80 - marginRight;
-    const contentWidth = toggles.scrollWidth + 12 + legend.scrollWidth;
+    const contentWidth = toggles.scrollWidth + 6 + legend.scrollWidth;
     if (contentWidth > innerWidth) {
         container.style.paddingRight = '6px';
     }
