@@ -23,46 +23,42 @@
 
 body {
   font-family: Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif;
-  background-color: var(--ts-bg-primary);
+  background-color: transparent;
   color: var(--ts-text-primary);
-  padding: 12px;
+  padding: 0;
 }
 
 .hidden { display: none !important; }
 
+/* No outer card chrome — the tile in TS already provides a title and
+   surface. The detail cards + footer tiles are the chart's whole UI. */
 .ts-card {
-  background: var(--ts-bg-primary);
-  border: 0.5px solid var(--ts-border);
-  border-radius: var(--ts-radius-lg);
-  padding: 20px;
+  background: transparent;
+  border: none;
+  padding: 0;
   width: 100%;
-  max-width: 520px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-}
-
-.ts-card-header {
-  display: flex;
-  align-items: center;
   gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--ts-text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  position: relative;
 }
 
-.ts-icon {
+/* Icon sits in the top-right of whichever detail card is visible. */
+.ts-icon-corner {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  z-index: 2;
+  width: 16px;
+  height: 16px;
+  color: var(--ts-text-tertiary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  color: var(--ts-text-secondary);
+  pointer-events: none;
 }
 
-.ts-icon svg {
+.ts-icon-corner svg {
   width: 16px;
   height: 16px;
   stroke: currentColor;
@@ -71,8 +67,6 @@ body {
   stroke-linejoin: round;
   fill: none;
 }
-
-.ts-card-title { display: inline-block; }
 
 .ts-detail-card {
   background: var(--ts-bg-secondary);

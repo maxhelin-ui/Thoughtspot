@@ -200,9 +200,7 @@ function labelOrColumnName(userValue, columnName) {
   return trimmed !== '' ? trimmed : (columnName ?? '');
 }
 
-function renderHeader(vp, chartModel) {
-  const title = labelOrColumnName(vp?.cardTitle, getColumnName(chartModel, 'primaryValue'));
-  setText('cardTitle', title);
+function renderHeader(vp) {
   const iconEl = document.getElementById('cardIcon');
   if (iconEl) {
     const key = vp?.icon ?? 'trending-up';
@@ -359,7 +357,7 @@ function render(ctx, providedModel) {
       computedValues: values,
     });
 
-    renderHeader(vp, chartModel);
+    renderHeader(vp);
 
     if ((vp?.mode ?? 'single') === 'split') {
       renderSplit(vp, values, chartModel);
