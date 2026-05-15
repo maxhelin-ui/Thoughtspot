@@ -132,12 +132,21 @@ function adjustButtonContainer(hasContent: boolean, marginRight: number) {
     container.style.paddingRight = marginRight + 'px';
     if (!hasContent || !toggles || !legend) return;
 
-    // If toggles + legend don't fit within the plot-area-constrained space,
-    // drop the right padding so the legend can spill to the chart's right edge.
-    const innerWidth   = container.clientWidth - 80 - marginRight;
-    const contentWidth = toggles.scrollWidth + 6 + legend.scrollWidth;
-    if (contentWidth > innerWidth) {
-        container.style.paddingRight = '6px';
+    // If either the toggles row or the legend row has wrapped onto a second
+    // line, drop the right padding so the legend can spill to the chart's
+    // right edge. Using offsetTop comparison because flex-wrap makes
+    // scrollWidth reflect the post-wrap width (which always fits).
+    const isWrapped = (el: HTMLElement): boolean => {
+        const items = Array.from(el.children) as HTMLElement[];
+        if (items.length < 2) return false;
+        const firstTop = items[0].offsetTop;
+        return items.some(item => item.offsetTop !== firstTop);
+    };
+    if (isWrapped(legend) || isWrapped(toggles)) {
+        // When the net change pill is shown, align with its right edge
+        // (35px from canvas). Otherwise, push to within 6px of canvas right.
+        const expandedRight = marginRight > 100 ? 35 : 6;
+        container.style.paddingRight = expandedRight + 'px';
     }
 }
 
