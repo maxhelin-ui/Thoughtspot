@@ -174,13 +174,21 @@ function getDataModel(chartModel: ChartModel) {
 
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
-    // Filter rows by the active slicer's hidden values so totals/deltas/running
-    // totals/y-axis all reflect the visible subset.
+    // Filter rows by the active slicer's hidden values AND drop rows whose
+    // slice column is null/empty, so totals/deltas/running totals/y-axis all
+    // reflect the visible subset and match the sum of slice segments.
     const activeSliceCol    = activeSliceColumnId ? sliceColumns.find(c => c.id === activeSliceColumnId) : null;
     const activeSliceColIdx = activeSliceCol ? dataArr.columns.indexOf(activeSliceCol.id) : -1;
     const activeHidden      = activeSliceColumnId ? hiddenSlicesByColumn.get(activeSliceColumnId) : undefined;
-    const visibleRows = (activeSliceCol && activeSliceColIdx >= 0 && activeHidden && activeHidden.size > 0)
-        ? dataArr.dataValue.filter(row => !activeHidden.has(String(row[activeSliceColIdx] ?? '')))
+    const visibleRows = (activeSliceCol && activeSliceColIdx >= 0)
+        ? dataArr.dataValue.filter(row => {
+            const raw = row[activeSliceColIdx];
+            if (raw == null) return false;
+            const v = String(raw);
+            if (!v.trim()) return false;
+            if (activeHidden && activeHidden.has(v)) return false;
+            return true;
+        })
         : dataArr.dataValue;
 
     const values = yColumns.map(col => {
@@ -202,10 +210,14 @@ function getDataModel(chartModel: ChartModel) {
         const contribsByMeasure: number[][] = [];
         const sliceColIdx = dataArr.columns.indexOf(sliceColumn.id);
         if (sliceColIdx >= 0) {
-            // Names from ALL rows so hidden slices still appear in the legend
+            // Names from ALL rows so hidden slices still appear in the legend.
+            // Skip null/empty values — they shouldn't appear in the legend.
             const seen = new Set<string>();
             for (const row of dataArr.dataValue) {
-                const v = String(row[sliceColIdx] ?? '');
+                const raw = row[sliceColIdx];
+                if (raw == null) continue;
+                const v = String(raw);
+                if (!v.trim()) continue;
                 if (!seen.has(v)) {
                     seen.add(v);
                     sliceNames.push(v);
@@ -732,7 +744,10 @@ const renderChart = async (ctx: CustomChartContext) => {
                     const seen = new Set<string>();
                     const uniqueSlices: string[] = [];
                     for (const row of dataArr.dataValue) {
-                        const v = String(row[sliceColIdx] ?? '');
+                        const raw = row[sliceColIdx];
+                        if (raw == null) continue;
+                        const v = String(raw);
+                        if (!v.trim()) continue;
                         if (!seen.has(v)) {
                             seen.add(v);
                             uniqueSlices.push(v);
