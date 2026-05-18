@@ -181,7 +181,7 @@ function render(ctx: CustomChartContext) {
     const chartTitle         = visualProps.chartTitle         ?? '';
     const xAxisTitle         = visualProps.xAxisTitle         ?? 'Value';
     const numberFormat       = visualProps.numberFormat       ?? '0,0.[0]a';
-    const currency           = visualProps.currency           ?? '$';
+    const currency           = visualProps.currency           ?? 'None';
     const colorOriginal      = pickColor(visualProps.colorOriginal,  '#378ADD');
     const colorRenewed       = pickColor(visualProps.colorRenewed,   '#E24B4A');
     const connectorColor     = pickColor(visualProps.connectorColor, '#F4A0A0');
@@ -252,7 +252,8 @@ function render(ctx: CustomChartContext) {
             gridLineColor: '#EEF1F4',
             labels: {
                 formatter: function (this: any) {
-                    return fmt(this.value);
+                    // Axis never shows the currency symbol — keeps the axis clean.
+                    return formatNumber(this.value, numberFormat.replace(/^[\$€£¥₹]/, ''));
                 },
                 style: { color: '#555', fontSize: '11px' },
             },
@@ -444,7 +445,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                 { key: 'originalLabel',      type: 'text',        defaultValue: ' ',                        label: 'Original legend label (blank = column name)' },
                 { key: 'renewedLabel',       type: 'text',        defaultValue: ' ',                        label: 'Renewed legend label (blank = column name)' },
                 { key: 'numberFormat',       type: 'text',        defaultValue: '0,0.[0]a',                 label: 'Number format (without currency)' },
-                { key: 'currency',           type: 'dropdown',    defaultValue: '$',                        values: CURRENCY_OPTIONS, label: 'Currency symbol' },
+                { key: 'currency',           type: 'dropdown',    defaultValue: 'None',                     values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
                 { key: 'colorOriginal',      type: 'colorpicker', defaultValue: '#378ADD',                  label: 'Original value colour' },
                 { key: 'colorRenewed',       type: 'colorpicker', defaultValue: '#E24B4A',                  label: 'Renewed value colour' },
                 { key: 'connectorColor',     type: 'colorpicker', defaultValue: '#F4A0A0',                  label: 'Connector colour' },
