@@ -17,6 +17,7 @@ interface VisualProps {
     chartTitle?: string;
     xAxisTitle?: string;
     numberFormat?: string;
+    currency?: string;
     colorOriginal?: string;
     colorRenewed?: string;
     connectorColor?: string;
@@ -25,6 +26,7 @@ interface VisualProps {
     showDataLabels?: boolean;
     showAbsoluteChange?: boolean;
     showLegend?: boolean;
+    legendPosition?: string;
     showGridLines?: boolean;
     sortBy?: string;
     originalLabel?: string;
@@ -41,6 +43,14 @@ const SORT_OPTIONS = [
     'Default order',
 ];
 
+const CURRENCY_OPTIONS = ['$', '€', '£', '¥', '₹', 'kr', 'None'];
+
+const LEGEND_POSITIONS = [
+    'Bottom (horizontal)',
+    'Top (horizontal)',
+    'Right (vertical)',
+];
+
 let globalChartReference: any = null;
 
 function formatNumber(value: number, format: string): string {
@@ -49,6 +59,14 @@ function formatNumber(value: number, format: string): string {
     } catch {
         return value?.toString() ?? '0';
     }
+}
+
+function formatCurrency(value: number, format: string, currency: string): string {
+    const cleanFormat = format.replace(/^[\$€£¥₹]/, '');
+    const formatted = formatNumber(value, cleanFormat);
+    if (!currency || currency === 'None') return formatted;
+    if (formatted.startsWith('-')) return '-' + currency + formatted.slice(1);
+    return currency + formatted;
 }
 
 function pickColor(picker: unknown, fallback: string): string {
@@ -87,7 +105,6 @@ function getDataModel(chartModel: ChartModel): {
         return { rows: [], categoryName: '', originalName: '', renewedName: '' };
     }
 
-    // Aggregate by category in case there are multiple rows per category
     const grouped = new Map<string, { original: number; renewed: number }>();
     for (const row of dataArr.dataValue) {
         const raw = row[catIdx];
@@ -138,6 +155,24 @@ function sortRows(rows: Row[], sortBy: string): Row[] {
     }
 }
 
+function legendPlacement(position: string, showLegend: boolean) {
+    if (!showLegend) {
+        return { align: 'right', verticalAlign: 'bottom', layout: 'horizontal',
+                 marginRight: 60, marginTop: 30, marginBottom: 50 };
+    }
+    switch (position) {
+        case 'Right (vertical)':
+            return { align: 'right', verticalAlign: 'middle', layout: 'vertical',
+                     marginRight: 160, marginTop: 30, marginBottom: 50 };
+        case 'Top (horizontal)':
+            return { align: 'center', verticalAlign: 'top', layout: 'horizontal',
+                     marginRight: 60, marginTop: 60, marginBottom: 50 };
+        default:
+            return { align: 'center', verticalAlign: 'bottom', layout: 'horizontal',
+                     marginRight: 60, marginTop: 30, marginBottom: 70 };
+    }
+}
+
 function render(ctx: CustomChartContext) {
     const chartModel = ctx.getChartModel();
     const { rows, originalName, renewedName } = getDataModel(chartModel);
@@ -145,7 +180,8 @@ function render(ctx: CustomChartContext) {
 
     const chartTitle         = visualProps.chartTitle         ?? '';
     const xAxisTitle         = visualProps.xAxisTitle         ?? 'Value';
-    const numberFormat       = visualProps.numberFormat       ?? '$0,0.[0]a';
+    const numberFormat       = visualProps.numberFormat       ?? '0,0.[0]a';
+    const currency           = visualProps.currency           ?? '$';
     const colorOriginal      = pickColor(visualProps.colorOriginal,  '#378ADD');
     const colorRenewed       = pickColor(visualProps.colorRenewed,   '#E24B4A');
     const connectorColor     = pickColor(visualProps.connectorColor, '#F4A0A0');
@@ -154,6 +190,7 @@ function render(ctx: CustomChartContext) {
     const showDataLabels     = visualProps.showDataLabels     ?? true;
     const showAbsoluteChange = visualProps.showAbsoluteChange ?? true;
     const showLegend         = visualProps.showLegend         ?? true;
+    const legendPosition     = visualProps.legendPosition     ?? 'Bottom (horizontal)';
     const showGridLines      = visualProps.showGridLines      ?? true;
     const sortBy             = visualProps.sortBy             ?? 'Largest % decline first';
     const originalLabel      = (typeof visualProps.originalLabel === 'string' && visualProps.originalLabel.trim())
@@ -164,10 +201,9 @@ function render(ctx: CustomChartContext) {
     if (rows.length === 0) return;
 
     const sortedRows = sortRows(rows, sortBy);
+    const placement = legendPlacement(legendPosition, showLegend);
+    const fmt = (v: number) => formatCurrency(v, numberFormat, currency);
 
-    // Per-point colour assignment: keep "original" always coloured as colorOriginal
-    // and "renewed" always coloured as colorRenewed, regardless of which is larger.
-    // Highcharts dumbbell uses `color` for the high marker and `lowColor` for the low.
     const data = sortedRows.map(r => ({
         name:          r.category,
         low:           Math.min(r.original, r.renewed),
@@ -190,9 +226,9 @@ function render(ctx: CustomChartContext) {
             type:     'dumbbell',
             inverted: true,
             marginLeft:   180,
-            marginRight:  120,
-            marginTop:    chartTitle ? 50 : 30,
-            marginBottom: 60,
+            marginRight:  placement.marginRight,
+            marginTop:    chartTitle ? Math.max(placement.marginTop, 50) : placement.marginTop,
+            marginBottom: placement.marginBottom,
             style: { fontFamily: 'Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif' },
         },
         title: {
@@ -216,25 +252,27 @@ function render(ctx: CustomChartContext) {
             gridLineColor: '#EEF1F4',
             labels: {
                 formatter: function (this: any) {
-                    return formatNumber(this.value, numberFormat);
+                    return fmt(this.value);
                 },
                 style: { color: '#555', fontSize: '11px' },
             },
         },
         legend: {
-            enabled:       showLegend,
-            align:         'right',
-            verticalAlign: 'bottom',
-            floating:      true,
-            backgroundColor: 'rgba(255,255,255,0.9)',
-            borderColor:   '#D0D7DE',
-            borderWidth:   1,
-            borderRadius:  4,
-            padding:       8,
-            itemStyle:     { fontWeight: '500', fontSize: '12px', color: '#1A1F2C' },
-            symbolHeight:  10,
-            symbolWidth:   10,
-            symbolRadius:  5,
+            enabled:         showLegend,
+            align:           placement.align,
+            verticalAlign:   placement.verticalAlign,
+            layout:          placement.layout,
+            floating:        false,
+            backgroundColor: 'transparent',
+            borderWidth:     0,
+            shadow:          false,
+            padding:         4,
+            itemStyle:       { fontWeight: '500', fontSize: '12px', color: '#1A1F2C' },
+            symbolHeight:    10,
+            symbolWidth:     10,
+            symbolRadius:    5,
+            itemMarginBottom: 4,
+            itemDistance:    18,
         },
         tooltip: {
             useHTML:         true,
@@ -249,10 +287,10 @@ function render(ctx: CustomChartContext) {
                 const borderCol  = p.change >= 0 ? colorOriginal : colorRenewed;
                 return `<div style="border:1px solid ${borderCol};border-radius:8px;background:#3A3F48;padding:12px;color:#FFFFFF;font-size:13px;">
                     <div style="font-weight:600;margin-bottom:8px;">${p.name}</div>
-                    <div style="margin-bottom:4px;">${originalLabel}:<br/><b>${formatNumber(p.original, numberFormat)}</b></div>
-                    <div style="margin-bottom:4px;">${renewedLabel}:<br/><b>${formatNumber(p.renewed, numberFormat)}</b></div>
+                    <div style="margin-bottom:4px;">${originalLabel}:<br/><b>${fmt(p.original)}</b></div>
+                    <div style="margin-bottom:4px;">${renewedLabel}:<br/><b>${fmt(p.renewed)}</b></div>
                     <div style="margin-top:8px;border-top:1px solid rgba(255,255,255,0.15);padding-top:6px;">
-                        Change:<br/><b>${changeSign}${formatNumber(p.change, numberFormat)} (${pctSign}${Math.round(p.percentChange)}%)</b>
+                        Change:<br/><b>${changeSign}${fmt(p.change)} (${pctSign}${Math.round(p.percentChange)}%)</b>
                     </div>
                 </div>`;
             },
@@ -265,34 +303,7 @@ function render(ctx: CustomChartContext) {
                     radius:    markerRadius,
                     lineWidth: 0,
                 },
-                dataLabels: {
-                    enabled:  showDataLabels,
-                    align:    'left',
-                    inside:   false,
-                    crop:     false,
-                    overflow: 'allow',
-                    useHTML:  true,
-                    x:        markerRadius + 4,
-                    style:    { textOutline: 'none' },
-                    formatter: function (this: any) {
-                        const p = this.point;
-                        // dataLabels render for both the low and high markers in a
-                        // dumbbell series; only draw on the high (rightmost when
-                        // inverted) marker, otherwise we get duplicates.
-                        if (this.y !== p.high) return null;
-                        const pctSign    = p.percentChange >= 0 ? '+' : '';
-                        const changeSign = p.change        >= 0 ? '+' : '';
-                        const changeCol  = p.change        >= 0 ? '#2D7A3A' : '#B23A3A';
-                        const pctText    = `${pctSign}${Math.round(p.percentChange)}%`;
-                        if (!showAbsoluteChange) {
-                            return `<span style="font-size:11px;font-weight:600;color:${changeCol};">${pctText}</span>`;
-                        }
-                        return `<div style="text-align:left;font-size:11px;line-height:1.3;">
-                            <div style="font-weight:600;color:${changeCol};">${pctText}</div>
-                            <div style="font-size:10px;color:#888;">(${changeSign}${formatNumber(p.change, numberFormat)})</div>
-                        </div>`;
-                    },
-                },
+                dataLabels: { enabled: false },
             },
         },
         series: [
@@ -302,7 +313,6 @@ function render(ctx: CustomChartContext) {
                 data:         data,
                 showInLegend: false,
             },
-            // Two empty scatter series to display the legend with the two colours
             ...(showLegend ? [
                 {
                     type:    'scatter',
@@ -321,6 +331,38 @@ function render(ctx: CustomChartContext) {
             ] : []),
         ],
     });
+
+    // Draw the % (and optional absolute) label centred above the connector line
+    // for each row. SVG renderer lets us position freely, which the built-in
+    // dumbbell dataLabels can't (they sit on the high marker only).
+    if (showDataLabels) {
+        const chart        = globalChartReference;
+        const valueAxis    = chart.yAxis[0];
+        const categoryAxis = chart.xAxis[0];
+        sortedRows.forEach((row, i) => {
+            const low  = Math.min(row.original, row.renewed);
+            const high = Math.max(row.original, row.renewed);
+            const x1   = valueAxis.toPixels(low,  false);
+            const x2   = valueAxis.toPixels(high, false);
+            const yPos = categoryAxis.toPixels(i, false);
+            const midX = (x1 + x2) / 2;
+            const pctSign    = row.percentChange >= 0 ? '+' : '';
+            const changeSign = row.change        >= 0 ? '+' : '';
+            const color      = row.change        >= 0 ? '#2D7A3A' : '#B23A3A';
+            const pctText    = `${pctSign}${Math.round(row.percentChange)}%`;
+            const fullText   = showAbsoluteChange
+                ? `${pctText} (${changeSign}${fmt(row.change)})`
+                : pctText;
+            chart.renderer.text(fullText, midX, yPos - markerRadius - 4)
+                .attr({ align: 'center', zIndex: 5 })
+                .css({
+                    fontSize:   '11px',
+                    fontWeight: '600',
+                    color,
+                })
+                .add();
+        });
+    }
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
@@ -401,7 +443,8 @@ const renderChart = async (ctx: CustomChartContext) => {
                 { key: 'xAxisTitle',         type: 'text',        defaultValue: 'Value',                    label: 'Value-axis title' },
                 { key: 'originalLabel',      type: 'text',        defaultValue: ' ',                        label: 'Original legend label (blank = column name)' },
                 { key: 'renewedLabel',       type: 'text',        defaultValue: ' ',                        label: 'Renewed legend label (blank = column name)' },
-                { key: 'numberFormat',       type: 'text',        defaultValue: '$0,0.[0]a',                label: 'Number format' },
+                { key: 'numberFormat',       type: 'text',        defaultValue: '0,0.[0]a',                 label: 'Number format (without currency)' },
+                { key: 'currency',           type: 'dropdown',    defaultValue: '$',                        values: CURRENCY_OPTIONS, label: 'Currency symbol' },
                 { key: 'colorOriginal',      type: 'colorpicker', defaultValue: '#378ADD',                  label: 'Original value colour' },
                 { key: 'colorRenewed',       type: 'colorpicker', defaultValue: '#E24B4A',                  label: 'Renewed value colour' },
                 { key: 'connectorColor',     type: 'colorpicker', defaultValue: '#F4A0A0',                  label: 'Connector colour' },
@@ -410,6 +453,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                 { key: 'showDataLabels',     type: 'checkbox',    defaultValue: true,                       label: 'Show change labels' },
                 { key: 'showAbsoluteChange', type: 'checkbox',    defaultValue: true,                       label: 'Show absolute change in label' },
                 { key: 'showLegend',         type: 'checkbox',    defaultValue: true,                       label: 'Show legend' },
+                { key: 'legendPosition',     type: 'dropdown',    defaultValue: 'Bottom (horizontal)',      values: LEGEND_POSITIONS, label: 'Legend position' },
                 { key: 'showGridLines',      type: 'checkbox',    defaultValue: true,                       label: 'Show grid lines' },
                 { key: 'sortBy',             type: 'dropdown',    defaultValue: 'Largest % decline first',  values: SORT_OPTIONS, label: 'Sort by' },
             ],
