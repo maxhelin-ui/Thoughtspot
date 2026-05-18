@@ -1,0 +1,13 @@
+{
+    "defaultLocale": "en_US",
+    "name": "Horizontal Dumbbell Chart",
+    "description": "Compare two measures per category (e.g. original vs renewed) as a horizontal dumbbell plot with delta labels.",
+    "author": {
+        "name": "Your Name",
+        "email": "your.email@example.com",
+        "org": "Your Organization"
+    },
+    "sourceUrl": "TBD",
+    "iconUrl": "https://cdn-icons-png.flaticon.com/512/1828/1828817.png",
+    "manifestVersion": "v0.1"
+}
