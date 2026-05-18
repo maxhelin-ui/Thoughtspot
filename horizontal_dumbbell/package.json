@@ -1,0 +1,19 @@
+{
+    "name": "horizontal-dumbbell-chart",
+    "version": "1.0.0",
+    "description": "Horizontal dumbbell plot (original vs renewed value per category) for ThoughtSpot",
+    "main": "dist/index.html",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "devDependencies": {
+        "vite": "^4.3.5",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "@thoughtspot/ts-chart-sdk": "latest",
+        "numeral": "^2.0.6"
+    }
+}
