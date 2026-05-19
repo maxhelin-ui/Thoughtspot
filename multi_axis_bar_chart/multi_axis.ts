@@ -21,7 +21,6 @@ interface VisualProps {
     currency?: string;
     showDataLabels?: boolean;
     showLegend?: boolean;
-    legendPosition?: string;
     showGridLines?: boolean;
     stackingMode?: string;
     sortBy?: string;
@@ -41,12 +40,6 @@ const PALETTE = [
 ];
 
 const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
-
-const LEGEND_POSITIONS = [
-    'Bottom (horizontal)',
-    'Top (horizontal)',
-    'Right (vertical)',
-];
 
 const STACKING_OPTIONS = ['None', 'Stacked', '100% Stacked'];
 
@@ -89,10 +82,9 @@ function formatPercent(value: number): string {
     }
 }
 
-function isPercentColumn(chartModel: ChartModel, columnId: string): boolean {
-    const col = chartModel.columns?.find((c: any) => c.id === columnId);
-    const category = (col as any)?.format?.category;
-    return category === 'PERCENTAGE';
+function detectPercentByName(name: string): boolean {
+    const n = (name || '').toLowerCase();
+    return /(?:%|\bpct\b|\bpercent\b|\bnrr\b|\bgrr\b|\brate\b|\bratio\b)/.test(n);
 }
 
 function pickColor(picker: unknown, fallback: string): string {
@@ -168,18 +160,9 @@ function adjustButtonContainer(hasContent: boolean) {
     }
 }
 
-function legendPlacement(position: string, showLegend: boolean) {
-    if (!showLegend) {
-        return { align: 'right', verticalAlign: 'bottom', layout: 'horizontal', marginRight: 40, marginTop: 30, marginBottom: 60 };
-    }
-    switch (position) {
-        case 'Right (vertical)':
-            return { align: 'right', verticalAlign: 'middle', layout: 'vertical', marginRight: 160, marginTop: 30, marginBottom: 60 };
-        case 'Top (horizontal)':
-            return { align: 'center', verticalAlign: 'top', layout: 'horizontal', marginRight: 40, marginTop: 60, marginBottom: 60 };
-        default:
-            return { align: 'center', verticalAlign: 'bottom', layout: 'horizontal', marginRight: 40, marginTop: 30, marginBottom: 80 };
-    }
+function clearCustomLegend() {
+    const legendEl = document.getElementById('customLegend');
+    if (legendEl) legendEl.innerHTML = '';
 }
 
 type DataModel = {
@@ -262,16 +245,18 @@ function render(ctx: CustomChartContext) {
     const currency        = visualProps.currency        ?? 'None';
     const showDataLabels  = visualProps.showDataLabels  ?? false;
     const showLegend      = visualProps.showLegend      ?? true;
-    const legendPosition  = visualProps.legendPosition  ?? 'Bottom (horizontal)';
     const showGridLines   = visualProps.showGridLines   ?? true;
     const stackingMode    = visualProps.stackingMode    ?? 'None';
     const sortBy          = visualProps.sortBy          ?? 'Descending by value';
 
-    const placement = legendPlacement(legendPosition, showLegend);
-
-    // Detect percentage measures so we render them with % formatting instead of
-    // the abbreviated number / currency formats.
-    const isMeasurePercent = yColumns.map(yCol => isPercentColumn(chartModel, yCol.id));
+    // Per-measure "format as %" flag. Driven by an explicit setting per measure;
+    // the default falls back to a name heuristic (% / pct / percent / nrr / grr
+    // / rate / ratio) so common cases work out of the box.
+    const isMeasurePercent = yColumns.map(yCol => {
+        const override = visualProps[`measureAsPercent_${yCol.id}`];
+        if (typeof override === 'boolean') return override;
+        return detectPercentByName(yCol.name);
+    });
     const allPercent = isMeasurePercent.length > 0 && isMeasurePercent.every(Boolean);
 
     const fmtForMeasure = (v: number, yIdx: number) =>
@@ -352,15 +337,19 @@ function render(ctx: CustomChartContext) {
         render(ctx);
     });
 
-    renderCustomLegend(
-        seriesSpecs.map(s => ({ name: s.name, color: s.color })),
-        hidden,
-        (name) => {
-            if (hidden.has(name)) hidden.delete(name);
-            else hidden.add(name);
-            render(ctx);
-        },
-    );
+    if (showLegend) {
+        renderCustomLegend(
+            seriesSpecs.map(s => ({ name: s.name, color: s.color })),
+            hidden,
+            (name) => {
+                if (hidden.has(name)) hidden.delete(name);
+                else hidden.add(name);
+                render(ctx);
+            },
+        );
+    } else {
+        clearCustomLegend();
+    }
 
     if (globalChartReference) {
         globalChartReference.destroy();
@@ -371,9 +360,9 @@ function render(ctx: CustomChartContext) {
         chart: {
             type: 'column',
             marginLeft:   80,
-            marginRight:  placement.marginRight,
-            marginTop:    chartTitle ? Math.max(placement.marginTop, 50) : placement.marginTop,
-            marginBottom: placement.marginBottom,
+            marginRight:  40,
+            marginTop:    chartTitle ? 50 : 25,
+            spacingBottom: 20,
             style: { fontFamily: 'Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif' },
         },
         title: {
@@ -536,12 +525,19 @@ const renderChart = async (ctx: CustomChartContext) => {
             const sliceCol = dims.find(d => d.key === 'slice')?.columns?.[0];
 
             const measureColorPickers: any[] = [];
+            const measurePercentToggles: any[] = [];
             yCols.forEach((col, i) => {
                 measureColorPickers.push({
                     key:          `measureColor_${col.id}`,
                     type:         'colorpicker' as const,
                     defaultValue: PALETTE[i % PALETTE.length],
                     label:        `Colour: ${col.name}`,
+                });
+                measurePercentToggles.push({
+                    key:          `measureAsPercent_${col.id}`,
+                    type:         'checkbox' as const,
+                    defaultValue: detectPercentByName(col.name),
+                    label:        `Format "${col.name}" as %`,
                 });
             });
 
@@ -588,9 +584,9 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'stackingMode',   type: 'dropdown', defaultValue: 'None',                    values: STACKING_OPTIONS, label: 'Stacking' },
                     { key: 'showDataLabels', type: 'checkbox', defaultValue: false,                     label: 'Show data labels on bars' },
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
-                    { key: 'legendPosition', type: 'dropdown', defaultValue: 'Bottom (horizontal)',     values: LEGEND_POSITIONS, label: 'Legend position' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
+                    ...measurePercentToggles,
                     ...measureColorPickers,
                     ...sliceColorPickers,
                 ],
