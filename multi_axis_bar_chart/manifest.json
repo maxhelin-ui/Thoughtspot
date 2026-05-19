@@ -1,0 +1,13 @@
+{
+    "defaultLocale": "en_US",
+    "name": "Multi Axis Bar Chart",
+    "description": "Grouped/stacked bar chart with multiple selectable x-axis dimensions. Buttons above the chart switch which attribute is on the x-axis, with optional colour slicing and multiple measures.",
+    "author": {
+        "name": "Your Name",
+        "email": "your.email@example.com",
+        "org": "Your Organization"
+    },
+    "sourceUrl": "TBD",
+    "iconUrl": "https://cdn-icons-png.flaticon.com/512/1828/1828817.png",
+    "manifestVersion": "v0.1"
+}

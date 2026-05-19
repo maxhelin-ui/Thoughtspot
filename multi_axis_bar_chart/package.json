@@ -1,0 +1,19 @@
+{
+    "name": "multi-axis-bar-chart",
+    "version": "1.0.0",
+    "description": "Bar chart with switchable x-axis dimensions (like the waterfall's slicer buttons, but they change the x-axis instead of slicing)",
+    "main": "dist/index.html",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "devDependencies": {
+        "vite": "^4.3.5",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "@thoughtspot/ts-chart-sdk": "latest",
+        "numeral": "^2.0.6"
+    }
+}
