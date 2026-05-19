@@ -23,10 +23,17 @@ interface VisualProps {
     showLegend?: boolean;
     legendPosition?: string;
     showGridLines?: boolean;
-    rotateXLabels?: boolean;
     stackingMode?: string;
+    sortBy?: string;
     [key: string]: any;
 }
+
+const SORT_OPTIONS = [
+    'Descending by value',
+    'Ascending by value',
+    'Alphabetical',
+    'Default order',
+];
 
 const PALETTE = [
     '#378ADD', '#E24B4A', '#534AB7', '#F0A937', '#52B788',
@@ -70,6 +77,22 @@ function formatCurrency(value: number, format: string, currency: string): string
     if (!currency || currency === 'None') return formatted;
     if (formatted.startsWith('-')) return '-' + currency + formatted.slice(1);
     return currency + formatted;
+}
+
+function formatPercent(value: number): string {
+    // ThoughtSpot percentages come through as decimals (0.85 = 85%). Render with
+    // up to one decimal place, trimming trailing zeros.
+    try {
+        return numeral(value).format('0.[0]%');
+    } catch {
+        return `${(value * 100).toFixed(1)}%`;
+    }
+}
+
+function isPercentColumn(chartModel: ChartModel, columnId: string): boolean {
+    const col = chartModel.columns?.find((c: any) => c.id === columnId);
+    const category = (col as any)?.format?.category;
+    return category === 'PERCENTAGE';
 }
 
 function pickColor(picker: unknown, fallback: string): string {
@@ -241,14 +264,52 @@ function render(ctx: CustomChartContext) {
     const showLegend      = visualProps.showLegend      ?? true;
     const legendPosition  = visualProps.legendPosition  ?? 'Bottom (horizontal)';
     const showGridLines   = visualProps.showGridLines   ?? true;
-    const rotateXLabels   = visualProps.rotateXLabels   ?? false;
     const stackingMode    = visualProps.stackingMode    ?? 'None';
+    const sortBy          = visualProps.sortBy          ?? 'Descending by value';
 
     const placement = legendPlacement(legendPosition, showLegend);
-    const fmtCurrency = (v: number) => formatCurrency(v, numberFormat, currency);
-    const fmtPlain    = (v: number) => formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
 
-    const { xCategories, sliceNames, data } = computeChartData(dataArr, activeXCol, yColumns, sliceColumn);
+    // Detect percentage measures so we render them with % formatting instead of
+    // the abbreviated number / currency formats.
+    const isMeasurePercent = yColumns.map(yCol => isPercentColumn(chartModel, yCol.id));
+    const allPercent = isMeasurePercent.length > 0 && isMeasurePercent.every(Boolean);
+
+    const fmtForMeasure = (v: number, yIdx: number) =>
+        isMeasurePercent[yIdx]
+            ? formatPercent(v)
+            : formatCurrency(v, numberFormat, currency);
+    const fmtAxis = (v: number) =>
+        allPercent
+            ? formatPercent(v)
+            : formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
+
+    let { xCategories, sliceNames, data } = computeChartData(dataArr, activeXCol, yColumns, sliceColumn);
+
+    // Sort x categories per the user's choice. Default = descending by value
+    // (sum of the first measure across all slices, per category).
+    if (sortBy !== 'Default order') {
+        const totalsByCat = xCategories.map((_, catIdx) => {
+            let total = 0;
+            // Use the first measure as the sort key. If multiple, that's the
+            // "primary" one. Mixed units (eg $ + %) make summing meaningless.
+            const yIdx = 0;
+            for (let s = 0; s < sliceNames.length; s++) {
+                total += data[yIdx]?.[s]?.[catIdx] ?? 0;
+            }
+            return total;
+        });
+        const order = xCategories.map((_, i) => i);
+        if (sortBy === 'Descending by value') {
+            order.sort((a, b) => totalsByCat[b] - totalsByCat[a]);
+        } else if (sortBy === 'Ascending by value') {
+            order.sort((a, b) => totalsByCat[a] - totalsByCat[b]);
+        } else {
+            // Alphabetical (natural)
+            order.sort((a, b) => naturalCompare(xCategories[a], xCategories[b]));
+        }
+        xCategories = order.map(i => xCategories[i]);
+        data = data.map(perY => perY.map(perS => order.map(i => perS[i])));
+    }
 
     // Build series: one per (measure, sliceValue). When no slice, sliceNames=[''] and the
     // series name is just the measure. When sliced, name depends on whether there's >1 measure.
@@ -276,6 +337,9 @@ function render(ctx: CustomChartContext) {
             });
         });
     });
+
+    const seriesNameToYIdx = new Map<string, number>();
+    seriesSpecs.forEach(s => seriesNameToYIdx.set(s.name, s.yColIdx));
 
     const hidden = getHiddenSet(activeXCol.id);
 
@@ -324,7 +388,11 @@ function render(ctx: CustomChartContext) {
                 style: { fontWeight: '500', color: '#555' },
             },
             labels: {
-                rotation: rotateXLabels ? -30 : 0,
+                // Highcharts auto-rotation: try horizontal first, then -30° if
+                // labels would otherwise be cropped. Re-evaluated per render so
+                // each x-axis selection gets the right treatment independently.
+                autoRotation: [0, -30],
+                autoRotationLimit: 80,
                 style: { fontSize: '12px', color: '#333', fontWeight: '500' },
             },
             lineColor: '#ddd',
@@ -336,7 +404,7 @@ function render(ctx: CustomChartContext) {
             gridLineColor: '#EEF1F4',
             labels: {
                 formatter: function (this: any) {
-                    return fmtPlain(this.value);
+                    return fmtAxis(this.value);
                 },
                 style: { color: '#555', fontSize: '11px' },
             },
@@ -352,9 +420,10 @@ function render(ctx: CustomChartContext) {
                 const p = this.point as any;
                 const seriesName = this.series.name;
                 const color = this.series.color;
+                const yIdx = seriesNameToYIdx.get(seriesName) ?? 0;
                 return `<div style="border:1px solid ${color};border-radius:8px;background:#3A3F48;padding:12px;color:#FFFFFF;font-size:13px;">
                     <div style="font-weight:600;margin-bottom:6px;">${p.category}</div>
-                    <div>${seriesName}:<br/><b>${fmtCurrency(p.y)}</b></div>
+                    <div>${seriesName}:<br/><b>${fmtForMeasure(p.y, yIdx)}</b></div>
                 </div>`;
             },
         },
@@ -370,7 +439,8 @@ function render(ctx: CustomChartContext) {
                     style: { fontSize: '11px', fontWeight: '600', textOutline: 'none', color: '#333' },
                     formatter: function (this: any) {
                         if (this.y == null || this.y === 0) return '';
-                        return fmtCurrency(this.y);
+                        const yIdx = seriesNameToYIdx.get(this.series.name) ?? 0;
+                        return fmtForMeasure(this.y, yIdx);
                     },
                 },
             },
@@ -520,7 +590,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'legendPosition', type: 'dropdown', defaultValue: 'Bottom (horizontal)',     values: LEGEND_POSITIONS, label: 'Legend position' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
-                    { key: 'rotateXLabels',  type: 'checkbox', defaultValue: false,                     label: 'Rotate x-axis labels (-30°)' },
+                    { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
                     ...measureColorPickers,
                     ...sliceColorPickers,
                 ],
