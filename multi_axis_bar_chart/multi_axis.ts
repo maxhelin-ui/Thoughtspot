@@ -187,6 +187,7 @@ function computeChartData(
     activeXCol: { id: string },
     yColumns: Array<{ id: string }>,
     sliceColumn: { id: string } | undefined,
+    isMeasurePercent: boolean[],
 ) {
     const xColIdx     = dataArr.columns.indexOf(activeXCol.id);
     const sliceColIdx = sliceColumn ? dataArr.columns.indexOf(sliceColumn.id) : -1;
@@ -209,17 +210,30 @@ function computeChartData(
     const xCategories = Array.from(xCatSet).sort(naturalCompare);
     const sliceNames  = sliceColIdx >= 0 ? Array.from(sliceSet).sort(naturalCompare) : [''];
 
-    // data[yIdx][sIdx][xCatIdx] = aggregated sum
-    const data: number[][][] = yColumns.map(yCol => {
+    // data[yIdx][sIdx][xCatIdx] = aggregated value
+    // Sum for normal measures, mean for percent measures (since summing
+    // percentages across a row-level breakdown yields nonsense — e.g. five
+    // 70% NRR rows would sum to 350%).
+    const data: number[][][] = yColumns.map((yCol, yIdx) => {
         const yColIdx = dataArr.columns.indexOf(yCol.id);
+        const useMean = isMeasurePercent[yIdx];
         return sliceNames.map(sliceName =>
-            xCategories.map(xCat =>
-                dataArr.dataValue.reduce((sum, row) => {
-                    if (String(row[xColIdx] ?? '') !== xCat) return sum;
-                    if (sliceColIdx >= 0 && String(row[sliceColIdx] ?? '') !== sliceName) return sum;
-                    return sum + (parseFloat(String(row[yColIdx] ?? 0)) || 0);
-                }, 0),
-            ),
+            xCategories.map(xCat => {
+                let sum = 0;
+                let count = 0;
+                for (const row of dataArr.dataValue) {
+                    if (String(row[xColIdx] ?? '') !== xCat) continue;
+                    if (sliceColIdx >= 0 && String(row[sliceColIdx] ?? '') !== sliceName) continue;
+                    const raw = row[yColIdx];
+                    if (raw == null) continue;
+                    const v = parseFloat(String(raw));
+                    if (Number.isNaN(v)) continue;
+                    sum += v;
+                    count++;
+                }
+                if (useMean) return count > 0 ? sum / count : 0;
+                return sum;
+            }),
         );
     });
 
@@ -268,7 +282,7 @@ function render(ctx: CustomChartContext) {
             ? formatPercent(v)
             : formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
 
-    let { xCategories, sliceNames, data } = computeChartData(dataArr, activeXCol, yColumns, sliceColumn);
+    let { xCategories, sliceNames, data } = computeChartData(dataArr, activeXCol, yColumns, sliceColumn, isMeasurePercent);
 
     // Sort x categories per the user's choice. Default = descending by value
     // (sum of the first measure across all slices, per category).
