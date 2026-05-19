@@ -90,10 +90,85 @@ function detectPercentByName(name: string): boolean {
     return /(?:%|\bpct\b|\bpercent\b|\bnrr\b|\bgrr\b|\brate\b|\bratio\b)/.test(n);
 }
 
+// Tiny recursive-descent math evaluator. CSP-safe (no Function/eval); supports
+// numbers (including scientific notation), unary +/-, binary + - * /, and
+// parens. The input is the formula AFTER column-name substitution, so only
+// arithmetic tokens should remain.
+function evalMathExpression(s: string): number {
+    let pos = 0;
+    const len = s.length;
+    const skipWs = () => { while (pos < len && (s.charCodeAt(pos) === 32 || s.charCodeAt(pos) === 9)) pos++; };
+
+    const parseNumber = (): number => {
+        skipWs();
+        const start = pos;
+        while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++;
+        if (s[pos] === '.') { pos++; while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++; }
+        if (s[pos] === 'e' || s[pos] === 'E') {
+            pos++;
+            if (s[pos] === '+' || s[pos] === '-') pos++;
+            while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++;
+        }
+        const n = parseFloat(s.slice(start, pos));
+        if (Number.isNaN(n)) throw new Error('Expected number');
+        return n;
+    };
+
+    const parsePrimary = (): number => {
+        skipWs();
+        if (s[pos] === '(') {
+            pos++;
+            const v = parseAdditive();
+            skipWs();
+            if (s[pos] !== ')') throw new Error('Expected )');
+            pos++;
+            return v;
+        }
+        return parseNumber();
+    };
+
+    const parseUnary = (): number => {
+        skipWs();
+        if (s[pos] === '+') { pos++; return parseUnary(); }
+        if (s[pos] === '-') { pos++; return -parseUnary(); }
+        return parsePrimary();
+    };
+
+    const parseMultiplicative = (): number => {
+        let left = parseUnary();
+        skipWs();
+        while (s[pos] === '*' || s[pos] === '/') {
+            const op = s[pos++];
+            const right = parseUnary();
+            left = op === '*' ? left * right : (right !== 0 ? left / right : 0);
+            skipWs();
+        }
+        return left;
+    };
+
+    const parseAdditive = (): number => {
+        let left = parseMultiplicative();
+        skipWs();
+        while (s[pos] === '+' || s[pos] === '-') {
+            const op = s[pos++];
+            const right = parseMultiplicative();
+            left = op === '+' ? left + right : left - right;
+            skipWs();
+        }
+        return left;
+    };
+
+    const result = parseAdditive();
+    skipWs();
+    if (pos < len) throw new Error('Unexpected trailing input');
+    return result;
+}
+
 // Substitutes column names with their numeric values, then evaluates the
-// arithmetic expression. Supports both bare names (`Renewed ARR Closed Won`)
-// and bracketed names (`[Renewed ARR Closed Won]`). Longer names match first
-// so that overlapping names (e.g. "ARR" inside "Renewed ARR") don't collide.
+// arithmetic expression with the CSP-safe parser above. Supports both bare
+// names (`Renewed ARR Closed Won`) and bracketed names (`[name]`). Longer
+// names match first so overlapping names (e.g. "ARR" inside "Renewed ARR")
+// don't collide.
 function evalFormula(expr: string, columnValues: Record<string, number>): number | null {
     if (!expr || !expr.trim()) return null;
     const names = Object.keys(columnValues).sort((a, b) => b.length - a.length);
@@ -110,10 +185,8 @@ function evalFormula(expr: string, columnValues: Record<string, number>): number
     }
     if (/[a-zA-Z_\[\]]/.test(processed)) return null; // unresolved name → invalid
     try {
-        // eslint-disable-next-line no-new-func
-        const fn = new Function(`"use strict"; return (${processed});`);
-        const result = fn();
-        return typeof result === 'number' && Number.isFinite(result) ? result : 0;
+        const result = evalMathExpression(processed);
+        return Number.isFinite(result) ? result : 0;
     } catch {
         return null;
     }
