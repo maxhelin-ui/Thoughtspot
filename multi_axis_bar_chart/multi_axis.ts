@@ -944,20 +944,10 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
+                    ...formulaSettings,
                     ...measurePercentToggles,
                     ...measureColorPickers,
                     ...sliceColorPickers,
-                    // Group all formula fields under one collapsible accordion at
-                    // the bottom of the panel so they don't clutter the basic
-                    // settings. Closed by default — click to expand.
-                    {
-                        type:                'section' as const,
-                        key:                 'formulasSection',
-                        label:               'Formulas (computed measures)',
-                        layoutType:          'accordion' as const,
-                        isAccordianExpanded: false,
-                        children:            formulaSettings,
-                    },
                 ],
             };
         },
