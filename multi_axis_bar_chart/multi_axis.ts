@@ -25,13 +25,10 @@ interface VisualProps {
     stackingMode?: string;
     sortBy?: string;
     excludeNulls?: boolean;
-    useRatio?: boolean;
-    ratioName?: string;
-    ratioNumerator?: string;
-    ratioDenominatorPlus?: string;
-    ratioDenominatorMinus?: string;
     [key: string]: any;
 }
+
+const MAX_FORMULAS = 4;
 
 const SORT_OPTIONS = [
     'Descending by value',
@@ -91,6 +88,35 @@ function formatPercent(value: number): string {
 function detectPercentByName(name: string): boolean {
     const n = (name || '').toLowerCase();
     return /(?:%|\bpct\b|\bpercent\b|\bnrr\b|\bgrr\b|\brate\b|\bratio\b)/.test(n);
+}
+
+// Substitutes column names with their numeric values, then evaluates the
+// arithmetic expression. Supports both bare names (`Renewed ARR Closed Won`)
+// and bracketed names (`[Renewed ARR Closed Won]`). Longer names match first
+// so that overlapping names (e.g. "ARR" inside "Renewed ARR") don't collide.
+function evalFormula(expr: string, columnValues: Record<string, number>): number | null {
+    if (!expr || !expr.trim()) return null;
+    const names = Object.keys(columnValues).sort((a, b) => b.length - a.length);
+    let processed = expr;
+    for (const name of names) {
+        const bracketed = `[${name}]`;
+        while (processed.indexOf(bracketed) !== -1) {
+            processed = processed.split(bracketed).join(`(${columnValues[name]})`);
+        }
+    }
+    for (const name of names) {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        processed = processed.replace(new RegExp(escaped, 'g'), `(${columnValues[name]})`);
+    }
+    if (/[a-zA-Z_\[\]]/.test(processed)) return null; // unresolved name → invalid
+    try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function(`"use strict"; return (${processed});`);
+        const result = fn();
+        return typeof result === 'number' && Number.isFinite(result) ? result : 0;
+    } catch {
+        return null;
+    }
 }
 
 function pickColor(picker: unknown, fallback: string): string {
@@ -174,6 +200,7 @@ function clearCustomLegend() {
 type DataModel = {
     xColumns: Array<{ id: string; name: string }>;
     yColumns: Array<{ id: string; name: string }>;
+    formulaInputColumns: Array<{ id: string; name: string }>;
     sliceColumn?: { id: string; name: string };
     dataArr: DataPointsArray;
 };
@@ -182,16 +209,17 @@ function getDataModel(chartModel: ChartModel): DataModel {
     const dataArr: DataPointsArray =
         chartModel.data?.[chartModel.data.length - 1]?.data ?? { columns: [], dataValue: [] };
     const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
-    const xColumns    = dims.find(d => d.key === 'xOptions')?.columns ?? [];
-    const yColumns    = dims.find(d => d.key === 'y')?.columns ?? [];
-    const sliceColumn = dims.find(d => d.key === 'slice')?.columns?.[0];
-    return { xColumns, yColumns, sliceColumn, dataArr };
+    const xColumns            = dims.find(d => d.key === 'xOptions')?.columns ?? [];
+    const yColumns            = dims.find(d => d.key === 'y')?.columns ?? [];
+    const formulaInputColumns = dims.find(d => d.key === 'formulaInputs')?.columns ?? [];
+    const sliceColumn         = dims.find(d => d.key === 'slice')?.columns?.[0];
+    return { xColumns, yColumns, formulaInputColumns, sliceColumn, dataArr };
 }
 
 function computeChartData(
     dataArr: DataPointsArray,
     activeXCol: { id: string },
-    yColumns: Array<{ id: string }>,
+    measureColumns: Array<{ id: string }>,
     sliceColumn: { id: string } | undefined,
     isMeasurePercent: boolean[],
     excludeNulls: boolean,
@@ -225,13 +253,13 @@ function computeChartData(
     const xCategories = Array.from(xCatSet).sort(naturalCompare);
     const sliceNames  = sliceColIdx >= 0 ? Array.from(sliceSet).sort(naturalCompare) : [''];
 
-    // data[yIdx][sIdx][xCatIdx] = aggregated value
+    // data[mIdx][sIdx][xCatIdx] = aggregated value
     // Sum for normal measures, mean for percent measures (since summing
     // percentages across a row-level breakdown yields nonsense — e.g. five
     // 70% NRR rows would sum to 350%).
-    const data: number[][][] = yColumns.map((yCol, yIdx) => {
-        const yColIdx = dataArr.columns.indexOf(yCol.id);
-        const useMean = isMeasurePercent[yIdx];
+    const data: number[][][] = measureColumns.map((mCol, mIdx) => {
+        const yColIdx = dataArr.columns.indexOf(mCol.id);
+        const useMean = isMeasurePercent[mIdx];
         return sliceNames.map(sliceName =>
             xCategories.map(xCat => {
                 let sum = 0;
@@ -257,10 +285,10 @@ function computeChartData(
 
 function render(ctx: CustomChartContext) {
     const chartModel = ctx.getChartModel();
-    const { xColumns, yColumns, sliceColumn, dataArr } = getDataModel(chartModel);
+    const { xColumns, yColumns, formulaInputColumns, sliceColumn, dataArr } = getDataModel(chartModel);
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
-    if (xColumns.length === 0 || yColumns.length === 0) return;
+    if (xColumns.length === 0) return;
 
     if (!activeXColumnId || !xColumns.some(c => c.id === activeXColumnId)) {
         activeXColumnId = xColumns[0].id;
@@ -279,65 +307,80 @@ function render(ctx: CustomChartContext) {
     const sortBy          = visualProps.sortBy          ?? 'Descending by value';
     const excludeNulls    = visualProps.excludeNulls    ?? true;
 
-    // Ratio mode: when enabled, the chart sums the configured numerator and
-    // denominator components first (at the current x/slice granularity), then
-    // divides — same approach TS uses internally for formulas like
-    // "Renewed ARR / (Up for Renewal ARR - Open Renewal ARR)".
-    const useRatio = visualProps.useRatio ?? false;
-    const ratioNumCol     = useRatio ? yColumns.find(c => c.name === visualProps.ratioNumerator)        : undefined;
-    const ratioDenomPlus  = useRatio ? yColumns.find(c => c.name === visualProps.ratioDenominatorPlus)  : undefined;
-    const ratioDenomMinus = useRatio && visualProps.ratioDenominatorMinus && visualProps.ratioDenominatorMinus !== 'None'
-        ? yColumns.find(c => c.name === visualProps.ratioDenominatorMinus)
-        : undefined;
-    const ratioIsValid = useRatio && !!ratioNumCol && !!ratioDenomPlus;
-    const ratioDisplayName = visualProps.ratioName?.trim() || 'Ratio';
+    // Collect any defined formulas. Each (name, expr) pair is one computed
+    // measure. The chart sums each component measure across the active group,
+    // then evaluates the expression — same way TS resolves formulas internally.
+    type FormulaDef = { name: string; expr: string };
+    const formulas: FormulaDef[] = [];
+    for (let i = 1; i <= MAX_FORMULAS; i++) {
+        const name = (visualProps[`formula${i}Name`] ?? '').trim();
+        const expr = (visualProps[`formula${i}Expr`] ?? '').trim();
+        if (name && expr) formulas.push({ name, expr });
+    }
 
-    // Per-measure "format as %" flag. In ratio mode every component is summed
-    // as a normal measure (we'll derive the ratio later); otherwise honour the
-    // per-measure override / name heuristic.
-    const isMeasurePercent = ratioIsValid
-        ? yColumns.map(() => false)
-        : yColumns.map(yCol => {
-            const override = visualProps[`measureAsPercent_${yCol.id}`];
-            if (typeof override === 'boolean') return override;
-            return detectPercentByName(yCol.name);
+    // We need component-sum data for everything the user might reference:
+    // y-axis measures (so non-formula rendering still works) AND formula inputs
+    // (so formulas can reference them). Dedupe by column id.
+    const allMeasureCols: Array<{ id: string; name: string }> = [];
+    const seenMeasureIds = new Set<string>();
+    for (const c of [...yColumns, ...formulaInputColumns]) {
+        if (seenMeasureIds.has(c.id)) continue;
+        seenMeasureIds.add(c.id);
+        allMeasureCols.push(c);
+    }
+
+    if (formulas.length === 0 && yColumns.length === 0) return;
+
+    // For raw aggregation: sum normally; only fall back to mean if the column
+    // looks like a percent. When formulas are active, component sums must stay
+    // as sums (the formula computes the ratio).
+    const allIsMeasurePercent = allMeasureCols.map(c => {
+        if (formulas.length > 0) return false;
+        const override = visualProps[`measureAsPercent_${c.id}`];
+        if (typeof override === 'boolean') return override;
+        return detectPercentByName(c.name);
+    });
+
+    let { xCategories, sliceNames, data } = computeChartData(
+        dataArr, activeXCol, allMeasureCols, sliceColumn, allIsMeasurePercent, excludeNulls,
+    );
+
+    // Effective measures = formula results if any defined, else y-axis measures
+    // (in their original order, looked up from allMeasureCols).
+    let effectiveYColumns: Array<{ id: string; name: string }>;
+    let effectiveIsPercent: boolean[];
+    if (formulas.length > 0) {
+        const formulaData: number[][][] = formulas.map(f => {
+            return sliceNames.map((_, sIdx) =>
+                xCategories.map((_, catIdx) => {
+                    const valuesByName: Record<string, number> = {};
+                    allMeasureCols.forEach((col, mIdx) => {
+                        valuesByName[col.name] = data[mIdx]?.[sIdx]?.[catIdx] ?? 0;
+                    });
+                    const v = evalFormula(f.expr, valuesByName);
+                    return v ?? 0;
+                }),
+            );
         });
-    const allPercent = ratioIsValid ? true
-        : isMeasurePercent.length > 0 && isMeasurePercent.every(Boolean);
+        data = formulaData;
+        effectiveYColumns = formulas.map((f, i) => ({ id: `formula_${i}`, name: f.name }));
+        effectiveIsPercent = formulas.map(f => /[\/]/.test(f.expr) || detectPercentByName(f.name));
+    } else {
+        const yIdxInAll = yColumns.map(yCol => allMeasureCols.findIndex(c => c.id === yCol.id));
+        effectiveYColumns = yColumns;
+        effectiveIsPercent = yColumns.map((_, i) => allIsMeasurePercent[yIdxInAll[i]]);
+        data = yIdxInAll.map(idx => data[idx]);
+    }
+    const allPercent = effectiveIsPercent.length > 0 && effectiveIsPercent.every(Boolean);
 
     const fmtForMeasure = (v: number, yIdx: number) =>
-        (effectiveIsPercent[yIdx] ?? isMeasurePercent[yIdx])
+        effectiveIsPercent[yIdx]
             ? formatPercent(v)
             : formatCurrency(v, numberFormat, currency);
     const fmtAxis = (v: number) =>
         allPercent
             ? formatPercent(v)
             : formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
-
-    let { xCategories, sliceNames, data } = computeChartData(dataArr, activeXCol, yColumns, sliceColumn, isMeasurePercent, excludeNulls);
-
-    // Collapse the component measures into a single computed ratio measure.
-    // This is the right place to do it: data has the per-(measure, slice, x)
-    // sums, so we just divide num / (denom+ - denom-) per bucket.
-    let effectiveYColumns: Array<{ id: string; name: string }> = yColumns;
-    let effectiveIsPercent: boolean[] = isMeasurePercent;
-    if (ratioIsValid) {
-        const numIdx       = yColumns.findIndex(c => c.id === ratioNumCol!.id);
-        const denomPlusIdx = yColumns.findIndex(c => c.id === ratioDenomPlus!.id);
-        const denomMinusIdx = ratioDenomMinus ? yColumns.findIndex(c => c.id === ratioDenomMinus.id) : -1;
-        const ratioData = sliceNames.map((_, sIdx) =>
-            xCategories.map((_, catIdx) => {
-                const num        = data[numIdx]?.[sIdx]?.[catIdx]       ?? 0;
-                const denomPlus  = data[denomPlusIdx]?.[sIdx]?.[catIdx] ?? 0;
-                const denomMinus = denomMinusIdx >= 0 ? (data[denomMinusIdx]?.[sIdx]?.[catIdx] ?? 0) : 0;
-                const denom      = denomPlus - denomMinus;
-                return denom !== 0 ? num / denom : 0;
-            }),
-        );
-        data = [ratioData];
-        effectiveYColumns = [{ id: 'ratio', name: ratioDisplayName }];
-        effectiveIsPercent = [true];
-    }
 
     // Sort x categories per the user's choice. Default = descending by value
     // (sum of the first measure across all slices, per category).
@@ -543,9 +586,10 @@ const renderChart = async (ctx: CustomChartContext) => {
             return [{
                 key: 'main',
                 dimensions: [
-                    { key: 'xOptions', columns: [attributeColumns[0]] },
-                    { key: 'y',        columns: [measureColumns[0]]   },
-                    { key: 'slice',    columns: []                    },
+                    { key: 'xOptions',      columns: [attributeColumns[0]] },
+                    { key: 'y',             columns: [measureColumns[0]]   },
+                    { key: 'formulaInputs', columns: []                    },
+                    { key: 'slice',         columns: []                    },
                 ],
             }];
         },
@@ -563,7 +607,7 @@ const renderChart = async (ctx: CustomChartContext) => {
         chartConfigEditorDefinition: [{
             key:             'main',
             label:           'Multi Axis Bar Chart',
-            descriptionText: 'Each attribute in "X-axis options" becomes a button; clicking it switches the x-axis. Top = default. Add measures for the y-axis and an optional attribute to slice with colour.',
+            descriptionText: 'Each attribute in "X-axis options" becomes a button; clicking it switches the x-axis. Top = default. Add measures for the y-axis (rendered as bars) and/or formula inputs (referenced by formulas in settings). Optional slice attribute colours the bars.',
             columnSections: [
                 {
                     key:                   'xOptions',
@@ -575,10 +619,17 @@ const renderChart = async (ctx: CustomChartContext) => {
                 },
                 {
                     key:                   'y',
-                    label:                 'Measures (Y-axis)',
+                    label:                 'Measures (Y-axis bars)',
                     allowAttributeColumns: false,
                     allowMeasureColumns:   true,
                     maxColumnCount:        10,
+                },
+                {
+                    key:                   'formulaInputs',
+                    label:                 'Formula inputs (referenced by formulas in settings; not rendered as bars)',
+                    allowAttributeColumns: false,
+                    allowMeasureColumns:   true,
+                    maxColumnCount:        20,
                 },
                 {
                     key:                   'slice',
@@ -611,17 +662,34 @@ const renderChart = async (ctx: CustomChartContext) => {
                 });
             });
 
-            // Ratio mode dropdowns. Values pull from the current y-measure names
-            // so the user can pick which measures act as numerator / denominator.
-            const measureNames     = yCols.map(c => c.name);
-            const measureNamesPlus = ['None', ...measureNames];
-            const ratioSettings: any[] = yCols.length >= 2 ? [
-                { key: 'useRatio',              type: 'checkbox', defaultValue: false,                                       label: 'Compute as ratio (e.g. NRR)' },
-                { key: 'ratioName',             type: 'text',     defaultValue: 'Ratio',                                     label: 'Ratio display name' },
-                { key: 'ratioNumerator',        type: 'dropdown', defaultValue: measureNames[0],                             values: measureNames,     label: 'Ratio: numerator' },
-                { key: 'ratioDenominatorPlus',  type: 'dropdown', defaultValue: measureNames[1] ?? measureNames[0],          values: measureNames,     label: 'Ratio: denominator (+)' },
-                { key: 'ratioDenominatorMinus', type: 'dropdown', defaultValue: 'None',                                      values: measureNamesPlus, label: 'Ratio: denominator (− subtract, optional)' },
-            ] : [];
+            // Formula editor: up to 4 (name, formula) pairs. Each formula can
+            // reference any measure in the "Y-axis" or "Formula inputs" column
+            // sections by name, e.g.:
+            //   Renewed ARR Closed Won / (Up for Renewal ARR Converted - Open Renewal ARR Converted)
+            // Component sums are computed per (x-category, slice) bucket, then
+            // the expression is evaluated. Names with operators (+ - / * ( )) must
+            // be bracketed: [My Measure - test].
+            const formulaInputCols = dims.find(d => d.key === 'formulaInputs')?.columns ?? [];
+            const referenceableMeasures = [...yCols, ...formulaInputCols].map(c => c.name);
+            const formulaHint = referenceableMeasures.length > 0
+                ? `Reference any of: ${referenceableMeasures.join(', ')}`
+                : 'Add measures to "Y-axis" or "Formula inputs" first.';
+            const formulaSettings: any[] = [];
+            for (let i = 1; i <= MAX_FORMULAS; i++) {
+                formulaSettings.push(
+                    { key: `formula${i}Name`, type: 'text', defaultValue: '', label: `Formula ${i} — name (blank = unused)` },
+                    { key: `formula${i}Expr`, type: 'text', defaultValue: '', label: `Formula ${i} — expression. ${formulaHint}` },
+                );
+            }
+            const formulaColorPickers: any[] = [];
+            for (let i = 1; i <= MAX_FORMULAS; i++) {
+                formulaColorPickers.push({
+                    key:          `measureColor_formula_${i - 1}`,
+                    type:         'colorpicker' as const,
+                    defaultValue: PALETTE[(yCols.length + i - 1) % PALETTE.length],
+                    label:        `Colour: Formula ${i} (if used)`,
+                });
+            }
 
             const sliceColorPickers: any[] = [];
             if (sliceCol) {
@@ -669,9 +737,10 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
                     { key: 'excludeNulls',   type: 'checkbox', defaultValue: true,                      label: 'Exclude null values (x-axis & slice)' },
-                    ...ratioSettings,
+                    ...formulaSettings,
                     ...measurePercentToggles,
                     ...measureColorPickers,
+                    ...formulaColorPickers,
                     ...sliceColorPickers,
                 ],
             };
