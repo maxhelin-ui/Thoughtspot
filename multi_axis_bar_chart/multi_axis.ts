@@ -735,26 +735,27 @@ const renderChart = async (ctx: CustomChartContext) => {
                 });
             });
 
-            // Formula editor: up to 4 (name, formula) pairs. Each formula can
-            // reference any measure in the "Y-axis" or "Formula inputs" column
-            // sections by name. Component sums are computed per (x-category,
-            // slice) bucket, then the expression is evaluated. Names with
-            // operators must be bracketed: [My - Name].
-            const formulaSettings: any[] = [];
+            // Formula editor: dynamic "+ formula" UX. We compute how many slots
+            // to show based on what the user has filled in: always at least 1
+            // slot, plus one empty slot after the last filled formula (capped
+            // at MAX_FORMULAS). When the user fills in a formula's name, the
+            // next slot appears automatically — the closest the SDK editor
+            // schema allows to a real "+ formula" button.
+            const visualPropsForEditor = (chartModel.visualProps ?? {}) as VisualProps;
+            let maxFilledIndex = 0;
             for (let i = 1; i <= MAX_FORMULAS; i++) {
-                formulaSettings.push(
-                    { key: `formula${i}Name`, type: 'text', defaultValue: ' ', label: `Formula ${i} name (blank = unused)` },
-                    { key: `formula${i}Expr`, type: 'text', defaultValue: ' ', label: `Formula ${i} expression` },
-                );
+                const n = (visualPropsForEditor[`formula${i}Name`] ?? '').trim();
+                if (n) maxFilledIndex = i;
             }
-            const formulaColorPickers: any[] = [];
-            for (let i = 1; i <= MAX_FORMULAS; i++) {
-                formulaColorPickers.push({
-                    key:          `measureColor_formula_${i - 1}`,
-                    type:         'colorpicker' as const,
-                    defaultValue: PALETTE[(yCols.length + i - 1) % PALETTE.length],
-                    label:        `Colour: Formula ${i}`,
-                });
+            const visibleFormulas = Math.max(1, Math.min(maxFilledIndex + 1, MAX_FORMULAS));
+
+            const formulaSettings: any[] = [];
+            for (let i = 1; i <= visibleFormulas; i++) {
+                formulaSettings.push(
+                    { key: `formula${i}Name`,                 type: 'text',        defaultValue: ' ',                                              label: `Formula ${i} name (blank = unused)` },
+                    { key: `formula${i}Expr`,                 type: 'text',        defaultValue: ' ',                                              label: `Formula ${i} expression` },
+                    { key: `measureColor_formula_${i - 1}`,   type: 'colorpicker', defaultValue: PALETTE[(yCols.length + i - 1) % PALETTE.length], label: `Colour: Formula ${i}` },
+                );
             }
 
             const sliceColorPickers: any[] = [];
@@ -806,7 +807,6 @@ const renderChart = async (ctx: CustomChartContext) => {
                     ...formulaSettings,
                     ...measurePercentToggles,
                     ...measureColorPickers,
-                    ...formulaColorPickers,
                     ...sliceColorPickers,
                 ],
             };
