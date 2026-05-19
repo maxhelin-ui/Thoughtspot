@@ -64,6 +64,20 @@ function pickColor(picker: unknown, fallback: string): string {
 let globalChartReference: any = null;
 let activeSliceColumnId: string | null = null;
 let lastSeenSlicingDefault: boolean | undefined = undefined;
+let globalAppConfig: any = null;
+let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let firstRenderDone = false;
+
+// Returns the org-configured chart palette if TS provided one, else the
+// SLICE_PALETTE fallback.
+function getEffectivePalette(): string[] {
+    const palettes = globalAppConfig?.styleConfig?.chartColorPalettes;
+    if (Array.isArray(palettes) && palettes.length > 0
+        && Array.isArray(palettes[0]?.colors) && palettes[0].colors.length > 0) {
+        return palettes[0].colors;
+    }
+    return SLICE_PALETTE;
+}
 const hiddenSlicesByColumn = new Map<string, Set<string>>();
 
 function getHiddenSet(columnId: string): Set<string> {
@@ -290,9 +304,10 @@ function render(ctx: CustomChartContext) {
     const connectorWidth      = visualProps.connectorWidth      ?? 1;
     const connectorStyle      = visualProps.connectorStyle      ?? 'Dot';
 
+    const palette = getEffectivePalette();
     const sliceColors = activeSlice ? activeSlice.sliceNames.map((s, i) => pickColor(
         visualProps[`sliceColor_${activeSlice.column.id}_${s}`],
-        SLICE_PALETTE[i % SLICE_PALETTE.length],
+        palette[i % palette.length],
     )) : [];
 
     renderCustomLegend(
@@ -662,17 +677,26 @@ function render(ctx: CustomChartContext) {
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
-    try {
-        ctx.emitEvent(ChartToTSEvent.RenderStart);
-        render(ctx);
-        ctx.emitEvent(ChartToTSEvent.RenderComplete);
-    } catch (error) {
-        console.error('Error during render:', error);
-        ctx.emitEvent(ChartToTSEvent.RenderError, {
-            hasError: true,
-            error,
-        } as RenderErrorEventPayload);
+    if (!globalAppConfig) {
+        try { globalAppConfig = (ctx as any).getAppConfig?.() ?? null; } catch { /* ignore */ }
     }
+    const doRender = () => {
+        try {
+            ctx.emitEvent(ChartToTSEvent.RenderStart);
+            render(ctx);
+            ctx.emitEvent(ChartToTSEvent.RenderComplete);
+            firstRenderDone = true;
+        } catch (error) {
+            console.error('Error during render:', error);
+            ctx.emitEvent(ChartToTSEvent.RenderError, {
+                hasError: true,
+                error,
+            } as RenderErrorEventPayload);
+        }
+    };
+    if (!firstRenderDone) { doRender(); return; }
+    if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+    renderDebounceTimer = setTimeout(doRender, 1000);
 };
 
 (async () => {
@@ -762,7 +786,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                         sliceColorPickers.push({
                             key:          `sliceColor_${sliceCol.id}_${s}`,
                             type:         'colorpicker' as const,
-                            defaultValue: SLICE_PALETTE[i % SLICE_PALETTE.length],
+                            defaultValue: getEffectivePalette()[i % getEffectivePalette().length],
                             label:        `${sliceCol.name} — ${s}`,
                         });
                     });

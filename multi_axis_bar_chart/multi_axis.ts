@@ -49,6 +49,21 @@ const STACKING_OPTIONS = ['None', 'Stacked', '100% Stacked'];
 let globalChartReference: any = null;
 let activeXColumnId: string | null = null;
 const hiddenSeriesByX = new Map<string, Set<string>>();
+let globalAppConfig: any = null;
+let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let firstRenderDone = false;
+
+// Returns the org-configured chart colour palette if TS provided one, else
+// falls back to our hardcoded PALETTE. This is the user's "company" palette
+// configured in TS Admin → Styling.
+function getEffectivePalette(): string[] {
+    const palettes = globalAppConfig?.styleConfig?.chartColorPalettes;
+    if (Array.isArray(palettes) && palettes.length > 0
+        && Array.isArray(palettes[0]?.colors) && palettes[0].colors.length > 0) {
+        return palettes[0].colors;
+    }
+    return PALETTE;
+}
 
 function getHiddenSet(xColumnId: string): Set<string> {
     let set = hiddenSeriesByX.get(xColumnId);
@@ -295,18 +310,17 @@ function computeChartData(
     measureColumns: Array<{ id: string }>,
     sliceColumn: { id: string } | undefined,
     isMeasurePercent: boolean[],
-    excludeNulls: boolean,
 ) {
     const xColIdx     = dataArr.columns.indexOf(activeXCol.id);
     const sliceColIdx = sliceColumn ? dataArr.columns.indexOf(sliceColumn.id) : -1;
 
-    // Always drop null/undefined/empty values; when excludeNulls is on, also
-    // drop ThoughtSpot's "{Null}" / "(Null)" / "null" string tokens.
+    // Always drop null tokens (JS null/undefined, empty strings, and TS's
+    // "{Null}" / "(Null)" / "null" display tokens). TS's native bar chart
+    // does this unconditionally, so we match it.
     const isExcluded = (v: any): boolean => {
         if (v == null) return true;
         const s = String(v).trim();
         if (!s) return true;
-        if (!excludeNulls) return false;
         const lower = s.toLowerCase();
         return lower === '{null}' || lower === '(null)' || lower === 'null';
     };
@@ -378,8 +392,6 @@ function render(ctx: CustomChartContext) {
     const showGridLines   = visualProps.showGridLines   ?? true;
     const stackingMode    = visualProps.stackingMode    ?? 'None';
     const sortBy          = visualProps.sortBy          ?? 'Descending by value';
-    const excludeNulls    = visualProps.excludeNulls    ?? true;
-
     // Collect any defined formulas. Each (name, expr) pair is one computed
     // measure. The chart sums each component measure across the active group,
     // then evaluates the expression — same way TS resolves formulas internally.
@@ -415,7 +427,7 @@ function render(ctx: CustomChartContext) {
     });
 
     let { xCategories, sliceNames, data } = computeChartData(
-        dataArr, activeXCol, allMeasureCols, sliceColumn, allIsMeasurePercent, excludeNulls,
+        dataArr, activeXCol, allMeasureCols, sliceColumn, allIsMeasurePercent,
     );
 
     // Effective measures = formula results if any defined, else y-axis measures
@@ -491,9 +503,10 @@ function render(ctx: CustomChartContext) {
             const name = isSliced
                 ? (effectiveYColumns.length > 1 ? `${yCol.name} — ${sliceName}` : sliceName)
                 : yCol.name;
+            const palette = getEffectivePalette();
             const defaultColor = isSliced
-                ? PALETTE[sIdx % PALETTE.length]
-                : PALETTE[yIdx % PALETTE.length];
+                ? palette[sIdx % palette.length]
+                : palette[yIdx % palette.length];
             const colorKey = isSliced
                 ? `sliceColor_${sliceColumn!.id}_${sliceName}`
                 : `measureColor_${yCol.id}`;
@@ -634,17 +647,35 @@ function render(ctx: CustomChartContext) {
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
-    try {
-        ctx.emitEvent(ChartToTSEvent.RenderStart);
-        render(ctx);
-        ctx.emitEvent(ChartToTSEvent.RenderComplete);
-    } catch (error) {
-        console.error('Error during render:', error);
-        ctx.emitEvent(ChartToTSEvent.RenderError, {
-            hasError: true,
-            error,
-        } as RenderErrorEventPayload);
+    // Cache the org's chart styling so getEffectivePalette() can read it.
+    if (!globalAppConfig) {
+        try { globalAppConfig = (ctx as any).getAppConfig?.() ?? null; } catch { /* ignore */ }
     }
+
+    const doRender = () => {
+        try {
+            ctx.emitEvent(ChartToTSEvent.RenderStart);
+            render(ctx);
+            ctx.emitEvent(ChartToTSEvent.RenderComplete);
+            firstRenderDone = true;
+        } catch (error) {
+            console.error('Error during render:', error);
+            ctx.emitEvent(ChartToTSEvent.RenderError, {
+                hasError: true,
+                error,
+            } as RenderErrorEventPayload);
+        }
+    };
+
+    // First render: paint immediately. Subsequent renders (e.g. from typing
+    // into the settings panel) get a 1 s debounce so we don't re-layout the
+    // whole chart on every keystroke.
+    if (!firstRenderDone) {
+        doRender();
+        return;
+    }
+    if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+    renderDebounceTimer = setTimeout(doRender, 1000);
 };
 
 (async () => {
@@ -720,11 +751,12 @@ const renderChart = async (ctx: CustomChartContext) => {
 
             const measureColorPickers: any[] = [];
             const measurePercentToggles: any[] = [];
+            const editorPalette = getEffectivePalette();
             yCols.forEach((col, i) => {
                 measureColorPickers.push({
                     key:          `measureColor_${col.id}`,
                     type:         'colorpicker' as const,
-                    defaultValue: PALETTE[i % PALETTE.length],
+                    defaultValue: editorPalette[i % editorPalette.length],
                     label:        `Colour: ${col.name}`,
                 });
                 measurePercentToggles.push({
@@ -754,7 +786,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                 formulaSettings.push(
                     { key: `formula${i}Name`,                 type: 'text',        defaultValue: ' ',                                              label: `Formula ${i} name (blank = unused)` },
                     { key: `formula${i}Expr`,                 type: 'text',        defaultValue: ' ',                                              label: `Formula ${i} expression` },
-                    { key: `measureColor_formula_${i - 1}`,   type: 'colorpicker', defaultValue: PALETTE[(yCols.length + i - 1) % PALETTE.length], label: `Colour: Formula ${i}` },
+                    { key: `measureColor_formula_${i - 1}`,   type: 'colorpicker', defaultValue: editorPalette[(yCols.length + i - 1) % editorPalette.length], label: `Colour: Formula ${i}` },
                 );
             }
 
@@ -783,7 +815,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                             sliceColorPickers.push({
                                 key:          `sliceColor_${sliceCol.id}_${s}`,
                                 type:         'colorpicker' as const,
-                                defaultValue: PALETTE[i % PALETTE.length],
+                                defaultValue: editorPalette[i % editorPalette.length],
                                 label:        `${sliceCol.name} — ${s}`,
                             });
                         });
@@ -803,7 +835,6 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
-                    { key: 'excludeNulls',   type: 'checkbox', defaultValue: true,                      label: 'Exclude null values (x-axis & slice)' },
                     ...formulaSettings,
                     ...measurePercentToggles,
                     ...measureColorPickers,

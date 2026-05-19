@@ -321,6 +321,20 @@ function renderFooterMetrics(vp, values, chartModel) {
 }
 
 let lastModel = null;
+let globalAppConfig = null;
+let renderDebounceTimer = null;
+let firstRenderDone = false;
+
+const FALLBACK_PALETTE = ['#7F77DD', '#888780', '#534AB7', '#5F5E5A'];
+
+function getEffectivePalette() {
+    const palettes = globalAppConfig?.styleConfig?.chartColorPalettes;
+    if (Array.isArray(palettes) && palettes.length > 0
+        && Array.isArray(palettes[0]?.colors) && palettes[0].colors.length > 0) {
+        return palettes[0].colors;
+    }
+    return FALLBACK_PALETTE;
+}
 
 function render(ctx, providedModel) {
   // When DataUpdate / ChartModelUpdate fires we pass the fresh model/data
@@ -370,14 +384,23 @@ function render(ctx, providedModel) {
 }
 
 const renderChart = async (ctx, providedModel) => {
-  try {
-    ctx.emitEvent(ChartToTSEvent.RenderStart);
-    await render(ctx, providedModel);
-    ctx.emitEvent(ChartToTSEvent.RenderComplete);
-  } catch (error) {
-    console.error('KPI - Detailed render error:', error);
-    ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error });
+  if (!globalAppConfig) {
+    try { globalAppConfig = ctx.getAppConfig?.() ?? null; } catch { /* ignore */ }
   }
+  const doRender = async () => {
+    try {
+      ctx.emitEvent(ChartToTSEvent.RenderStart);
+      await render(ctx, providedModel);
+      ctx.emitEvent(ChartToTSEvent.RenderComplete);
+      firstRenderDone = true;
+    } catch (error) {
+      console.error('KPI - Detailed render error:', error);
+      ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error });
+    }
+  };
+  if (!firstRenderDone) { await doRender(); return; }
+  if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+  renderDebounceTimer = setTimeout(doRender, 1000);
 };
 
 (async () => {
@@ -512,8 +535,8 @@ const renderChart = async (ctx, providedModel) => {
           defaultValue: 'ratio',
           values: ['ratio', 'as-is'],
         },
-        { key: 'primaryAccentColor', type: 'colorpicker', label: 'Primary percent text color', defaultValue: '#534AB7' },
-        { key: 'primaryBarColor', type: 'colorpicker', label: 'Primary bar color', defaultValue: '#7F77DD' },
+        { key: 'primaryAccentColor', type: 'colorpicker', label: 'Primary percent text color', defaultValue: getEffectivePalette()[0] ?? '#534AB7' },
+        { key: 'primaryBarColor', type: 'colorpicker', label: 'Primary bar color', defaultValue: getEffectivePalette()[0] ?? '#7F77DD' },
         { key: 'primaryAsNumber', type: 'checkbox', label: 'Format primary value as number (currency + K/M/B)', defaultValue: false },
         { key: 'secondarySuffix', type: 'text', label: 'Secondary suffix (split)', defaultValue: 'accounts' },
         { key: 'rightLabel', type: 'text', label: 'Right label (split, blank = use Secondary value column name)', defaultValue: ' ' },
@@ -524,8 +547,8 @@ const renderChart = async (ctx, providedModel) => {
           defaultValue: 'ratio',
           values: ['ratio', 'as-is'],
         },
-        { key: 'secondaryAccentColor', type: 'colorpicker', label: 'Secondary percent text color', defaultValue: '#5F5E5A' },
-        { key: 'secondaryBarColor', type: 'colorpicker', label: 'Secondary bar color', defaultValue: '#888780' },
+        { key: 'secondaryAccentColor', type: 'colorpicker', label: 'Secondary percent text color', defaultValue: getEffectivePalette()[1] ?? '#5F5E5A' },
+        { key: 'secondaryBarColor', type: 'colorpicker', label: 'Secondary bar color', defaultValue: getEffectivePalette()[1] ?? '#888780' },
         { key: 'metric1Label', type: 'text', label: 'Metric 1 label (blank = use column name)', defaultValue: ' ' },
         {
           key: 'metric1Format',

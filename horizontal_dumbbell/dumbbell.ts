@@ -52,6 +52,21 @@ const LEGEND_POSITIONS = [
 ];
 
 let globalChartReference: any = null;
+let globalAppConfig: any = null;
+let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+let firstRenderDone = false;
+
+const FALLBACK_PALETTE = ['#378ADD', '#E24B4A', '#534AB7', '#F0A937', '#52B788'];
+
+// Returns the org-configured chart palette if TS provided one, else fallback.
+function getEffectivePalette(): string[] {
+    const palettes = globalAppConfig?.styleConfig?.chartColorPalettes;
+    if (Array.isArray(palettes) && palettes.length > 0
+        && Array.isArray(palettes[0]?.colors) && palettes[0].colors.length > 0) {
+        return palettes[0].colors;
+    }
+    return FALLBACK_PALETTE;
+}
 
 function formatNumber(value: number, format: string): string {
     try {
@@ -182,9 +197,10 @@ function render(ctx: CustomChartContext) {
     const xAxisTitle         = visualProps.xAxisTitle         ?? 'Value';
     const numberFormat       = visualProps.numberFormat       ?? '0,0.[0]a';
     const currency           = visualProps.currency           ?? 'None';
-    const colorOriginal      = pickColor(visualProps.colorOriginal,  '#378ADD');
-    const colorRenewed       = pickColor(visualProps.colorRenewed,   '#E24B4A');
-    const connectorColor     = pickColor(visualProps.connectorColor, '#F4A0A0');
+    const palette            = getEffectivePalette();
+    const colorOriginal      = pickColor(visualProps.colorOriginal,  palette[0]);
+    const colorRenewed       = pickColor(visualProps.colorRenewed,   palette[1] ?? palette[0]);
+    const connectorColor     = pickColor(visualProps.connectorColor, palette[1] ?? palette[0]);
     const connectorWidth     = visualProps.connectorWidth     ?? 3;
     const markerRadius       = visualProps.markerRadius       ?? 8;
     const showDataLabels     = visualProps.showDataLabels     ?? true;
@@ -367,17 +383,29 @@ function render(ctx: CustomChartContext) {
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
-    try {
-        ctx.emitEvent(ChartToTSEvent.RenderStart);
-        render(ctx);
-        ctx.emitEvent(ChartToTSEvent.RenderComplete);
-    } catch (error) {
-        console.error('Error during render:', error);
-        ctx.emitEvent(ChartToTSEvent.RenderError, {
-            hasError: true,
-            error,
-        } as RenderErrorEventPayload);
+    if (!globalAppConfig) {
+        try { globalAppConfig = (ctx as any).getAppConfig?.() ?? null; } catch { /* ignore */ }
     }
+    const doRender = () => {
+        try {
+            ctx.emitEvent(ChartToTSEvent.RenderStart);
+            render(ctx);
+            ctx.emitEvent(ChartToTSEvent.RenderComplete);
+            firstRenderDone = true;
+        } catch (error) {
+            console.error('Error during render:', error);
+            ctx.emitEvent(ChartToTSEvent.RenderError, {
+                hasError: true,
+                error,
+            } as RenderErrorEventPayload);
+        }
+    };
+    if (!firstRenderDone) {
+        doRender();
+        return;
+    }
+    if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
+    renderDebounceTimer = setTimeout(doRender, 1000);
 };
 
 (async () => {
@@ -446,9 +474,9 @@ const renderChart = async (ctx: CustomChartContext) => {
                 { key: 'renewedLabel',       type: 'text',        defaultValue: ' ',                        label: 'Renewed legend label (blank = column name)' },
                 { key: 'numberFormat',       type: 'text',        defaultValue: '0,0.[0]a',                 label: 'Number format (without currency)' },
                 { key: 'currency',           type: 'dropdown',    defaultValue: 'None',                     values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
-                { key: 'colorOriginal',      type: 'colorpicker', defaultValue: '#378ADD',                  label: 'Original value colour' },
-                { key: 'colorRenewed',       type: 'colorpicker', defaultValue: '#E24B4A',                  label: 'Renewed value colour' },
-                { key: 'connectorColor',     type: 'colorpicker', defaultValue: '#F4A0A0',                  label: 'Connector colour' },
+                { key: 'colorOriginal',      type: 'colorpicker', defaultValue: getEffectivePalette()[0] ?? '#378ADD', label: 'Original value colour' },
+                { key: 'colorRenewed',       type: 'colorpicker', defaultValue: getEffectivePalette()[1] ?? '#E24B4A', label: 'Renewed value colour' },
+                { key: 'connectorColor',     type: 'colorpicker', defaultValue: getEffectivePalette()[1] ?? '#F4A0A0', label: 'Connector colour' },
                 { key: 'connectorWidth',     type: 'number',      defaultValue: 3,                          label: 'Connector width' },
                 { key: 'markerRadius',       type: 'number',      defaultValue: 8,                          label: 'Marker size' },
                 { key: 'showDataLabels',     type: 'checkbox',    defaultValue: true,                       label: 'Show change labels' },
