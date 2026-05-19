@@ -147,21 +147,28 @@ function adjustButtonContainer(hasContent: boolean, marginRight: number) {
     container.style.paddingRight = marginRight + 'px';
     if (!hasContent || !toggles || !legend) return;
 
-    // If the layout had to wrap — either the outer container (legend
-    // dropped onto its own row) or inner items (toggles/legend items
-    // wrapped within their container) — drop the right padding so the
-    // legend can spill to the chart's right edge.
-    // Use a tolerance for the outer check because align-items: center
-    // can offset the shorter container by a few pixels even on the same row.
-    const isWrapped = (el: HTMLElement): boolean => {
+    // Progressive shrink: first push the legend to the chart's right edge
+    // (drop right padding), then push the slicer pills to the left edge
+    // (drop left padding). Only after both edges are flush do we accept a
+    // 2-row layout. align-items: center can offset shorter children a few
+    // pixels even on the same row, so we use a tolerance on the outer
+    // check.
+    const isWrappedInside = (el: HTMLElement): boolean => {
         const items = Array.from(el.children) as HTMLElement[];
         if (items.length < 2) return false;
         const firstTop = items[0].offsetTop;
         return items.some(item => Math.abs(item.offsetTop - firstTop) > 4);
     };
-    const outerWrapped = Math.abs(legend.offsetTop - toggles.offsetTop) > 15;
-    if (outerWrapped || isWrapped(legend) || isWrapped(toggles)) {
+    const isOuterWrapped = () =>
+        Math.abs(legend.offsetTop - toggles.offsetTop) > 15
+        || isWrappedInside(legend)
+        || isWrappedInside(toggles);
+
+    if (isOuterWrapped()) {
         container.style.paddingRight = '6px';
+        if (isOuterWrapped()) {
+            container.style.paddingLeft = '6px';
+        }
     }
 }
 

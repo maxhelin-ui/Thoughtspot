@@ -56,6 +56,12 @@
                 background: #6B7280;
                 color: #FFFFFF;
             }
+            .slice-toggle-btn[draggable="true"] { cursor: grab; }
+            .slice-toggle-btn[draggable="true"]:active { cursor: grabbing; }
+            .slice-toggle-btn.drag-source { opacity: 0.4; }
+            .slice-toggle-btn.drag-over {
+                box-shadow: inset 3px 0 0 0 #6B7280;
+            }
             .legend-item {
                 display: inline-flex;
                 align-items: center;

@@ -25,6 +25,7 @@ interface VisualProps {
     stackingMode?: string;
     sortBy?: string;
     excludeNulls?: boolean;
+    xButtonOrder?: string;
     [key: string]: any;
 }
 
@@ -216,21 +217,92 @@ function naturalCompare(a: string, b: string): number {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+function getOrderedXColumns(
+    xColumns: Array<{ id: string; name: string }>,
+    orderString: string | undefined,
+): Array<{ id: string; name: string }> {
+    if (!orderString) return xColumns;
+    const orderIds = orderString.split('|').filter(Boolean);
+    const byId = new Map(xColumns.map(c => [c.id, c]));
+    const ordered: Array<{ id: string; name: string }> = [];
+    for (const id of orderIds) {
+        const c = byId.get(id);
+        if (c) { ordered.push(c); byId.delete(id); }
+    }
+    // Append any columns the saved order doesn't know about (newly added).
+    for (const c of byId.values()) ordered.push(c);
+    return ordered;
+}
+
+let dragSourceColId: string | null = null;
+
 function renderXButtons(
     xColumns: Array<{ id: string; name: string }>,
     activeId: string | null,
     onClick: (id: string) => void,
+    onReorder: (newOrderIds: string[]) => void,
 ) {
     const togglesEl = document.getElementById('sliceToggles');
     if (!togglesEl) return;
     togglesEl.innerHTML = '';
+
+    const ids = xColumns.map(c => c.id);
+
     xColumns.forEach(col => {
         const button = document.createElement('button');
         const isActive = col.id === activeId;
         button.className = 'slice-toggle-btn' + (isActive ? ' active' : '');
         button.type = 'button';
         button.textContent = col.name;
-        button.onclick = () => onClick(col.id);
+        button.draggable = true;
+        button.dataset.colId = col.id;
+
+        // Suppress click if drop just happened on this button (HTML5 drag
+        // emits both events; we want only one to fire).
+        let dropJustHappened = false;
+        button.onclick = () => {
+            if (dropJustHappened) { dropJustHappened = false; return; }
+            onClick(col.id);
+        };
+
+        button.addEventListener('dragstart', (e) => {
+            dragSourceColId = col.id;
+            button.classList.add('drag-source');
+            if (e.dataTransfer) {
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', col.id);
+            }
+        });
+        button.addEventListener('dragend', () => {
+            dragSourceColId = null;
+            button.classList.remove('drag-source');
+            togglesEl.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+        });
+        button.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+            if (dragSourceColId && dragSourceColId !== col.id) {
+                button.classList.add('drag-over');
+            }
+        });
+        button.addEventListener('dragleave', () => {
+            button.classList.remove('drag-over');
+        });
+        button.addEventListener('drop', (e) => {
+            e.preventDefault();
+            button.classList.remove('drag-over');
+            const sourceId = dragSourceColId;
+            if (!sourceId || sourceId === col.id) return;
+            const srcIdx = ids.indexOf(sourceId);
+            const destIdx = ids.indexOf(col.id);
+            if (srcIdx < 0 || destIdx < 0) return;
+            const newOrder = [...ids];
+            const [moved] = newOrder.splice(srcIdx, 1);
+            newOrder.splice(destIdx, 0, moved);
+            dropJustHappened = true;
+            onReorder(newOrder);
+        });
+
         togglesEl.appendChild(button);
     });
 }
@@ -269,15 +341,26 @@ function adjustButtonContainer(hasContent: boolean) {
     container.style.paddingRight = '40px';
     if (!hasContent || !toggles || !legend) return;
 
-    const isWrapped = (el: HTMLElement): boolean => {
+    // Progressive shrink: if the legend has to wrap to a new row, first push
+    // the legend to the chart's right edge (drop right padding). If it still
+    // wraps, also push the slicer pills to the left edge (drop left padding).
+    // Only after both edges are flush do we accept a 2-row layout.
+    const isWrappedInside = (el: HTMLElement): boolean => {
         const items = Array.from(el.children) as HTMLElement[];
         if (items.length < 2) return false;
         const firstTop = items[0].offsetTop;
         return items.some(item => Math.abs(item.offsetTop - firstTop) > 4);
     };
-    const outerWrapped = Math.abs(legend.offsetTop - toggles.offsetTop) > 15;
-    if (outerWrapped || isWrapped(legend) || isWrapped(toggles)) {
+    const isOuterWrapped = () =>
+        Math.abs(legend.offsetTop - toggles.offsetTop) > 15
+        || isWrappedInside(legend)
+        || isWrappedInside(toggles);
+
+    if (isOuterWrapped()) {
         container.style.paddingRight = '6px';
+        if (isOuterWrapped()) {
+            container.style.paddingLeft = '6px';
+        }
     }
 }
 
@@ -373,10 +456,14 @@ function computeChartData(
 
 function render(ctx: CustomChartContext) {
     const chartModel = ctx.getChartModel();
-    const { xColumns, yColumns, formulaInputColumns, sliceColumn, dataArr } = getDataModel(chartModel);
+    // eslint-disable-next-line prefer-const
+    let { xColumns, yColumns, formulaInputColumns, sliceColumn, dataArr } = getDataModel(chartModel);
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
     if (xColumns.length === 0) return;
+
+    // Honour the user's drag-reordered pill sequence, stored in visualProps.
+    xColumns = getOrderedXColumns(xColumns, visualProps.xButtonOrder);
 
     if (!activeXColumnId || !xColumns.some(c => c.id === activeXColumnId)) {
         activeXColumnId = xColumns[0].id;
@@ -531,10 +618,23 @@ function render(ctx: CustomChartContext) {
                    : stackingMode === '100% Stacked' ? 'percent'
                    : undefined;
 
-    renderXButtons(xColumns, activeXColumnId, (columnId) => {
-        activeXColumnId = columnId;
-        render(ctx);
-    });
+    renderXButtons(
+        xColumns,
+        activeXColumnId,
+        (columnId) => {
+            activeXColumnId = columnId;
+            render(ctx);
+        },
+        (newOrderIds) => {
+            // Persist the new pill order in visualProps so it survives reloads.
+            // We mutate locally first so the immediate re-render shows the new
+            // order; the SDK will round-trip the change back via VisualPropsUpdate.
+            const newVisualProps = { ...visualProps, xButtonOrder: newOrderIds.join('|') };
+            chartModel.visualProps = newVisualProps;
+            ctx.emitEvent(ChartToTSEvent.UpdateVisualProps, { visualProps: newVisualProps });
+            render(ctx);
+        },
+    );
 
     if (showLegend) {
         renderCustomLegend(
