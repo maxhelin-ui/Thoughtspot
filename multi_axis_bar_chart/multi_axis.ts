@@ -52,6 +52,7 @@ const hiddenSeriesByX = new Map<string, Set<string>>();
 let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
+let lastRenderedDataRef: unknown = null;
 
 // Returns the org-configured chart colour palette if TS provided one, else
 // falls back to our hardcoded PALETTE. This is the user's "company" palette
@@ -658,6 +659,7 @@ const renderChart = async (ctx: CustomChartContext) => {
             render(ctx);
             ctx.emitEvent(ChartToTSEvent.RenderComplete);
             firstRenderDone = true;
+            lastRenderedDataRef = ctx.getChartModel().data;
         } catch (error) {
             console.error('Error during render:', error);
             ctx.emitEvent(ChartToTSEvent.RenderError, {
@@ -667,10 +669,17 @@ const renderChart = async (ctx: CustomChartContext) => {
         }
     };
 
-    // First render: paint immediately. Subsequent renders (e.g. from typing
-    // into the settings panel) get a 1 s debounce so we don't re-layout the
-    // whole chart on every keystroke.
+    // First render paints immediately. After that, only debounce when the
+    // visualProps changed (typing into the settings panel) — data changes
+    // from filters/queries must apply right away, otherwise the chart would
+    // appear blank while the debounce timer is pending.
     if (!firstRenderDone) {
+        doRender();
+        return;
+    }
+    const currentData = ctx.getChartModel().data;
+    if (currentData !== lastRenderedDataRef) {
+        if (renderDebounceTimer) { clearTimeout(renderDebounceTimer); renderDebounceTimer = null; }
         doRender();
         return;
     }
@@ -835,10 +844,20 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
-                    ...formulaSettings,
                     ...measurePercentToggles,
                     ...measureColorPickers,
                     ...sliceColorPickers,
+                    // Group all formula fields under one collapsible accordion at
+                    // the bottom of the panel so they don't clutter the basic
+                    // settings. Closed by default — click to expand.
+                    {
+                        type:                'section' as const,
+                        key:                 'formulasSection',
+                        label:               'Formulas (computed measures)',
+                        layoutType:          'accordion' as const,
+                        isAccordianExpanded: false,
+                        children:            formulaSettings,
+                    },
                 ],
             };
         },

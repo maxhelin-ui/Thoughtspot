@@ -67,6 +67,7 @@ let lastSeenSlicingDefault: boolean | undefined = undefined;
 let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
+let lastRenderedDataRef: unknown = null;
 
 // Returns the org-configured chart palette if TS provided one, else the
 // SLICE_PALETTE fallback.
@@ -686,6 +687,7 @@ const renderChart = async (ctx: CustomChartContext) => {
             render(ctx);
             ctx.emitEvent(ChartToTSEvent.RenderComplete);
             firstRenderDone = true;
+            lastRenderedDataRef = ctx.getChartModel().data;
         } catch (error) {
             console.error('Error during render:', error);
             ctx.emitEvent(ChartToTSEvent.RenderError, {
@@ -695,6 +697,12 @@ const renderChart = async (ctx: CustomChartContext) => {
         }
     };
     if (!firstRenderDone) { doRender(); return; }
+    const currentData = ctx.getChartModel().data;
+    if (currentData !== lastRenderedDataRef) {
+        if (renderDebounceTimer) { clearTimeout(renderDebounceTimer); renderDebounceTimer = null; }
+        doRender();
+        return;
+    }
     if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
     renderDebounceTimer = setTimeout(doRender, 1000);
 };

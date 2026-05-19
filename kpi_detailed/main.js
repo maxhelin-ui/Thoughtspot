@@ -324,6 +324,7 @@ let lastModel = null;
 let globalAppConfig = null;
 let renderDebounceTimer = null;
 let firstRenderDone = false;
+let lastRenderedDataRef = null;
 
 const FALLBACK_PALETTE = ['#7F77DD', '#888780', '#534AB7', '#5F5E5A'];
 
@@ -393,12 +394,19 @@ const renderChart = async (ctx, providedModel) => {
       await render(ctx, providedModel);
       ctx.emitEvent(ChartToTSEvent.RenderComplete);
       firstRenderDone = true;
+      lastRenderedDataRef = ctx.getChartModel().data;
     } catch (error) {
       console.error('KPI - Detailed render error:', error);
       ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error });
     }
   };
   if (!firstRenderDone) { await doRender(); return; }
+  const currentData = ctx.getChartModel().data;
+  if (currentData !== lastRenderedDataRef) {
+    if (renderDebounceTimer) { clearTimeout(renderDebounceTimer); renderDebounceTimer = null; }
+    await doRender();
+    return;
+  }
   if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
   renderDebounceTimer = setTimeout(doRender, 1000);
 };

@@ -55,6 +55,7 @@ let globalChartReference: any = null;
 let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
+let lastRenderedDataRef: unknown = null;
 
 const FALLBACK_PALETTE = ['#378ADD', '#E24B4A', '#534AB7', '#F0A937', '#52B788'];
 
@@ -392,6 +393,7 @@ const renderChart = async (ctx: CustomChartContext) => {
             render(ctx);
             ctx.emitEvent(ChartToTSEvent.RenderComplete);
             firstRenderDone = true;
+            lastRenderedDataRef = ctx.getChartModel().data;
         } catch (error) {
             console.error('Error during render:', error);
             ctx.emitEvent(ChartToTSEvent.RenderError, {
@@ -400,7 +402,10 @@ const renderChart = async (ctx: CustomChartContext) => {
             } as RenderErrorEventPayload);
         }
     };
-    if (!firstRenderDone) {
+    if (!firstRenderDone) { doRender(); return; }
+    const currentData = ctx.getChartModel().data;
+    if (currentData !== lastRenderedDataRef) {
+        if (renderDebounceTimer) { clearTimeout(renderDebounceTimer); renderDebounceTimer = null; }
         doRender();
         return;
     }
