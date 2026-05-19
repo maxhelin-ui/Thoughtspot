@@ -25,6 +25,11 @@ interface VisualProps {
     stackingMode?: string;
     sortBy?: string;
     excludeNulls?: boolean;
+    useRatio?: boolean;
+    ratioName?: string;
+    ratioNumerator?: string;
+    ratioDenominatorPlus?: string;
+    ratioDenominatorMinus?: string;
     [key: string]: any;
 }
 
@@ -274,18 +279,34 @@ function render(ctx: CustomChartContext) {
     const sortBy          = visualProps.sortBy          ?? 'Descending by value';
     const excludeNulls    = visualProps.excludeNulls    ?? true;
 
-    // Per-measure "format as %" flag. Driven by an explicit setting per measure;
-    // the default falls back to a name heuristic (% / pct / percent / nrr / grr
-    // / rate / ratio) so common cases work out of the box.
-    const isMeasurePercent = yColumns.map(yCol => {
-        const override = visualProps[`measureAsPercent_${yCol.id}`];
-        if (typeof override === 'boolean') return override;
-        return detectPercentByName(yCol.name);
-    });
-    const allPercent = isMeasurePercent.length > 0 && isMeasurePercent.every(Boolean);
+    // Ratio mode: when enabled, the chart sums the configured numerator and
+    // denominator components first (at the current x/slice granularity), then
+    // divides — same approach TS uses internally for formulas like
+    // "Renewed ARR / (Up for Renewal ARR - Open Renewal ARR)".
+    const useRatio = visualProps.useRatio ?? false;
+    const ratioNumCol     = useRatio ? yColumns.find(c => c.name === visualProps.ratioNumerator)        : undefined;
+    const ratioDenomPlus  = useRatio ? yColumns.find(c => c.name === visualProps.ratioDenominatorPlus)  : undefined;
+    const ratioDenomMinus = useRatio && visualProps.ratioDenominatorMinus && visualProps.ratioDenominatorMinus !== 'None'
+        ? yColumns.find(c => c.name === visualProps.ratioDenominatorMinus)
+        : undefined;
+    const ratioIsValid = useRatio && !!ratioNumCol && !!ratioDenomPlus;
+    const ratioDisplayName = visualProps.ratioName?.trim() || 'Ratio';
+
+    // Per-measure "format as %" flag. In ratio mode every component is summed
+    // as a normal measure (we'll derive the ratio later); otherwise honour the
+    // per-measure override / name heuristic.
+    const isMeasurePercent = ratioIsValid
+        ? yColumns.map(() => false)
+        : yColumns.map(yCol => {
+            const override = visualProps[`measureAsPercent_${yCol.id}`];
+            if (typeof override === 'boolean') return override;
+            return detectPercentByName(yCol.name);
+        });
+    const allPercent = ratioIsValid ? true
+        : isMeasurePercent.length > 0 && isMeasurePercent.every(Boolean);
 
     const fmtForMeasure = (v: number, yIdx: number) =>
-        isMeasurePercent[yIdx]
+        (effectiveIsPercent[yIdx] ?? isMeasurePercent[yIdx])
             ? formatPercent(v)
             : formatCurrency(v, numberFormat, currency);
     const fmtAxis = (v: number) =>
@@ -294,6 +315,29 @@ function render(ctx: CustomChartContext) {
             : formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
 
     let { xCategories, sliceNames, data } = computeChartData(dataArr, activeXCol, yColumns, sliceColumn, isMeasurePercent, excludeNulls);
+
+    // Collapse the component measures into a single computed ratio measure.
+    // This is the right place to do it: data has the per-(measure, slice, x)
+    // sums, so we just divide num / (denom+ - denom-) per bucket.
+    let effectiveYColumns: Array<{ id: string; name: string }> = yColumns;
+    let effectiveIsPercent: boolean[] = isMeasurePercent;
+    if (ratioIsValid) {
+        const numIdx       = yColumns.findIndex(c => c.id === ratioNumCol!.id);
+        const denomPlusIdx = yColumns.findIndex(c => c.id === ratioDenomPlus!.id);
+        const denomMinusIdx = ratioDenomMinus ? yColumns.findIndex(c => c.id === ratioDenomMinus.id) : -1;
+        const ratioData = sliceNames.map((_, sIdx) =>
+            xCategories.map((_, catIdx) => {
+                const num        = data[numIdx]?.[sIdx]?.[catIdx]       ?? 0;
+                const denomPlus  = data[denomPlusIdx]?.[sIdx]?.[catIdx] ?? 0;
+                const denomMinus = denomMinusIdx >= 0 ? (data[denomMinusIdx]?.[sIdx]?.[catIdx] ?? 0) : 0;
+                const denom      = denomPlus - denomMinus;
+                return denom !== 0 ? num / denom : 0;
+            }),
+        );
+        data = [ratioData];
+        effectiveYColumns = [{ id: 'ratio', name: ratioDisplayName }];
+        effectiveIsPercent = [true];
+    }
 
     // Sort x categories per the user's choice. Default = descending by value
     // (sum of the first measure across all slices, per category).
@@ -325,11 +369,11 @@ function render(ctx: CustomChartContext) {
     // series name is just the measure. When sliced, name depends on whether there's >1 measure.
     type SeriesSpec = { name: string; data: number[]; color: string; yColIdx: number; sliceIdx: number };
     const seriesSpecs: SeriesSpec[] = [];
-    yColumns.forEach((yCol, yIdx) => {
+    effectiveYColumns.forEach((yCol, yIdx) => {
         sliceNames.forEach((sliceName, sIdx) => {
             const isSliced = !!sliceColumn;
             const name = isSliced
-                ? (yColumns.length > 1 ? `${yCol.name} — ${sliceName}` : sliceName)
+                ? (effectiveYColumns.length > 1 ? `${yCol.name} — ${sliceName}` : sliceName)
                 : yCol.name;
             const defaultColor = isSliced
                 ? PALETTE[sIdx % PALETTE.length]
@@ -399,7 +443,7 @@ function render(ctx: CustomChartContext) {
             categories: xCategories,
             title: {
                 text:  xAxisTitleProp.trim() ? xAxisTitleProp : activeXCol.name,
-                style: { fontWeight: '500', color: '#555' },
+                style: { fontWeight: 'bold', color: '#555' },
             },
             labels: {
                 // Highcharts auto-rotation: try horizontal first, then -30° if
@@ -407,7 +451,7 @@ function render(ctx: CustomChartContext) {
                 // each x-axis selection gets the right treatment independently.
                 autoRotation: [0, -30],
                 autoRotationLimit: 80,
-                style: { fontSize: '12px', color: '#333', fontWeight: '500' },
+                style: { fontSize: '12px', color: '#333', fontWeight: 'normal' },
             },
             lineColor: '#ddd',
             tickWidth: 0,
@@ -445,6 +489,7 @@ function render(ctx: CustomChartContext) {
             column: {
                 stickyTracking: false,
                 borderWidth: 0,
+                borderRadius: 0,
                 pointPadding: 0.05,
                 groupPadding: 0.12,
                 stacking,
@@ -566,6 +611,18 @@ const renderChart = async (ctx: CustomChartContext) => {
                 });
             });
 
+            // Ratio mode dropdowns. Values pull from the current y-measure names
+            // so the user can pick which measures act as numerator / denominator.
+            const measureNames     = yCols.map(c => c.name);
+            const measureNamesPlus = ['None', ...measureNames];
+            const ratioSettings: any[] = yCols.length >= 2 ? [
+                { key: 'useRatio',              type: 'checkbox', defaultValue: false,                                       label: 'Compute as ratio (e.g. NRR)' },
+                { key: 'ratioName',             type: 'text',     defaultValue: 'Ratio',                                     label: 'Ratio display name' },
+                { key: 'ratioNumerator',        type: 'dropdown', defaultValue: measureNames[0],                             values: measureNames,     label: 'Ratio: numerator' },
+                { key: 'ratioDenominatorPlus',  type: 'dropdown', defaultValue: measureNames[1] ?? measureNames[0],          values: measureNames,     label: 'Ratio: denominator (+)' },
+                { key: 'ratioDenominatorMinus', type: 'dropdown', defaultValue: 'None',                                      values: measureNamesPlus, label: 'Ratio: denominator (− subtract, optional)' },
+            ] : [];
+
             const sliceColorPickers: any[] = [];
             if (sliceCol) {
                 const dataArr = chartModel.data?.[chartModel.data.length - 1]?.data;
@@ -612,6 +669,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
                     { key: 'excludeNulls',   type: 'checkbox', defaultValue: true,                      label: 'Exclude null values (x-axis & slice)' },
+                    ...ratioSettings,
                     ...measurePercentToggles,
                     ...measureColorPickers,
                     ...sliceColorPickers,
