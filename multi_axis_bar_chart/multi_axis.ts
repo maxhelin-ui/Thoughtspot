@@ -737,21 +737,14 @@ const renderChart = async (ctx: CustomChartContext) => {
 
             // Formula editor: up to 4 (name, formula) pairs. Each formula can
             // reference any measure in the "Y-axis" or "Formula inputs" column
-            // sections by name, e.g.:
-            //   Renewed ARR Closed Won / (Up for Renewal ARR Converted - Open Renewal ARR Converted)
-            // Component sums are computed per (x-category, slice) bucket, then
-            // the expression is evaluated. Names with operators (+ - / * ( )) must
-            // be bracketed: [My Measure - test].
-            const formulaInputCols = dims.find(d => d.key === 'formulaInputs')?.columns ?? [];
-            const referenceableMeasures = [...yCols, ...formulaInputCols].map(c => c.name);
-            const formulaHint = referenceableMeasures.length > 0
-                ? `Reference any of: ${referenceableMeasures.join(', ')}`
-                : 'Add measures to "Y-axis" or "Formula inputs" first.';
+            // sections by name. Component sums are computed per (x-category,
+            // slice) bucket, then the expression is evaluated. Names with
+            // operators must be bracketed: [My - Name].
             const formulaSettings: any[] = [];
             for (let i = 1; i <= MAX_FORMULAS; i++) {
                 formulaSettings.push(
-                    { key: `formula${i}Name`, type: 'text', defaultValue: '', label: `Formula ${i} — name (blank = unused)` },
-                    { key: `formula${i}Expr`, type: 'text', defaultValue: '', label: `Formula ${i} — expression. ${formulaHint}` },
+                    { key: `formula${i}Name`, type: 'text', defaultValue: ' ', label: `Formula ${i} name (blank = unused)` },
+                    { key: `formula${i}Expr`, type: 'text', defaultValue: ' ', label: `Formula ${i} expression` },
                 );
             }
             const formulaColorPickers: any[] = [];
@@ -760,7 +753,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     key:          `measureColor_formula_${i - 1}`,
                     type:         'colorpicker' as const,
                     defaultValue: PALETTE[(yCols.length + i - 1) % PALETTE.length],
-                    label:        `Colour: Formula ${i} (if used)`,
+                    label:        `Colour: Formula ${i}`,
                 });
             }
 
