@@ -823,22 +823,47 @@ const renderChart = async (ctx: CustomChartContext) => {
                 }
             }
 
+            // Two tabs in the settings panel: "General" (chart appearance,
+            // colours, percent toggles) and "Formulas" (the formula editor
+            // for computed measures). The SDK renders a Section whose
+            // layoutType is 'tab' by rendering each child Section as a tab.
+            const generalElements = [
+                { key: 'chartTitle',     type: 'text',     defaultValue: ' ',                       label: 'Chart title' },
+                { key: 'xAxisTitle',     type: 'text',     defaultValue: ' ',                       label: 'X-axis title (blank = column name)' },
+                { key: 'yAxisTitle',     type: 'text',     defaultValue: ' ',                       label: 'Y-axis title (blank = measure name)' },
+                { key: 'numberFormat',   type: 'text',     defaultValue: '0,0.[0]a',                label: 'Number format' },
+                { key: 'currency',       type: 'dropdown', defaultValue: 'None',                    values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
+                { key: 'stackingMode',   type: 'dropdown', defaultValue: 'None',                    values: STACKING_OPTIONS, label: 'Stacking' },
+                { key: 'showDataLabels', type: 'checkbox', defaultValue: false,                     label: 'Show data labels on bars' },
+                { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
+                { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
+                { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
+                ...measurePercentToggles,
+                ...measureColorPickers,
+                ...sliceColorPickers,
+            ];
+
             return {
                 elements: [
-                    { key: 'chartTitle',     type: 'text',     defaultValue: ' ',                       label: 'Chart title' },
-                    { key: 'xAxisTitle',     type: 'text',     defaultValue: ' ',                       label: 'X-axis title (blank = column name)' },
-                    { key: 'yAxisTitle',     type: 'text',     defaultValue: ' ',                       label: 'Y-axis title (blank = measure name)' },
-                    { key: 'numberFormat',   type: 'text',     defaultValue: '0,0.[0]a',                label: 'Number format' },
-                    { key: 'currency',       type: 'dropdown', defaultValue: 'None',                    values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
-                    { key: 'stackingMode',   type: 'dropdown', defaultValue: 'None',                    values: STACKING_OPTIONS, label: 'Stacking' },
-                    { key: 'showDataLabels', type: 'checkbox', defaultValue: false,                     label: 'Show data labels on bars' },
-                    { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
-                    { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
-                    { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
-                    ...formulaSettings,
-                    ...measurePercentToggles,
-                    ...measureColorPickers,
-                    ...sliceColorPickers,
+                    {
+                        type:       'section' as const,
+                        key:        'settingsTabs',
+                        layoutType: 'tab' as const,
+                        children: [
+                            {
+                                type:     'section' as const,
+                                key:      'generalTab',
+                                label:    'General',
+                                children: generalElements,
+                            },
+                            {
+                                type:     'section' as const,
+                                key:      'formulasTab',
+                                label:    'Formulas',
+                                children: formulaSettings,
+                            },
+                        ],
+                    },
                 ],
             };
         },
