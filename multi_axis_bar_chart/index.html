@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Multi Axis Bar Chart</title>
+        <script src="https://code.highcharts.com/highcharts.js"></script>
+        <script src="https://code.highcharts.com/highcharts-more.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: 'Optimo-Plain', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            }
+            #buttonContainer {
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 6px;
+                padding: 4px 40px 4px 80px;
+                box-sizing: border-box;
+            }
+            #sliceToggles {
+                display: flex;
+                gap: 6px;
+                flex-wrap: wrap;
+                align-items: center;
+                flex-shrink: 0;
+            }
+            #customLegend {
+                display: flex;
+                gap: 14px;
+                flex-wrap: wrap;
+                align-items: center;
+                justify-content: flex-end;
+                flex-shrink: 0;
+                margin-left: auto;
+            }
+            .slice-toggle-btn {
+                display: inline-flex;
+                align-items: center;
+                padding: 5px 14px;
+                border: none;
+                border-radius: 999px;
+                background: #F1F2F4;
+                color: #1A1F2C;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 500;
+                transition: background 0.15s ease, color 0.15s ease;
+                font-family: Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif;
+            }
+            .slice-toggle-btn:hover { background: #E4E6EA; }
+            .slice-toggle-btn.active {
+                background: #6B7280;
+                color: #FFFFFF;
+            }
+            .legend-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                background: none;
+                border: none;
+                padding: 2px 4px;
+                cursor: pointer;
+                font-size: 12px;
+                color: #333;
+                font-weight: 500;
+                transition: opacity 0.15s ease;
+            }
+            .legend-item:hover { opacity: 0.75; }
+            .legend-item.legend-hidden {
+                opacity: 0.4;
+                text-decoration: line-through;
+            }
+            .legend-item.legend-hidden .legend-swatch { opacity: 0.5; }
+            .legend-swatch {
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                border-radius: 2px;
+                flex: 0 0 auto;
+            }
+            #chart {
+                width: 100%;
+                height: 100%;
+            }
+        </style>
+    </head>
+    <body>
+        <div style="width: 100vw; height: 100vh; position: relative; display: flex; flex-direction: column;">
+            <div id="buttonContainer">
+                <div id="sliceToggles"></div>
+                <div id="customLegend"></div>
+            </div>
+            <div id="chart" style="flex: 1; min-height: 0;"></div>
+        </div>
+        <script type="module" src="multi_axis.ts"></script>
+    </body>
+</html>
