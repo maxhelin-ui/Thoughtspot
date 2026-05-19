@@ -24,6 +24,7 @@ interface VisualProps {
     showGridLines?: boolean;
     stackingMode?: string;
     sortBy?: string;
+    excludeNulls?: boolean;
     [key: string]: any;
 }
 
@@ -188,23 +189,32 @@ function computeChartData(
     yColumns: Array<{ id: string }>,
     sliceColumn: { id: string } | undefined,
     isMeasurePercent: boolean[],
+    excludeNulls: boolean,
 ) {
     const xColIdx     = dataArr.columns.indexOf(activeXCol.id);
     const sliceColIdx = sliceColumn ? dataArr.columns.indexOf(sliceColumn.id) : -1;
+
+    // Always drop null/undefined/empty values; when excludeNulls is on, also
+    // drop ThoughtSpot's "{Null}" / "(Null)" / "null" string tokens.
+    const isExcluded = (v: any): boolean => {
+        if (v == null) return true;
+        const s = String(v).trim();
+        if (!s) return true;
+        if (!excludeNulls) return false;
+        const lower = s.toLowerCase();
+        return lower === '{null}' || lower === '(null)' || lower === 'null';
+    };
 
     const xCatSet = new Set<string>();
     const sliceSet = new Set<string>();
     for (const row of dataArr.dataValue) {
         const xRaw = row[xColIdx];
-        if (xRaw == null) continue;
-        const xVal = String(xRaw);
-        if (!xVal.trim()) continue;
-        xCatSet.add(xVal);
+        if (isExcluded(xRaw)) continue;
+        xCatSet.add(String(xRaw));
         if (sliceColIdx >= 0) {
             const sRaw = row[sliceColIdx];
-            if (sRaw == null) continue;
-            const s = String(sRaw);
-            if (s.trim()) sliceSet.add(s);
+            if (isExcluded(sRaw)) continue;
+            sliceSet.add(String(sRaw));
         }
     }
     const xCategories = Array.from(xCatSet).sort(naturalCompare);
@@ -262,6 +272,7 @@ function render(ctx: CustomChartContext) {
     const showGridLines   = visualProps.showGridLines   ?? true;
     const stackingMode    = visualProps.stackingMode    ?? 'None';
     const sortBy          = visualProps.sortBy          ?? 'Descending by value';
+    const excludeNulls    = visualProps.excludeNulls    ?? true;
 
     // Per-measure "format as %" flag. Driven by an explicit setting per measure;
     // the default falls back to a name heuristic (% / pct / percent / nrr / grr
@@ -282,7 +293,7 @@ function render(ctx: CustomChartContext) {
             ? formatPercent(v)
             : formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
 
-    let { xCategories, sliceNames, data } = computeChartData(dataArr, activeXCol, yColumns, sliceColumn, isMeasurePercent);
+    let { xCategories, sliceNames, data } = computeChartData(dataArr, activeXCol, yColumns, sliceColumn, isMeasurePercent, excludeNulls);
 
     // Sort x categories per the user's choice. Default = descending by value
     // (sum of the first measure across all slices, per category).
@@ -600,6 +611,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
+                    { key: 'excludeNulls',   type: 'checkbox', defaultValue: true,                      label: 'Exclude null values (x-axis & slice)' },
                     ...measurePercentToggles,
                     ...measureColorPickers,
                     ...sliceColorPickers,
