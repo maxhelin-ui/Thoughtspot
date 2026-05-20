@@ -56,20 +56,15 @@ let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
 
-// Why we cache data per X column:
-// TS groups by every attribute we put into the query. With N x-options + a
-// slicer + measures, the GROUP BY cardinality is the cross-product of all
-// distinct values, which on a broad filter can blow past TS's row limit and
-// quietly drop groups — so some slice values disappear and totals undercount.
-// Fix: query just the *active* x column at a time. When the user clicks a
-// different x button we emit GetDataForQuery for the new column and stash
-// the response here so render() can use it.
-type CachedData = { xColumnId: string; dataArr: DataPointsArray };
-let dataCache: CachedData | null = null;
-// The X column id that the current chartModel.data was queried with (set by
-// getQueriesFromChartConfig). Tracked so render can decide whether to use
-// chartModel.data or the fetched cache.
-let chartModelDataXColId: string | null = null;
+// Why we emit one query per x-option instead of one big combined query:
+// TS groups by every attribute we put into a single Query. With N x-options
+// + a slicer + measures all in one Query, the GROUP BY is the cross-product
+// of every distinct value across all of them — on a broad filter that can
+// blow past TS's row limit and quietly drop groups (entire slice values
+// vanish, totals undercount). Splitting into one Query per x-option keeps
+// each GROUP BY narrow (active x + slicer + measures only), so we get
+// complete data with no truncation, and the user can switch x-axes
+// instantly without re-fetching.
 
 // Returns the org-configured chart colour palette if TS provided one, else
 // falls back to our hardcoded PALETTE. This is the user's "company" palette
@@ -372,41 +367,26 @@ type DataModel = {
 };
 
 function getDataModel(chartModel: ChartModel): DataModel {
-    // Prefer the cached query result when it matches the active X column
-    // (set by the X-button click handler after a successful GetDataForQuery).
-    // Otherwise fall back to chartModel.data, which was queried with whichever
-    // x col getQueriesFromChartConfig used most recently (chartModelDataXColId).
-    let dataArr: DataPointsArray;
-    if (dataCache && dataCache.xColumnId === activeXColumnId) {
-        dataArr = dataCache.dataArr;
-    } else {
-        dataArr = chartModel.data?.[chartModel.data.length - 1]?.data ?? { columns: [], dataValue: [] };
-    }
     const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
     const xColumns            = dims.find(d => d.key === 'xOptions')?.columns ?? [];
     const yColumns            = dims.find(d => d.key === 'y')?.columns ?? [];
     const formulaInputColumns = dims.find(d => d.key === 'formulaInputs')?.columns ?? [];
     const sliceColumn         = dims.find(d => d.key === 'slice')?.columns?.[0];
-    return { xColumns, yColumns, formulaInputColumns, sliceColumn, dataArr };
-}
 
-// Pull a DataPointsArray out of whatever shape GetDataForQuery returns. The
-// SDK's TS definition for emitEvent return is Promise<any>, so be defensive:
-// try a handful of plausible shapes and fall back to null if none look right.
-function extractDataArrFromQueryResponse(response: any): DataPointsArray | null {
-    if (!response) return null;
-    const candidates: any[] = [
-        response?.data?.[0]?.data,
-        response?.[0]?.data,
-        response?.data,
-        response,
-    ];
-    for (const c of candidates) {
-        if (c && Array.isArray(c.columns) && Array.isArray(c.dataValue)) {
-            return c as DataPointsArray;
-        }
+    // chartModel.data has one QueryData per x-option (see
+    // getQueriesFromChartConfig). Pick the entry whose columns include the
+    // currently active X column. Fall back to the last entry if no match —
+    // covers the empty/transitional state before activeXColumnId is set.
+    let dataArr: DataPointsArray = { columns: [], dataValue: [] };
+    const allQueryData = chartModel.data ?? [];
+    if (activeXColumnId) {
+        const match = allQueryData.find(qd => (qd?.data?.columns ?? []).includes(activeXColumnId));
+        if (match?.data) dataArr = match.data;
     }
-    return null;
+    if (dataArr.columns.length === 0 && allQueryData.length > 0) {
+        dataArr = allQueryData[allQueryData.length - 1]?.data ?? dataArr;
+    }
+    return { xColumns, yColumns, formulaInputColumns, sliceColumn, dataArr };
 }
 
 function computeChartData(
@@ -680,36 +660,11 @@ function render(ctx: CustomChartContext) {
            : stackingMode === '100% Stacked' ? 'percent'
            : undefined);
 
-    renderXButtons(xColumns, activeXColumnId, async (columnId) => {
+    renderXButtons(xColumns, activeXColumnId, (columnId) => {
+        // No re-fetch needed — chartModel.data already has a QueryData entry
+        // per x-option (one Query each from getQueriesFromChartConfig).
+        // getDataModel picks the right one based on activeXColumnId.
         activeXColumnId = columnId;
-        // We only have chartModel.data for chartModelDataXColId. If the user
-        // picked a different x option, fetch data for it on demand so the
-        // GROUP BY stays narrow (active x + slicer + measures only).
-        if (columnId !== chartModelDataXColId && !(dataCache && dataCache.xColumnId === columnId)) {
-            const newCol = xColumns.find(c => c.id === columnId);
-            const measureColsForFetch = [...yColumns, ...formulaInputColumns];
-            if (newCol) {
-                try {
-                    const queryColumns = [
-                        newCol,
-                        ...(sliceColumn ? [sliceColumn] : []),
-                        ...measureColsForFetch,
-                    ];
-                    const response = await ctx.emitEvent(
-                        ChartToTSEvent.GetDataForQuery,
-                        { queries: [{ queryColumns, queryParams: { size: 100000 } } as Query] },
-                    );
-                    const fetched = extractDataArrFromQueryResponse(response);
-                    if (fetched) {
-                        dataCache = { xColumnId: columnId, dataArr: fetched };
-                    } else {
-                        console.warn('[multi-axis] GetDataForQuery returned an unrecognised shape; rendering with stale data.', response);
-                    }
-                } catch (e) {
-                    console.error('[multi-axis] GetDataForQuery failed; rendering with stale data.', e);
-                }
-            }
-        }
         render(ctx);
     });
 
@@ -860,12 +815,6 @@ const renderChart = async (ctx: CustomChartContext) => {
     }
     const currentData = ctx.getChartModel().data;
     if (currentData !== lastRenderedDataRef) {
-        // chartModel.data refreshed (filter change, binding change, etc.) — the
-        // per-x-column cache may have been fetched against an earlier filter
-        // context and is no longer trustworthy. Drop it so render falls back
-        // to the fresh chartModel.data; the next X-button click will refetch
-        // for any non-default x column.
-        dataCache = null;
         if (renderDebounceTimer) { clearTimeout(renderDebounceTimer); renderDebounceTimer = null; }
         doRender();
         return;
@@ -895,32 +844,34 @@ const renderChart = async (ctx: CustomChartContext) => {
             }];
         },
         getQueriesFromChartConfig: (chartConfig: ChartConfig[], chartModel: ChartModel): Array<Query> => {
-            // Only query the *active* X column rather than every bound x-option
-            // at once. With many x-options bound, TS would GROUP BY all of them
-            // simultaneously and truncate the result when cross-product
-            // cardinality exceeds its row limit (which is exactly what made
-            // slice values disappear on broad date filters). Other x-options
-            // are fetched on demand via GetDataForQuery when the user clicks a
-            // different button.
-            const queries = chartConfig.map(config => {
+            // Emit one Query per x-option (each with the same slicer/measures
+            // attached). TS returns chartModel.data as a parallel array of
+            // QueryData entries — render picks the one matching the active
+            // X column. See module-level comment above for why this matters.
+            const queries: Query[] = [];
+            for (const config of chartConfig ?? []) {
                 const dims = config?.dimensions ?? [];
                 const xOpts    = dims.find(d => d.key === 'xOptions')?.columns ?? [];
                 const slice    = dims.find(d => d.key === 'slice')?.columns ?? [];
                 const yCols    = dims.find(d => d.key === 'y')?.columns ?? [];
                 const formulas = dims.find(d => d.key === 'formulaInputs')?.columns ?? [];
-                const activeX  = (activeXColumnId ? xOpts.find(c => c.id === activeXColumnId) : null) ?? xOpts[0];
-                chartModelDataXColId = activeX?.id ?? null;
-                const queryColumns = [
-                    ...(activeX ? [activeX] : []),
-                    ...slice,
-                    ...yCols,
-                    ...formulas,
-                ];
-                return {
-                    queryColumns,
-                    queryParams: { size: 100000 },
-                } as Query;
-            }).filter(q => q.queryColumns.length > 0);
+                const supporting = [...slice, ...yCols, ...formulas];
+                if (xOpts.length === 0) {
+                    // No x-options bound — still need a non-empty queryColumns
+                    // for the SDK validator, so emit one query with whatever
+                    // supporting columns exist.
+                    if (supporting.length > 0) {
+                        queries.push({ queryColumns: supporting, queryParams: { size: 100000 } } as Query);
+                    }
+                    continue;
+                }
+                for (const xCol of xOpts) {
+                    queries.push({
+                        queryColumns: [xCol, ...supporting],
+                        queryParams: { size: 100000 },
+                    } as Query);
+                }
+            }
             if (queries.length > 0) return queries;
             const placeholder = chartModel?.columns?.[0];
             return placeholder ? [{ queryColumns: [placeholder] }] : [];
