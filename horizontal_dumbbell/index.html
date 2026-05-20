@@ -15,22 +15,23 @@
                 font-family: 'Optimo-Plain', 'Helvetica Neue', Helvetica, Arial, sans-serif;
             }
             #chartWrap {
-                position: relative;
+                display: flex;
+                flex-direction: column;
                 width: 100vw;
                 height: 100vh;
             }
             #chart {
+                flex: 1;
+                min-height: 0;
                 width: 100%;
-                height: 100%;
             }
             #pagerButtons {
-                position: absolute;
-                top: 8px;
-                right: 16px;
                 display: flex;
                 gap: 6px;
                 align-items: center;
-                z-index: 10;
+                justify-content: flex-end;
+                padding: 8px 16px 0 16px;
+                flex-shrink: 0;
             }
             #pagerButtons.hidden { display: none; }
             .pager-btn {
@@ -63,8 +64,8 @@
     </head>
     <body>
         <div id="chartWrap">
-            <div id="chart"></div>
             <div id="pagerButtons" class="hidden"></div>
+            <div id="chart"></div>
         </div>
         <script type="module" src="dumbbell.ts"></script>
     </body>
