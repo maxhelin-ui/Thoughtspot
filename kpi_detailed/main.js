@@ -337,6 +337,12 @@ function getEffectivePalette() {
     return FALLBACK_PALETTE;
 }
 
+function renderChartMessage(text) {
+  const el = document.getElementById('chart');
+  if (!el) return;
+  el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6B7280;font-size:14px;font-family:inherit;text-align:center;padding:20px;">${text}</div>`;
+}
+
 function render(ctx, providedModel) {
   // When DataUpdate / ChartModelUpdate fires we pass the fresh model/data
   // straight in; otherwise fetch from ctx. Avoids races where
@@ -346,6 +352,16 @@ function render(ctx, providedModel) {
     : Promise.resolve(ctx.getChartModel());
   return modelPromise.then((chartModel) => {
     lastModel = chartModel;
+
+    // Empty-state: no slots bound at all. Show a helpful message instead of
+    // rendering NaN/blank text from null values.
+    const dims0 = chartModel?.config?.chartConfig?.[0]?.dimensions ?? [];
+    const anyBound = dims0.some((d) => (d?.columns?.length ?? 0) > 0);
+    if (!anyBound) {
+      renderChartMessage('Add at least a Primary value column to render this KPI.');
+      return;
+    }
+
     const vp = chartModel?.visualProps ?? {};
     applyCardStyles(vp);
 
@@ -433,16 +449,20 @@ const renderChart = async (ctx, providedModel) => {
         ],
       },
     ],
-    getQueriesFromChartConfig: (chartConfig) =>
-      (chartConfig ?? []).map((config) =>
-        _.reduce(
-          config?.dimensions ?? [],
-          (acc, dimension) => ({
-            queryColumns: [...acc.queryColumns, ...(dimension?.columns ?? [])],
-          }),
-          { queryColumns: [] },
-        ),
-      ),
+    getQueriesFromChartConfig: (chartConfig, chartModel) => {
+      // TS's host validator (validateGetDataForQueryEventPayloadObject)
+      // requires every query to have at least 1 column. With our intentionally
+      // empty-by-default slots, the natural reduce produces { queryColumns: [] }
+      // and TS rejects it with "queries[0].queryColumns must contain at least
+      // 1 items" → the chart fails to load (55009). Fix: filter empty queries,
+      // and if none remain include a placeholder column so init can proceed.
+      const queries = (chartConfig ?? []).map((config) => ({
+        queryColumns: _.flatMap(config?.dimensions ?? [], (d) => d?.columns ?? []),
+      })).filter((q) => q.queryColumns.length > 0);
+      if (queries.length > 0) return queries;
+      const placeholder = chartModel?.columns?.[0];
+      return placeholder ? [{ queryColumns: [placeholder] }] : [];
+    },
     renderChart,
     chartConfigEditorDefinition: [
       {

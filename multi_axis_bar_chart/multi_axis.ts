@@ -292,6 +292,13 @@ function adjustButtonContainer(hasContent: boolean) {
     }
 }
 
+function renderChartMessage(text: string) {
+    const el = document.getElementById('chart');
+    if (!el) return;
+    if (globalChartReference) { try { globalChartReference.destroy(); } catch { /* noop */ } globalChartReference = null; }
+    el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6B7280;font-size:14px;font-family:inherit;text-align:center;padding:20px;">${text}</div>`;
+}
+
 function clearCustomLegend() {
     const legendEl = document.getElementById('customLegend');
     if (legendEl) legendEl.innerHTML = '';
@@ -326,6 +333,14 @@ function computeChartData(
     const xColIdx     = dataArr.columns.indexOf(activeXCol.id);
     const sliceColIdx = sliceColumn ? dataArr.columns.indexOf(sliceColumn.id) : -1;
 
+    // If the active X column isn't present in the dataset (e.g. user changed
+    // the binding but data hasn't refreshed yet, or the column was removed),
+    // bail with empty results so render() doesn't read row[-1] for every row
+    // and silently produce a chart with no categories.
+    if (xColIdx < 0) {
+        return { xCategories: [] as string[], sliceNames: [''] as string[], data: [] as number[][][] };
+    }
+
     // Always drop null tokens (JS null/undefined, empty strings, and TS's
     // "{Null}" / "(Null)" / "null" display tokens). TS's native bar chart
     // does this unconditionally, so we match it.
@@ -358,6 +373,11 @@ function computeChartData(
     // 70% NRR rows would sum to 350%).
     const data: number[][][] = measureColumns.map((mCol, mIdx) => {
         const yColIdx = dataArr.columns.indexOf(mCol.id);
+        // Measure column not in this dataset — produce zeros rather than
+        // reading row[-1] (which silently returns the last array element).
+        if (yColIdx < 0) {
+            return sliceNames.map(() => xCategories.map(() => 0));
+        }
         const useMean = isMeasurePercent[mIdx];
         return sliceNames.map(sliceName =>
             xCategories.map(xCat => {
@@ -387,7 +407,12 @@ function render(ctx: CustomChartContext) {
     const { xColumns, yColumns, formulaInputColumns, sliceColumn, dataArr } = getDataModel(chartModel);
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
-    if (xColumns.length === 0) return;
+    if (xColumns.length === 0) {
+        adjustButtonContainer(false);
+        clearCustomLegend();
+        renderChartMessage('Add an X-axis attribute and at least one measure (or a formula) to render this chart.');
+        return;
+    }
 
     if (!activeXColumnId || !xColumns.some(c => c.id === activeXColumnId)) {
         activeXColumnId = xColumns[0].id;
@@ -426,7 +451,12 @@ function render(ctx: CustomChartContext) {
         allMeasureCols.push(c);
     }
 
-    if (formulas.length === 0 && yColumns.length === 0) return;
+    if (formulas.length === 0 && yColumns.length === 0) {
+        adjustButtonContainer(false);
+        clearCustomLegend();
+        renderChartMessage('Add at least one measure to the Y-axis, or define a formula.');
+        return;
+    }
 
     // For raw aggregation: sum normally; only fall back to mean if the column
     // looks like a percent. When formulas are active, component sums must stay
@@ -701,31 +731,37 @@ const renderChart = async (ctx: CustomChartContext) => {
 (async () => {
     const ctx = await getChartContext({
         getDefaultChartConfig: (chartModel: ChartModel) => {
+            // Pre-bind the first attribute and first measure if available, but
+            // never throw — the chart should still load (and show an empty-state
+            // message) so the user can fix the binding from inside TS instead of
+            // hitting a generic 'Cannot display custom chart' error.
             const cols = chartModel.columns;
             const attributeColumns = cols.filter(c => c.type === ColumnType.ATTRIBUTE);
             const measureColumns   = cols.filter(c => c.type === ColumnType.MEASURE);
-            if (attributeColumns.length < 1 || measureColumns.length < 1) {
-                throw new Error('Need at least 1 attribute (x-axis option) and 1 measure.');
-            }
             return [{
                 key: 'main',
                 dimensions: [
-                    { key: 'xOptions',      columns: [attributeColumns[0]] },
-                    { key: 'y',             columns: [measureColumns[0]]   },
-                    { key: 'formulaInputs', columns: []                    },
-                    { key: 'slice',         columns: []                    },
+                    { key: 'xOptions',      columns: attributeColumns.slice(0, 1) },
+                    { key: 'y',             columns: measureColumns.slice(0, 1)   },
+                    { key: 'formulaInputs', columns: []                           },
+                    { key: 'slice',         columns: []                           },
                 ],
             }];
         },
-        getQueriesFromChartConfig: (chartConfig: ChartConfig[], _chartModel: ChartModel): Array<Query> => {
-            return chartConfig.map(config =>
+        getQueriesFromChartConfig: (chartConfig: ChartConfig[], chartModel: ChartModel): Array<Query> => {
+            // TS rejects queries with zero columns; include a placeholder from
+            // chartModel.columns when nothing is bound so init can proceed.
+            const queries = chartConfig.map(config =>
                 config.dimensions.reduce(
                     (acc: Query, dimension) => ({
                         queryColumns: [...acc.queryColumns, ...dimension.columns],
                     }),
                     { queryColumns: [] } as Query,
                 ),
-            );
+            ).filter(q => q.queryColumns.length > 0);
+            if (queries.length > 0) return queries;
+            const placeholder = chartModel?.columns?.[0];
+            return placeholder ? [{ queryColumns: [placeholder] }] : [];
         },
         renderChart,
         chartConfigEditorDefinition: [{

@@ -171,6 +171,13 @@ function sortRows(rows: Row[], sortBy: string): Row[] {
     }
 }
 
+function renderChartMessage(text: string) {
+    const el = document.getElementById('chart');
+    if (!el) return;
+    if (globalChartReference) { try { globalChartReference.destroy(); } catch { /* noop */ } globalChartReference = null; }
+    el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6B7280;font-size:14px;font-family:inherit;text-align:center;padding:20px;">${text}</div>`;
+}
+
 function legendPlacement(position: string, showLegend: boolean) {
     if (!showLegend) {
         return { align: 'right', verticalAlign: 'bottom', layout: 'horizontal',
@@ -191,6 +198,20 @@ function legendPlacement(position: string, showLegend: boolean) {
 
 function render(ctx: CustomChartContext) {
     const chartModel = ctx.getChartModel();
+
+    // Check what's bound so we can give a specific "missing X" message
+    // instead of a generic blank chart when something's not configured yet.
+    const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
+    const has = (k: string) => (dims.find(d => d.key === k)?.columns?.length ?? 0) > 0;
+    if (!has('category') || !has('original') || !has('renewed')) {
+        const missing: string[] = [];
+        if (!has('category')) missing.push('Category');
+        if (!has('original')) missing.push('Original measure');
+        if (!has('renewed'))  missing.push('Renewed measure');
+        renderChartMessage(`Add: ${missing.join(', ')}.`);
+        return;
+    }
+
     const { rows, originalName, renewedName } = getDataModel(chartModel);
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
@@ -215,7 +236,10 @@ function render(ctx: CustomChartContext) {
     const renewedLabel       = (typeof visualProps.renewedLabel === 'string' && visualProps.renewedLabel.trim())
         ? visualProps.renewedLabel.trim() : (renewedName || 'Renewed');
 
-    if (rows.length === 0) return;
+    if (rows.length === 0) {
+        renderChartMessage('No data to display. Check the data and column bindings.');
+        return;
+    }
 
     const sortedRows = sortRows(rows, sortBy);
     const placement = legendPlacement(legendPosition, showLegend);
@@ -416,30 +440,32 @@ const renderChart = async (ctx: CustomChartContext) => {
 (async () => {
     const ctx = await getChartContext({
         getDefaultChartConfig: (chartModel: ChartModel) => {
+            // Pre-bind what's available but never throw — show an in-chart
+            // message for missing pieces instead of erroring at init time.
             const cols = chartModel.columns;
             const attributeColumns = cols.filter(col => col.type === ColumnType.ATTRIBUTE);
             const measureColumns   = cols.filter(col => col.type === ColumnType.MEASURE);
-            if (attributeColumns.length < 1 || measureColumns.length < 2) {
-                throw new Error('Need 1 attribute (category) and 2 measures (original, renewed).');
-            }
             return [{
                 key: 'main',
                 dimensions: [
-                    { key: 'category', columns: [attributeColumns[0]] },
-                    { key: 'original', columns: [measureColumns[0]]   },
-                    { key: 'renewed',  columns: [measureColumns[1]]   },
+                    { key: 'category', columns: attributeColumns.slice(0, 1) },
+                    { key: 'original', columns: measureColumns.slice(0, 1)   },
+                    { key: 'renewed',  columns: measureColumns.slice(1, 2)   },
                 ],
             }];
         },
-        getQueriesFromChartConfig: (chartConfig: ChartConfig[], _chartModel: ChartModel): Array<Query> => {
-            return chartConfig.map(config =>
+        getQueriesFromChartConfig: (chartConfig: ChartConfig[], chartModel: ChartModel): Array<Query> => {
+            const queries = chartConfig.map(config =>
                 config.dimensions.reduce(
                     (acc: Query, dimension) => ({
                         queryColumns: [...acc.queryColumns, ...dimension.columns],
                     }),
                     { queryColumns: [] } as Query,
                 ),
-            );
+            ).filter(q => q.queryColumns.length > 0);
+            if (queries.length > 0) return queries;
+            const placeholder = chartModel?.columns?.[0];
+            return placeholder ? [{ queryColumns: [placeholder] }] : [];
         },
         renderChart,
         chartConfigEditorDefinition: [{
