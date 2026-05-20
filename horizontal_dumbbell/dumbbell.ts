@@ -20,6 +20,8 @@ interface VisualProps {
     currency?: string;
     colorOriginal?: string;
     colorRenewed?: string;
+    colorGain?: string;
+    colorLoss?: string;
     connectorColor?: string;
     connectorWidth?: number;
     markerRadius?: number;
@@ -31,6 +33,8 @@ interface VisualProps {
     sortBy?: string;
     originalLabel?: string;
     renewedLabel?: string;
+    showPager?: boolean;
+    pageSize?: number;
     [key: string]: any;
 }
 
@@ -56,6 +60,12 @@ let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
+
+// Pager state: which slice of (post-sort) rows the user is currently viewing.
+// Survives across renders so clicking Top/Bottom/arrows doesn't get reset on
+// the next debounced re-render. Clamped to [0, totalRows - pageSize] each
+// time we render so it stays valid if the dataset shrinks or sort changes.
+let pagerWindowStart = 0;
 
 const FALLBACK_PALETTE = ['#378ADD', '#E24B4A', '#534AB7', '#F0A937', '#52B788'];
 
@@ -178,6 +188,62 @@ function renderChartMessage(text: string) {
     el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6B7280;font-size:14px;font-family:inherit;text-align:center;padding:20px;">${text}</div>`;
 }
 
+function renderPagerButtons(
+    show: boolean,
+    totalRows: number,
+    pageSize: number,
+    windowStart: number,
+    onChange: (newStart: number) => void,
+) {
+    const container = document.getElementById('pagerButtons');
+    if (!container) return;
+    // Hide entirely when the user has disabled the pager, or when every row
+    // already fits in one page (no scrolling needed).
+    if (!show || totalRows <= pageSize) {
+        container.className = 'hidden';
+        container.innerHTML = '';
+        return;
+    }
+    container.className = '';
+    container.innerHTML = '';
+
+    const maxStart   = Math.max(0, totalRows - pageSize);
+    const atStart    = windowStart <= 0;
+    const atEnd      = windowStart >= maxStart;
+    const isTop      = atStart;
+    const isBottom   = atEnd;
+
+    const mk = (label: string, opts: { active?: boolean; disabled?: boolean; title?: string; onClick: () => void }) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pager-btn' + (opts.active ? ' active' : '');
+        btn.textContent = label;
+        if (opts.title) btn.title = opts.title;
+        if (opts.disabled) btn.disabled = true;
+        btn.onclick = opts.onClick;
+        return btn;
+    };
+
+    container.appendChild(mk('‹', {
+        disabled: atStart,
+        title: `Previous ${pageSize}`,
+        onClick: () => onChange(Math.max(0, windowStart - pageSize)),
+    }));
+    container.appendChild(mk(`Top ${pageSize}`, {
+        active: isTop,
+        onClick: () => onChange(0),
+    }));
+    container.appendChild(mk(`Bottom ${pageSize}`, {
+        active: isBottom,
+        onClick: () => onChange(maxStart),
+    }));
+    container.appendChild(mk('›', {
+        disabled: atEnd,
+        title: `Next ${pageSize}`,
+        onClick: () => onChange(Math.min(maxStart, windowStart + pageSize)),
+    }));
+}
+
 function legendPlacement(position: string, showLegend: boolean) {
     if (!showLegend) {
         return { align: 'right', verticalAlign: 'bottom', layout: 'horizontal',
@@ -222,6 +288,8 @@ function render(ctx: CustomChartContext) {
     const palette            = getEffectivePalette();
     const colorOriginal      = pickColor(visualProps.colorOriginal,  palette[0]);
     const colorRenewed       = pickColor(visualProps.colorRenewed,   palette[1] ?? palette[0]);
+    const colorGain          = pickColor(visualProps.colorGain,      '#2D7A3A');
+    const colorLoss          = pickColor(visualProps.colorLoss,      '#B23A3A');
     const connectorColor     = pickColor(visualProps.connectorColor, palette[1] ?? palette[0]);
     const connectorWidth     = visualProps.connectorWidth     ?? 3;
     const markerRadius       = visualProps.markerRadius       ?? 8;
@@ -231,17 +299,35 @@ function render(ctx: CustomChartContext) {
     const legendPosition     = visualProps.legendPosition     ?? 'Bottom (horizontal)';
     const showGridLines      = visualProps.showGridLines      ?? true;
     const sortBy             = visualProps.sortBy             ?? 'Largest % decline first';
+    const showPager          = visualProps.showPager          ?? false;
+    const pageSize           = Math.max(1, Math.floor(visualProps.pageSize ?? 10));
     const originalLabel      = (typeof visualProps.originalLabel === 'string' && visualProps.originalLabel.trim())
         ? visualProps.originalLabel.trim() : (originalName || 'Original');
     const renewedLabel       = (typeof visualProps.renewedLabel === 'string' && visualProps.renewedLabel.trim())
         ? visualProps.renewedLabel.trim() : (renewedName || 'Renewed');
 
     if (rows.length === 0) {
+        renderPagerButtons(false, 0, pageSize, 0, () => {});
         renderChartMessage('No data to display. Check the data and column bindings.');
         return;
     }
 
-    const sortedRows = sortRows(rows, sortBy);
+    const allSortedRows = sortRows(rows, sortBy);
+
+    // Apply paging window. When the pager is off, show everything (existing
+    // behavior). When on, clamp the saved windowStart in case the dataset
+    // shrank since the last render, then slice.
+    const maxStart = Math.max(0, allSortedRows.length - pageSize);
+    if (pagerWindowStart > maxStart) pagerWindowStart = maxStart;
+    if (pagerWindowStart < 0) pagerWindowStart = 0;
+    const sortedRows = showPager
+        ? allSortedRows.slice(pagerWindowStart, pagerWindowStart + pageSize)
+        : allSortedRows;
+
+    renderPagerButtons(showPager, allSortedRows.length, pageSize, pagerWindowStart, (newStart) => {
+        pagerWindowStart = newStart;
+        render(ctx);
+    });
     const placement = legendPlacement(legendPosition, showLegend);
     const fmt = (v: number) => formatCurrency(v, numberFormat, currency);
 
@@ -390,7 +476,7 @@ function render(ctx: CustomChartContext) {
             const midX = (x1 + x2) / 2;
             const pctSign    = row.percentChange >= 0 ? '+' : '';
             const changeSign = row.change        >= 0 ? '+' : '';
-            const color      = row.change        >= 0 ? '#2D7A3A' : '#B23A3A';
+            const color      = row.change        >= 0 ? colorGain  : colorLoss;
             const pctText    = `${pctSign}${Math.round(row.percentChange)}%`;
             const fullText   = showAbsoluteChange
                 ? `${pctText} (${changeSign}${fmt(row.change)})`
@@ -507,6 +593,8 @@ const renderChart = async (ctx: CustomChartContext) => {
                 { key: 'currency',           type: 'dropdown',    defaultValue: 'None',                     values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
                 { key: 'colorOriginal',      type: 'colorpicker', defaultValue: getEffectivePalette()[0] ?? '#378ADD', label: 'Original value colour' },
                 { key: 'colorRenewed',       type: 'colorpicker', defaultValue: getEffectivePalette()[1] ?? '#E24B4A', label: 'Renewed value colour' },
+                { key: 'colorGain',          type: 'colorpicker', defaultValue: '#2D7A3A',                  label: 'Positive change label colour' },
+                { key: 'colorLoss',          type: 'colorpicker', defaultValue: '#B23A3A',                  label: 'Negative change label colour' },
                 { key: 'connectorColor',     type: 'colorpicker', defaultValue: getEffectivePalette()[1] ?? '#F4A0A0', label: 'Connector colour' },
                 { key: 'connectorWidth',     type: 'number',      defaultValue: 3,                          label: 'Connector width' },
                 { key: 'markerRadius',       type: 'number',      defaultValue: 8,                          label: 'Marker size' },
@@ -516,6 +604,8 @@ const renderChart = async (ctx: CustomChartContext) => {
                 { key: 'legendPosition',     type: 'dropdown',    defaultValue: 'Bottom (horizontal)',      values: LEGEND_POSITIONS, label: 'Legend position' },
                 { key: 'showGridLines',      type: 'checkbox',    defaultValue: true,                       label: 'Show grid lines' },
                 { key: 'sortBy',             type: 'dropdown',    defaultValue: 'Largest % decline first',  values: SORT_OPTIONS, label: 'Sort by' },
+                { key: 'showPager',          type: 'checkbox',    defaultValue: false,                      label: 'Show Top/Bottom pager buttons' },
+                { key: 'pageSize',           type: 'number',      defaultValue: 10,                         label: 'Pager page size' },
             ],
         },
     });
