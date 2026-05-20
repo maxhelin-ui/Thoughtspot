@@ -356,6 +356,28 @@ function render(ctx: CustomChartContext) {
         globalChartReference = null;
     }
 
+    // Pin the top-aligned legend to plotLeft (so the first row starts where
+    // the gridlines start). If the items overflow into a second row, fall
+    // back to x:0 so the wrapped rows hug the chart's left edge.
+    const alignLegendToPlot = function (this: any) {
+        const chart = this;
+        if (!pagerVisible || legendPosition !== 'Top (horizontal)') return;
+        if (chart._legendPosLock) return;
+        chart._legendPosLock = true;
+        try {
+            const items = chart.legend?.allItems ?? [];
+            const ys = items.map((it: any) => it._legendItemPos?.[1] ?? 0);
+            const wrapped = ys.length > 1 && (Math.max(...ys) - Math.min(...ys)) > 1;
+            const target  = wrapped ? 0 : (chart.plotLeft ?? 0);
+            if ((chart.legend.options.x ?? 0) !== target) {
+                chart.legend.update({ x: target }, false);
+                chart.redraw(false);
+            }
+        } finally {
+            chart._legendPosLock = false;
+        }
+    };
+
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type:     'dumbbell',
@@ -365,6 +387,7 @@ function render(ctx: CustomChartContext) {
             marginTop:    chartTitle ? Math.max(placement.marginTop, 50) : placement.marginTop,
             marginBottom: placement.marginBottom,
             style: { fontFamily: 'Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif' },
+            events: { load: alignLegendToPlot, redraw: alignLegendToPlot },
         },
         title: {
             text:  chartTitle,
