@@ -56,16 +56,6 @@ let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
 
-// Why we emit one query per x-option instead of one big combined query:
-// TS groups by every attribute we put into a single Query. With N x-options
-// + a slicer + measures all in one Query, the GROUP BY is the cross-product
-// of every distinct value across all of them — on a broad filter that can
-// blow past TS's row limit and quietly drop groups (entire slice values
-// vanish, totals undercount). Splitting into one Query per x-option keeps
-// each GROUP BY narrow (active x + slicer + measures only), so we get
-// complete data with no truncation, and the user can switch x-axes
-// instantly without re-fetching.
-
 // Returns the org-configured chart colour palette if TS provided one, else
 // falls back to our hardcoded PALETTE. This is the user's "company" palette
 // configured in TS Admin → Styling.
@@ -649,9 +639,6 @@ function render(ctx: CustomChartContext) {
            : undefined);
 
     renderXButtons(xColumns, activeXColumnId, (columnId) => {
-        // No re-fetch needed — chartModel.data already has a QueryData entry
-        // per x-option (one Query each from getQueriesFromChartConfig).
-        // getDataModel picks the right one based on activeXColumnId.
         activeXColumnId = columnId;
         render(ctx);
     });
@@ -832,20 +819,16 @@ const renderChart = async (ctx: CustomChartContext) => {
             }];
         },
         getQueriesFromChartConfig: (chartConfig: ChartConfig[], chartModel: ChartModel): Array<Query> => {
-            // Original single-query shape (everything bound goes into one
-            // Query), but bumped queryParams.size to push past TS's default
-            // row limit which caused truncation on broad date filters.
-            const queries = (chartConfig ?? []).map(config =>
+            // TS rejects queries with zero columns; include a placeholder from
+            // chartModel.columns when nothing is bound so init can proceed.
+            const queries = chartConfig.map(config =>
                 config.dimensions.reduce(
                     (acc: Query, dimension) => ({
                         queryColumns: [...acc.queryColumns, ...dimension.columns],
                     }),
                     { queryColumns: [] } as Query,
                 ),
-            ).filter(q => q.queryColumns.length > 0).map(q => ({
-                ...q,
-                queryParams: { size: 100000 },
-            } as Query));
+            ).filter(q => q.queryColumns.length > 0);
             if (queries.length > 0) return queries;
             const placeholder = chartModel?.columns?.[0];
             return placeholder ? [{ queryColumns: [placeholder] }] : [];
