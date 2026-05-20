@@ -367,25 +367,13 @@ type DataModel = {
 };
 
 function getDataModel(chartModel: ChartModel): DataModel {
+    const dataArr: DataPointsArray =
+        chartModel.data?.[chartModel.data.length - 1]?.data ?? { columns: [], dataValue: [] };
     const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
     const xColumns            = dims.find(d => d.key === 'xOptions')?.columns ?? [];
     const yColumns            = dims.find(d => d.key === 'y')?.columns ?? [];
     const formulaInputColumns = dims.find(d => d.key === 'formulaInputs')?.columns ?? [];
     const sliceColumn         = dims.find(d => d.key === 'slice')?.columns?.[0];
-
-    // chartModel.data has one QueryData per x-option (see
-    // getQueriesFromChartConfig). Pick the entry whose columns include the
-    // currently active X column. Fall back to the last entry if no match —
-    // covers the empty/transitional state before activeXColumnId is set.
-    let dataArr: DataPointsArray = { columns: [], dataValue: [] };
-    const allQueryData = chartModel.data ?? [];
-    if (activeXColumnId) {
-        const match = allQueryData.find(qd => (qd?.data?.columns ?? []).includes(activeXColumnId));
-        if (match?.data) dataArr = match.data;
-    }
-    if (dataArr.columns.length === 0 && allQueryData.length > 0) {
-        dataArr = allQueryData[allQueryData.length - 1]?.data ?? dataArr;
-    }
     return { xColumns, yColumns, formulaInputColumns, sliceColumn, dataArr };
 }
 
@@ -844,34 +832,20 @@ const renderChart = async (ctx: CustomChartContext) => {
             }];
         },
         getQueriesFromChartConfig: (chartConfig: ChartConfig[], chartModel: ChartModel): Array<Query> => {
-            // Emit one Query per x-option (each with the same slicer/measures
-            // attached). TS returns chartModel.data as a parallel array of
-            // QueryData entries — render picks the one matching the active
-            // X column. See module-level comment above for why this matters.
-            const queries: Query[] = [];
-            for (const config of chartConfig ?? []) {
-                const dims = config?.dimensions ?? [];
-                const xOpts    = dims.find(d => d.key === 'xOptions')?.columns ?? [];
-                const slice    = dims.find(d => d.key === 'slice')?.columns ?? [];
-                const yCols    = dims.find(d => d.key === 'y')?.columns ?? [];
-                const formulas = dims.find(d => d.key === 'formulaInputs')?.columns ?? [];
-                const supporting = [...slice, ...yCols, ...formulas];
-                if (xOpts.length === 0) {
-                    // No x-options bound — still need a non-empty queryColumns
-                    // for the SDK validator, so emit one query with whatever
-                    // supporting columns exist.
-                    if (supporting.length > 0) {
-                        queries.push({ queryColumns: supporting, queryParams: { size: 100000 } } as Query);
-                    }
-                    continue;
-                }
-                for (const xCol of xOpts) {
-                    queries.push({
-                        queryColumns: [xCol, ...supporting],
-                        queryParams: { size: 100000 },
-                    } as Query);
-                }
-            }
+            // Original single-query shape (everything bound goes into one
+            // Query), but bumped queryParams.size to push past TS's default
+            // row limit which caused truncation on broad date filters.
+            const queries = (chartConfig ?? []).map(config =>
+                config.dimensions.reduce(
+                    (acc: Query, dimension) => ({
+                        queryColumns: [...acc.queryColumns, ...dimension.columns],
+                    }),
+                    { queryColumns: [] } as Query,
+                ),
+            ).filter(q => q.queryColumns.length > 0).map(q => ({
+                ...q,
+                queryParams: { size: 100000 },
+            } as Query));
             if (queries.length > 0) return queries;
             const placeholder = chartModel?.columns?.[0];
             return placeholder ? [{ queryColumns: [placeholder] }] : [];
