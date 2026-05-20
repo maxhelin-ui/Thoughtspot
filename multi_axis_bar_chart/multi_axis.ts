@@ -568,9 +568,17 @@ function render(ctx: CustomChartContext) {
 
     const hidden = getHiddenSet(activeXCol.id);
 
-    const stacking = stackingMode === 'Stacked' ? 'normal'
-                   : stackingMode === '100% Stacked' ? 'percent'
-                   : undefined;
+    // Slicing semantics (matching the waterfall): when a slice column is bound,
+    // each bar splits into stacked segments per slice value. With multiple
+    // measures, each measure becomes its own grouped column, and the slices
+    // stack within that group (`stack: m{yIdx}`). The user's stackingMode
+    // setting can still upgrade to percent normalization.
+    const sliceStackingActive = !!sliceColumn && sliceNames.length > 0 && sliceNames[0] !== '';
+    const stacking = sliceStackingActive
+        ? (stackingMode === '100% Stacked' ? 'percent' : 'normal')
+        : (stackingMode === 'Stacked' ? 'normal'
+           : stackingMode === '100% Stacked' ? 'percent'
+           : undefined);
 
     renderXButtons(xColumns, activeXColumnId, (columnId) => {
         activeXColumnId = columnId;
@@ -682,6 +690,10 @@ function render(ctx: CustomChartContext) {
             color:   s.color,
             visible: !hidden.has(s.name),
             showInLegend: false,
+            // Grouping key — same-measure slices share a stack so they sit
+            // on top of each other; different measures land in separate
+            // groups side-by-side. Ignored when stacking is undefined.
+            stack:   sliceStackingActive ? `m${s.yColIdx}` : undefined,
         })),
     });
 
