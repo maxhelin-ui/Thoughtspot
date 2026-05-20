@@ -329,6 +329,14 @@ function render(ctx: CustomChartContext) {
         render(ctx);
     });
     const placement = legendPlacement(legendPosition, showLegend);
+    // When the pager sits absolutely in the top-right and the legend is
+    // also at the top, slide the legend left so they share the row instead
+    // of overlapping. Also bump marginRight to reserve space for the pills.
+    const pagerVisible = showPager && allSortedRows.length > pageSize;
+    if (pagerVisible && legendPosition === 'Top (horizontal)') {
+        placement.align = 'left';
+        placement.marginRight = Math.max(placement.marginRight, 220);
+    }
     const fmt = (v: number) => formatCurrency(v, numberFormat, currency);
 
     const data = sortedRows.map(r => ({
