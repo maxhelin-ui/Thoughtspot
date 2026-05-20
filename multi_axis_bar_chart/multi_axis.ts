@@ -1,6 +1,8 @@
 import {
     ChartToTSEvent,
     ColumnType,
+    ColumnTimeBucket,
+    DataType,
     getChartContext,
     CustomChartContext,
     ChartModel,
@@ -216,6 +218,48 @@ function naturalCompare(a: string, b: string): number {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+// True for date/datetime columns and any column with an explicit time bucket
+// (e.g. MONTHLY, QUARTERLY). These come over the wire as epoch seconds and
+// would otherwise render as raw 10-digit numbers on the x-axis.
+function isDateLikeCol(col: { dataType?: DataType; timeBucket?: ColumnTimeBucket } | undefined): boolean {
+    if (!col) return false;
+    if (col.dataType === DataType.DATE || col.dataType === DataType.DATE_TIME) return true;
+    if (col.timeBucket != null && col.timeBucket !== ColumnTimeBucket.NO_BUCKET) return true;
+    return false;
+}
+
+// Pick a Date formatter that matches the column's bucket granularity. UTC
+// formatting throughout so we don't shift bucket boundaries by the viewer's
+// local timezone.
+function formatEpochByBucket(epochStr: string, bucket: ColumnTimeBucket | undefined): string {
+    const n = Number(epochStr);
+    if (!Number.isFinite(n)) return epochStr;
+    const d = new Date(n * 1000);
+    if (Number.isNaN(d.getTime())) return epochStr;
+    const utc = (opts: Intl.DateTimeFormatOptions) =>
+        d.toLocaleString('en-US', { ...opts, timeZone: 'UTC' });
+    switch (bucket) {
+        case ColumnTimeBucket.YEARLY:           return String(d.getUTCFullYear());
+        case ColumnTimeBucket.QUARTERLY:        return `Q${Math.floor(d.getUTCMonth() / 3) + 1} ${d.getUTCFullYear()}`;
+        case ColumnTimeBucket.MONTHLY:          return utc({ month: 'short', year: 'numeric' });
+        case ColumnTimeBucket.WEEKLY:           return utc({ month: 'short', day: 'numeric', year: 'numeric' });
+        case ColumnTimeBucket.DAILY:            return utc({ month: 'short', day: 'numeric', year: 'numeric' });
+        case ColumnTimeBucket.HOURLY:           return utc({ month: 'short', day: 'numeric', hour: 'numeric' });
+        case ColumnTimeBucket.HOUR_OF_DAY:      return `${d.getUTCHours()}:00`;
+        case ColumnTimeBucket.DAY_OF_WEEK:      return utc({ weekday: 'short' });
+        case ColumnTimeBucket.DAY_OF_MONTH:     return String(d.getUTCDate());
+        case ColumnTimeBucket.DAY_OF_QUARTER:   return String(d.getUTCDate());
+        case ColumnTimeBucket.DAY_OF_YEAR:      return utc({ month: 'short', day: 'numeric' });
+        case ColumnTimeBucket.WEEK_OF_MONTH:    return `Wk ${Math.ceil(d.getUTCDate() / 7)}`;
+        case ColumnTimeBucket.WEEK_OF_QUARTER:  return `Wk ${Math.ceil(d.getUTCDate() / 7)}`;
+        case ColumnTimeBucket.WEEK_OF_YEAR:     return `Wk ${Math.ceil(d.getUTCDate() / 7)}`;
+        case ColumnTimeBucket.MONTH_OF_QUARTER: return utc({ month: 'short' });
+        case ColumnTimeBucket.MONTH_OF_YEAR:    return utc({ month: 'short' });
+        case ColumnTimeBucket.QUARTER_OF_YEAR:  return `Q${Math.floor(d.getUTCMonth() / 3) + 1}`;
+        default:                                return utc({ month: 'short', day: 'numeric', year: 'numeric' });
+    }
+}
+
 function renderXButtons(
     xColumns: Array<{ id: string; name: string }>,
     activeId: string | null,
@@ -305,7 +349,7 @@ function clearCustomLegend() {
 }
 
 type DataModel = {
-    xColumns: Array<{ id: string; name: string }>;
+    xColumns: Array<{ id: string; name: string; dataType?: DataType; timeBucket?: ColumnTimeBucket }>;
     yColumns: Array<{ id: string; name: string }>;
     formulaInputColumns: Array<{ id: string; name: string }>;
     sliceColumn?: { id: string; name: string };
@@ -325,7 +369,7 @@ function getDataModel(chartModel: ChartModel): DataModel {
 
 function computeChartData(
     dataArr: DataPointsArray,
-    activeXCol: { id: string },
+    activeXCol: { id: string; dataType?: DataType; timeBucket?: ColumnTimeBucket },
     measureColumns: Array<{ id: string }>,
     sliceColumn: { id: string } | undefined,
     isMeasurePercent: boolean[],
@@ -364,7 +408,13 @@ function computeChartData(
             sliceSet.add(String(sRaw));
         }
     }
-    const xCategories = Array.from(xCatSet).sort(naturalCompare);
+    // For date columns the raw values are epoch seconds — sort numerically so
+    // months/years appear in time order on the x-axis. Other columns keep the
+    // natural-string ordering they had before.
+    const xIsDate = isDateLikeCol(activeXCol);
+    const xCategories = Array.from(xCatSet).sort(
+        xIsDate ? (a, b) => Number(a) - Number(b) : naturalCompare,
+    );
     const sliceNames  = sliceColIdx >= 0 ? Array.from(sliceSet).sort(naturalCompare) : [''];
 
     // data[mIdx][sIdx][xCatIdx] = aggregated value
@@ -535,6 +585,14 @@ function render(ctx: CustomChartContext) {
         data = data.map(perY => perY.map(perS => order.map(i => perS[i])));
     }
 
+    // Date columns come over as epoch-second strings; format the x-axis labels
+    // here (post-sort) so values like "1775001600" render as "Apr 2026".
+    // Indexes line up with xCategories so the data binding is untouched.
+    const xIsDateRender = isDateLikeCol(activeXCol);
+    const xCategoryLabels = xIsDateRender
+        ? xCategories.map(v => formatEpochByBucket(v, activeXCol.timeBucket))
+        : xCategories;
+
     // Build series: one per (measure, sliceValue). When no slice, sliceNames=[''] and the
     // series name is just the measure. When sliced, name depends on whether there's >1 measure.
     type SeriesSpec = { name: string; data: number[]; color: string; yColIdx: number; sliceIdx: number };
@@ -619,7 +677,7 @@ function render(ctx: CustomChartContext) {
         },
         credits: { enabled: false },
         xAxis: {
-            categories: xCategories,
+            categories: xCategoryLabels,
             title: {
                 text:  xAxisTitleProp.trim() ? xAxisTitleProp : activeXCol.name,
                 style: { fontWeight: 'bold', color: '#555' },
