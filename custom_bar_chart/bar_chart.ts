@@ -196,6 +196,9 @@ function getDataModel(chartModel: ChartModel) {
     const sliceColumns =
         chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns ?? [];
 
+    const tooltipExtraColumns =
+        chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'tooltipExtras')?.columns ?? [];
+
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
 
     // Filter rows by the active slicer's hidden values AND drop rows whose
@@ -222,6 +225,18 @@ function getDataModel(chartModel: ChartModel) {
             (sum, row) => sum + (parseFloat(String(row[colIdx] ?? 0)) || 0),
             0,
         );
+    });
+
+    // One summed value per bound tooltip-extra column — paired with the
+    // Y-column at the same index (extra[0] -> y[0], etc.).
+    const tooltipExtraValues = tooltipExtraColumns.map(col => {
+        const colIdx = dataArr.columns.indexOf(col.id);
+        if (colIdx < 0) return null;
+        const sum = visibleRows.reduce(
+            (acc, row) => acc + (parseFloat(String(row[colIdx] ?? 0)) || 0),
+            0,
+        );
+        return sum;
     });
 
     const names = yColumns.map(col => {
@@ -269,12 +284,12 @@ function getDataModel(chartModel: ChartModel) {
         return { column: { id: sliceColumn.id, name: sliceColumn.name }, sliceNames, contribsByMeasure };
     });
 
-    return { values, names, sliceColumns, slicesByColumn, yColumns };
+    return { values, names, sliceColumns, slicesByColumn, yColumns, tooltipExtraColumns, tooltipExtraValues };
 }
 
 function render(ctx: CustomChartContext) {
     const chartModel   = ctx.getChartModel();
-    const { values, names, sliceColumns, slicesByColumn, yColumns } = getDataModel(chartModel);
+    const { values, names, sliceColumns, slicesByColumn, yColumns, tooltipExtraColumns, tooltipExtraValues } = getDataModel(chartModel);
     const visualProps  = (chartModel.visualProps ?? {}) as VisualProps;
 
     const numberFormat        = visualProps.numberFormat        ?? '0.[0]a';
@@ -498,10 +513,16 @@ function render(ctx: CustomChartContext) {
                 if (point.isTotal && !isStartMarker && !isEndMarker) return false;
 
                 const colIdx = point.x ?? 0;
-                const col    = yColumns[colIdx];
-                const extraText = col
-                    ? String(visualProps[`tooltipExtra_${col.id}`] ?? '').trim()
-                    : '';
+                // Tooltip extras are bound by index: extra[i] pairs with y[i].
+                // Pull every non-null extra for this column and render them as
+                // additional rows in the tooltip.
+                const extraRows: Array<{ label: string; value: string }> = [];
+                if (tooltipExtraColumns[colIdx] != null && tooltipExtraValues[colIdx] != null) {
+                    extraRows.push({
+                        label: `${tooltipExtraColumns[colIdx].name}:`,
+                        value: formatNumber(tooltipExtraValues[colIdx] as number, numberFormat),
+                    });
+                }
 
                 const borderColor = point.color ?? point.series?.color ?? colorTotal ?? '#52B788';
 
@@ -538,13 +559,7 @@ function render(ctx: CustomChartContext) {
                     });
                 }
 
-                if (extraText) {
-                    // Render extra info as plain text rows (no label, lighter weight).
-                    extraText.split(/\r?\n/).forEach(line => {
-                        const t = line.trim();
-                        if (t) rows.push({ label: '', value: t });
-                    });
-                }
+                rows.push(...extraRows);
 
                 const rowsHtml = rows.map(({ label, value }, i) => {
                     const labelHtml = label
@@ -649,6 +664,10 @@ function render(ctx: CustomChartContext) {
                     data:                [{ x: 0, y: startValue }],
                     marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
                     showInLegend:        false,
+                    // stickyTracking: false + a tight hit area so the tooltip
+                    // fires only when the cursor is right on the dot/pill,
+                    // not anywhere on the chart.
+                    stickyTracking:      false,
                     enableMouseTracking: true,
                 },
                 {
@@ -657,6 +676,7 @@ function render(ctx: CustomChartContext) {
                     data:                [{ x: categories.length - 1, y: endValue }],
                     marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
                     showInLegend:        false,
+                    stickyTracking:      false,
                     enableMouseTracking: true,
                 },
             ] : []),
@@ -792,6 +812,13 @@ const renderChart = async (ctx: CustomChartContext) => {
                         allowMeasureColumns:   false,
                         maxColumnCount:        5,
                     },
+                    {
+                        key:                   'tooltipExtras',
+                        label:                 'Tooltip extras (one per Y measure, same order)',
+                        allowAttributeColumns: false,
+                        allowMeasureColumns:   true,
+                        maxColumnCount:        20,
+                    },
                 ],
             },
         ],
@@ -799,23 +826,12 @@ const renderChart = async (ctx: CustomChartContext) => {
             const yCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
             const sliceCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns ?? [];
 
-            // Per-column overrides: rename + extra tooltip line. Adjacent in
-            // the editor so each column's settings stay grouped.
-            const labelOverrides = yCols.flatMap(col => [
-                {
-                    key:          `label_${col.id}`,
-                    type:         'text' as const,
-                    defaultValue: col.name,
-                    label:        `Rename: ${col.name}`,
-                },
-                {
-                    key:          `tooltipExtra_${col.id}`,
-                    type:         'text' as const,
-                    multiline:    true,
-                    defaultValue: ' ',
-                    label:        `Tooltip extra info: ${col.name}`,
-                },
-            ]);
+            const labelOverrides = yCols.map(col => ({
+                key:          `label_${col.id}`,
+                type:         'text' as const,
+                defaultValue: col.name,
+                label:        `Rename: ${col.name}`,
+            }));
 
             const sliceColorPickers: any[] = [];
             const dataArr = chartModel.data?.[chartModel.data.length - 1]?.data;
