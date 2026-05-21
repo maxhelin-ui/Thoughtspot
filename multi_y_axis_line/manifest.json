@@ -1,0 +1,13 @@
+{
+    "defaultLocale": "en_US",
+    "name": "Multi Y-Axis Line Chart",
+    "description": "Line chart with switchable y-axis measure and multiple toggleable slicers. Pick which measure is on the y-axis via buttons (like multi-axis-bar's x-axis buttons), and turn any combination of slicer columns on to break the line into per-slice lines.",
+    "author": {
+        "name": "Your Name",
+        "email": "your.email@example.com",
+        "org": "Your Organization"
+    },
+    "sourceUrl": "TBD",
+    "iconUrl": "https://cdn-icons-png.flaticon.com/512/2728/2728246.png",
+    "manifestVersion": "v0.1"
+}

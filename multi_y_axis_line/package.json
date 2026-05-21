@@ -1,0 +1,19 @@
+{
+    "name": "multi-y-axis-line",
+    "version": "1.0.0",
+    "description": "Line chart with switchable y-axis measure and multiple toggleable slicer columns",
+    "main": "dist/index.html",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview"
+    },
+    "devDependencies": {
+        "vite": "^4.3.5",
+        "typescript": "^5.0.0"
+    },
+    "dependencies": {
+        "@thoughtspot/ts-chart-sdk": "latest",
+        "numeral": "^2.0.6"
+    }
+}

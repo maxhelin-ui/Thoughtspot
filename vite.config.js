@@ -13,6 +13,7 @@ export default defineConfig({
         kpi_detailed: resolve(__dirname, 'kpi_detailed/index.html'),
         horizontal_dumbbell: resolve(__dirname, 'horizontal_dumbbell/index.html'),
         multi_axis_bar_chart: resolve(__dirname, 'multi_axis_bar_chart/index.html'),
+        multi_y_axis_line: resolve(__dirname, 'multi_y_axis_line/index.html'),
         main: resolve(__dirname, 'index.html'),
       },
     },

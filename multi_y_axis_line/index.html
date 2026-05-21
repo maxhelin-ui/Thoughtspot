@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Multi Y-Axis Line Chart</title>
+        <script src="https://code.highcharts.com/highcharts.js"></script>
+        <script src="https://code.highcharts.com/highcharts-more.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                font-family: 'Optimo-Plain', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            }
+            #layout {
+                display: grid;
+                grid-template-rows: auto 1fr auto;
+                grid-template-columns: auto 1fr auto;
+                grid-template-areas:
+                    "top    top    top"
+                    "left   chart  right"
+                    "bottom bottom bottom";
+                width: 100vw;
+                height: 100vh;
+                box-sizing: border-box;
+            }
+            #topArea    { grid-area: top;    }
+            #bottomArea { grid-area: bottom; }
+            #leftArea   { grid-area: left;   }
+            #rightArea  { grid-area: right;  }
+            #chart      { grid-area: chart; min-width: 0; min-height: 0; }
+
+            #topArea, #bottomArea {
+                display: flex;
+                gap: 12px;
+                align-items: center;
+                padding: 6px 16px;
+                flex-wrap: wrap;
+            }
+            #topArea:empty, #bottomArea:empty { padding: 0; }
+            #leftArea, #rightArea {
+                display: flex;
+                flex-direction: column;
+                gap: 12px;
+                align-items: stretch;
+                padding: 16px 6px;
+                min-width: 0;
+            }
+            #leftArea:empty, #rightArea:empty { padding: 0; }
+            .button-group {
+                display: flex;
+                gap: 6px;
+                align-items: center;
+                flex-wrap: wrap;
+            }
+            #leftArea .button-group, #rightArea .button-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .slice-toggle-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 5px 14px;
+                border: none;
+                border-radius: 999px;
+                background: #F1F2F4;
+                color: #1A1F2C;
+                cursor: pointer;
+                font-size: 13px;
+                font-weight: 500;
+                transition: background 0.15s ease, color 0.15s ease;
+                font-family: Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif;
+                white-space: nowrap;
+            }
+            .slice-toggle-btn:hover { background: #E4E6EA; }
+            .slice-toggle-btn.active {
+                background: #6B7280;
+                color: #FFFFFF;
+            }
+            #customLegend {
+                display: flex;
+                gap: 14px;
+                flex-wrap: wrap;
+                align-items: center;
+                padding: 4px 16px 8px 16px;
+            }
+            .legend-item {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                background: none;
+                border: none;
+                padding: 2px 4px;
+                cursor: pointer;
+                font-size: 12px;
+                color: #333;
+                font-weight: 500;
+                transition: opacity 0.15s ease;
+                font-family: inherit;
+            }
+            .legend-item:hover { opacity: 0.75; }
+            .legend-item.legend-hidden {
+                opacity: 0.4;
+                text-decoration: line-through;
+            }
+            .legend-item.legend-hidden .legend-swatch { opacity: 0.5; }
+            .legend-swatch {
+                display: inline-block;
+                width: 10px;
+                height: 10px;
+                border-radius: 2px;
+                flex: 0 0 auto;
+            }
+        </style>
+    </head>
+    <body>
+        <div id="layout">
+            <div id="topArea"></div>
+            <div id="leftArea"></div>
+            <div id="chart"></div>
+            <div id="rightArea"></div>
+            <div id="bottomArea"></div>
+        </div>
+        <script type="module" src="multi_y_axis_line.ts"></script>
+    </body>
+</html>
