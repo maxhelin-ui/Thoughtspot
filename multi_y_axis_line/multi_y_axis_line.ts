@@ -487,9 +487,17 @@ function render(ctx: CustomChartContext) {
     const fmtY = (v: number) => yIsPercent
         ? formatPercent(v, numberFormat.replace(/[\$€£¥₹]/g, ''))
         : formatCurrency(v, numberFormat, currency);
-    const fmtAxis = (v: number) => yIsPercent
-        ? formatPercent(v, numberFormat.replace(/[\$€£¥₹]/g, ''))
-        : formatCurrency(v, numberFormat.replace(/^[\$€£¥₹]/, ''), 'None');
+    // Axis labels are always abbreviated to K/M/B (or %) regardless of the
+    // user's numberFormat — keeps the axis compact even when numberFormat is
+    // set to something verbose like 0,0.00 for tooltip precision.
+    const fmtAxis = (v: number) => {
+        if (yIsPercent) return formatPercent(v, '0.[0]');
+        try {
+            return numeral(v).format('0.[0]a').replace('k', 'K').replace('m', 'M').replace('b', 'B');
+        } catch {
+            return String(v);
+        }
+    };
 
     const palette = getEffectivePalette();
     const yKey = activeYCol.id;
