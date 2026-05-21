@@ -22,6 +22,7 @@ interface VisualProps {
     numberFormat?: string;
     currency?: string;
     showDataLabels?: boolean;
+    showStackTotals?: boolean;
     showLegend?: boolean;
     showGridLines?: boolean;
     stackingMode?: string;
@@ -475,6 +476,7 @@ function render(ctx: CustomChartContext) {
     const numberFormat    = visualProps.numberFormat    ?? '0,0.[0]a';
     const currency        = visualProps.currency        ?? 'None';
     const showDataLabels  = visualProps.showDataLabels  ?? false;
+    const showStackTotals = visualProps.showStackTotals ?? false;
     const showLegend      = visualProps.showLegend      ?? true;
     const showGridLines   = visualProps.showGridLines   ?? true;
     const stackingMode    = visualProps.stackingMode    ?? 'None';
@@ -703,6 +705,21 @@ function render(ctx: CustomChartContext) {
                 },
                 style: { color: '#555', fontSize: '11px' },
             },
+            // Stack totals shown above each stack when "Show bar totals" is on
+            // and the chart is stacked. Format using the stack's measure
+            // (stack name is `m{yColIdx}` — see series.stack below).
+            stackLabels: {
+                enabled: showStackTotals && !!stacking,
+                crop: false,
+                overflow: 'allow',
+                style: { fontSize: '11px', fontWeight: '700', textOutline: 'none', color: '#1A1F2C' },
+                formatter: function (this: any) {
+                    if (this.total == null || this.total === 0) return '';
+                    const match = String(this.stack ?? '').match(/^m(\d+)$/);
+                    const yIdx  = match ? Number(match[1]) : 0;
+                    return fmtForMeasure(this.total, yIdx);
+                },
+            },
         },
         legend: { enabled: false },
         tooltip: {
@@ -730,15 +747,34 @@ function render(ctx: CustomChartContext) {
                 pointPadding: 0.05,
                 groupPadding: 0.12,
                 stacking,
-                dataLabels: {
-                    enabled: showDataLabels,
-                    style: { fontSize: '11px', fontWeight: '600', textOutline: 'none', color: '#333' },
-                    formatter: function (this: any) {
-                        if (this.y == null || this.y === 0) return '';
-                        const yIdx = seriesNameToYIdx.get(this.series.name) ?? 0;
-                        return fmtForMeasure(this.y, yIdx);
+                dataLabels: [
+                    // (a) Existing inside-bar label (per-series value).
+                    {
+                        enabled: showDataLabels,
+                        style: { fontSize: '11px', fontWeight: '600', textOutline: 'none', color: '#333' },
+                        formatter: function (this: any) {
+                            if (this.y == null || this.y === 0) return '';
+                            const yIdx = seriesNameToYIdx.get(this.series.name) ?? 0;
+                            return fmtForMeasure(this.y, yIdx);
+                        },
                     },
-                },
+                    // (b) Total above each bar when "Show bar totals" is on AND
+                    // the chart isn't stacked (in stacked mode, yAxis.stackLabels
+                    // already covers it).
+                    {
+                        enabled: showStackTotals && !stacking,
+                        verticalAlign: 'bottom',
+                        y: -4,
+                        crop: false,
+                        overflow: 'allow',
+                        style: { fontSize: '11px', fontWeight: '700', textOutline: 'none', color: '#1A1F2C' },
+                        formatter: function (this: any) {
+                            if (this.y == null || this.y === 0) return '';
+                            const yIdx = seriesNameToYIdx.get(this.series.name) ?? 0;
+                            return fmtForMeasure(this.y, yIdx);
+                        },
+                    },
+                ],
             },
         },
         series: seriesSpecs.map(s => ({
@@ -958,6 +994,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'currency',       type: 'dropdown', defaultValue: 'None',                    values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
                     { key: 'stackingMode',   type: 'dropdown', defaultValue: 'None',                    values: STACKING_OPTIONS, label: 'Stacking' },
                     { key: 'showDataLabels', type: 'checkbox', defaultValue: false,                     label: 'Show data labels on bars' },
+                    { key: 'showStackTotals', type: 'checkbox', defaultValue: false,                    label: 'Show bar totals on top' },
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
