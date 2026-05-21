@@ -495,9 +495,14 @@ function render(ctx: CustomChartContext) {
             data: g.data.map((s, i) => g.counts[i] > 0 ? s / g.counts[i] : 0),
         }));
     }
+    // Always abbreviate non-percent values to K/M/B in tooltips and data
+    // labels too — big numbers like 1,775,000,000 are unreadable. The
+    // user's numberFormat is still honoured for decimals/grouping; we just
+    // ensure 'a' (numeral's abbreviate modifier) is present.
+    const tooltipNumberFormat = numberFormat.includes('a') ? numberFormat : numberFormat + 'a';
     const fmtY = (v: number) => yIsPercent
         ? formatPercent(v, numberFormat.replace(/[\$€£¥₹]/g, ''))
-        : formatCurrency(v, numberFormat, currency);
+        : formatCurrency(v, tooltipNumberFormat, currency);
     // Axis labels are always abbreviated to K/M/B (or %) regardless of the
     // user's numberFormat — keeps the axis compact even when numberFormat is
     // set to something verbose like 0,0.00 for tooltip precision.
