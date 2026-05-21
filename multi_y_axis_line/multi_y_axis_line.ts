@@ -102,6 +102,66 @@ function pickColor(picker: unknown, fallback: string): string {
     return (typeof picker === 'string' && picker) ? picker : fallback;
 }
 
+// Hex → HSL → hex helpers used to derive shades of a slicer's base colour
+// for the per-slice-combination series colours. Lightness varies; hue and
+// saturation are preserved so a "blue" slicer produces shades of blue.
+function hexToHsl(hex: string): { h: number; s: number; l: number } {
+    const raw = (hex || '').trim();
+    const clean = raw.startsWith('#') ? raw.slice(1) : raw;
+    const full = clean.length === 3 ? clean.split('').map(c => c + c).join('') : clean;
+    if (full.length !== 6) return { h: 0, s: 0, l: 50 };
+    const r = parseInt(full.slice(0, 2), 16) / 255;
+    const g = parseInt(full.slice(2, 4), 16) / 255;
+    const b = parseInt(full.slice(4, 6), 16) / 255;
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    let h = 0;
+    let s = 0;
+    const l = (max + min) / 2;
+    if (max !== min) {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        switch (max) {
+            case r: h = (g - b) / d + (g < b ? 6 : 0); break;
+            case g: h = (b - r) / d + 2; break;
+            case b: h = (r - g) / d + 4; break;
+        }
+        h /= 6;
+    }
+    return { h: h * 360, s: s * 100, l: l * 100 };
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+    const sN = s / 100;
+    const lN = l / 100;
+    const c = (1 - Math.abs(2 * lN - 1)) * sN;
+    const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+    const m = lN - c / 2;
+    let r1 = 0; let g1 = 0; let b1 = 0;
+    if (h < 60)       { r1 = c; g1 = x; b1 = 0; }
+    else if (h < 120) { r1 = x; g1 = c; b1 = 0; }
+    else if (h < 180) { r1 = 0; g1 = c; b1 = x; }
+    else if (h < 240) { r1 = 0; g1 = x; b1 = c; }
+    else if (h < 300) { r1 = x; g1 = 0; b1 = c; }
+    else              { r1 = c; g1 = 0; b1 = x; }
+    const toHex = (v: number) => Math.round((v + m) * 255).toString(16).padStart(2, '0');
+    return `#${toHex(r1)}${toHex(g1)}${toHex(b1)}`;
+}
+
+// Generate N evenly-spaced lightness shades around the base colour's L,
+// preserving hue + saturation. Range is ±25% lightness clamped to [10, 90]
+// so very light / very dark base colours still produce visible variation.
+function generateShades(baseColor: string, n: number): string[] {
+    if (n <= 1) return [baseColor];
+    const { h, s, l } = hexToHsl(baseColor);
+    const minL = Math.max(10, l - 25);
+    const maxL = Math.min(90, l + 25);
+    return Array.from({ length: n }, (_, i) => {
+        const lightness = minL + (maxL - minL) * (i / (n - 1));
+        return hslToHex(h, s, lightness);
+    });
+}
+
 function naturalCompare(a: string, b: string): number {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
@@ -520,13 +580,31 @@ function render(ctx: CustomChartContext) {
     if (!hiddenSeriesByY.has(yKey)) hiddenSeriesByY.set(yKey, new Set());
     const hidden = hiddenSeriesByY.get(yKey)!;
 
+    // Colour strategy:
+    //   * No slicer active → series gets the active measure's own colour
+    //     (measureColor_<id>), default = palette[0].
+    //   * One or more slicers active → take the first active slicer's
+    //     "base colour" (sliceBaseColor_<id>) and generate N evenly-spaced
+    //     lightness shades for the N cross-product series. Same hue/sat
+    //     so visually it reads as a single colour family with light/dark
+    //     variants, matching the user's request.
+    const primarySlicer = sliceColumns.find(c => activeSliceColumnIds.has(c.id));
+    const baseSlicerColor = primarySlicer
+        ? pickColor(visualProps[`sliceBaseColor_${primarySlicer.id}`], palette[0])
+        : null;
+    const slicedShades = baseSlicerColor
+        ? generateShades(baseSlicerColor, seriesGroups.length)
+        : [];
+
     const seriesSpecs = seriesGroups.map((g, i) => {
         const isNoSlice = g.name === '';
         const displayName = isNoSlice ? activeYCol.name : g.name;
-        const colorKey = isNoSlice
-            ? `measureColor_${activeYCol.id}`
-            : `seriesColor_${g.name}`;
-        const color = pickColor(visualProps[colorKey], palette[i % palette.length]);
+        let color: string;
+        if (isNoSlice || !baseSlicerColor) {
+            color = pickColor(visualProps[`measureColor_${activeYCol.id}`], palette[i % palette.length]);
+        } else {
+            color = slicedShades[i];
+        }
         return { name: displayName, data: g.data, color };
     });
 
@@ -734,24 +812,54 @@ const renderChart = async (ctx: CustomChartContext) => {
                 },
             ],
         }],
-        visualPropEditorDefinition: {
-            elements: [
-                { key: 'chartTitle',         type: 'text',        defaultValue: ' ',            label: 'Chart title' },
-                { key: 'xAxisTitle',         type: 'text',        defaultValue: ' ',            label: 'X-axis title (blank = column name)' },
-                { key: 'yAxisTitle',         type: 'text',        defaultValue: ' ',            label: 'Y-axis title (blank = measure name)' },
-                { key: 'numberFormat',       type: 'text',        defaultValue: '0,0.[0]a',     label: 'Number format' },
-                { key: 'currency',           type: 'dropdown',    defaultValue: 'None',         values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
-                { key: 'yButtonsPosition',     type: 'dropdown', defaultValue: 'Top', values: POSITION_OPTIONS, label: 'Y-axis buttons position' },
-                { key: 'sliceButtonsPosition', type: 'dropdown', defaultValue: 'Top', values: POSITION_OPTIONS, label: 'Slicer buttons position' },
-                { key: 'showSlicingByDefault', type: 'checkbox', defaultValue: false, label: 'Activate first slicer by default' },
-                { key: 'showLegend',         type: 'checkbox',    defaultValue: true,           label: 'Show legend' },
-                { key: 'showGridLines',      type: 'checkbox',    defaultValue: true,           label: 'Show grid lines' },
-                { key: 'lineWidth',          type: 'number',      defaultValue: 2,              label: 'Line width' },
-                { key: 'markerEnabled',      type: 'checkbox',    defaultValue: true,           label: 'Show markers' },
-                { key: 'markerRadius',       type: 'number',      defaultValue: 4,              label: 'Marker size' },
-                { key: 'smoothLines',        type: 'checkbox',    defaultValue: false,          label: 'Smooth (spline) lines' },
-                { key: 'showDataLabels',     type: 'checkbox',    defaultValue: false,          label: 'Show data labels on points' },
-            ],
+        visualPropEditorDefinition: (chartModel: ChartModel) => {
+            // Dynamic so we can emit one colorpicker per bound y measure and
+            // per bound slicer. Without this the editor schema would be
+            // fixed at chart-init and couldn't expose per-column colour
+            // controls.
+            const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
+            const yCols  = dims.find(d => d.key === 'yOptions')?.columns ?? [];
+            const slices = dims.find(d => d.key === 'slices')?.columns ?? [];
+            const editorPalette = getEffectivePalette();
+
+            const measureColorPickers = yCols.map((col, i) => ({
+                key:          `measureColor_${col.id}`,
+                type:         'colorpicker' as const,
+                defaultValue: editorPalette[i % editorPalette.length],
+                label:        `Colour: ${col.name}`,
+            }));
+
+            // One base colour per slicer. When that slicer is the first
+            // active one, render() generates light/dark shades of this
+            // colour for each cross-product series.
+            const sliceColorPickers = slices.map((col, i) => ({
+                key:          `sliceBaseColor_${col.id}`,
+                type:         'colorpicker' as const,
+                defaultValue: editorPalette[(yCols.length + i) % editorPalette.length],
+                label:        `Slicer base colour: ${col.name}`,
+            }));
+
+            return {
+                elements: [
+                    { key: 'chartTitle',         type: 'text',        defaultValue: ' ',            label: 'Chart title' },
+                    { key: 'xAxisTitle',         type: 'text',        defaultValue: ' ',            label: 'X-axis title (blank = column name)' },
+                    { key: 'yAxisTitle',         type: 'text',        defaultValue: ' ',            label: 'Y-axis title (blank = measure name)' },
+                    { key: 'numberFormat',       type: 'text',        defaultValue: '0,0.[0]a',     label: 'Number format' },
+                    { key: 'currency',           type: 'dropdown',    defaultValue: 'None',         values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
+                    { key: 'yButtonsPosition',     type: 'dropdown', defaultValue: 'Top', values: POSITION_OPTIONS, label: 'Y-axis buttons position' },
+                    { key: 'sliceButtonsPosition', type: 'dropdown', defaultValue: 'Top', values: POSITION_OPTIONS, label: 'Slicer buttons position' },
+                    { key: 'showSlicingByDefault', type: 'checkbox', defaultValue: false, label: 'Activate first slicer by default' },
+                    { key: 'showLegend',         type: 'checkbox',    defaultValue: true,           label: 'Show legend' },
+                    { key: 'showGridLines',      type: 'checkbox',    defaultValue: true,           label: 'Show grid lines' },
+                    { key: 'lineWidth',          type: 'number',      defaultValue: 2,              label: 'Line width' },
+                    { key: 'markerEnabled',      type: 'checkbox',    defaultValue: true,           label: 'Show markers' },
+                    { key: 'markerRadius',       type: 'number',      defaultValue: 4,              label: 'Marker size' },
+                    { key: 'smoothLines',        type: 'checkbox',    defaultValue: false,          label: 'Smooth (spline) lines' },
+                    { key: 'showDataLabels',     type: 'checkbox',    defaultValue: false,          label: 'Show data labels on points' },
+                    ...measureColorPickers,
+                    ...sliceColorPickers,
+                ],
+            };
         },
     });
 
