@@ -239,7 +239,7 @@ function renderCustomLegend(
 // and end at plotRight; left/right buttons sit within plotTop..plotBottom
 // vertically. Reads positions from getBoundingClientRect so it adapts to the
 // actual rendered layout, then applies padding to the four area elements.
-function alignButtonAreasToPlot(chartTitle: string) {
+function alignButtonAreasToPlot(chart: any, chartTitle: string) {
     const layoutEl = document.getElementById('layout');
     const chartEl  = document.getElementById('chart');
     if (!layoutEl || !chartEl) return;
@@ -280,6 +280,13 @@ function alignButtonAreasToPlot(chartTitle: string) {
         paddingLeft:   '6px',
         paddingRight:  '6px',
     });
+
+    // Padding changes shifted the chart cell size. Tell Highcharts to
+    // re-measure and re-render to match its new container — otherwise the
+    // SVG keeps its original size and overflows the (now-smaller) cell,
+    // producing the horizontal scrollbar the user was seeing when the
+    // legend wrapped to extra rows.
+    try { chart?.reflow(); } catch { /* noop */ }
 }
 
 type DataModel = {
@@ -621,7 +628,7 @@ function render(ctx: CustomChartContext) {
 
     // Now that the chart has rendered with its fixed margins, push the
     // button areas in so they line up with the plot gridlines.
-    alignButtonAreasToPlot(chartTitle);
+    alignButtonAreasToPlot(globalChartReference, chartTitle);
 }
 
 const renderChart = async (ctx: CustomChartContext) => {

@@ -11,6 +11,7 @@
             body {
                 margin: 0;
                 padding: 0;
+                overflow: hidden;
                 font-family: 'Optimo-Plain', 'Helvetica Neue', Helvetica, Arial, sans-serif;
             }
             #layout {
@@ -24,6 +25,7 @@
                 width: 100vw;
                 height: 100vh;
                 box-sizing: border-box;
+                overflow: hidden;
             }
             #topArea    { grid-area: top;    }
             #bottomArea { grid-area: bottom; }
@@ -37,6 +39,9 @@
                 align-items: center;
                 flex-wrap: wrap;
                 box-sizing: border-box;
+                min-width: 0;
+                max-width: 100%;
+                overflow: hidden;
             }
             #leftArea, #rightArea {
                 display: flex;
