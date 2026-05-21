@@ -201,12 +201,14 @@ function labelOrColumnName(userValue, columnName) {
 }
 
 function renderHeader(vp) {
-  const iconEl = document.getElementById('cardIcon');
-  if (iconEl) {
-    const key = vp?.icon ?? 'trending-up';
-    iconEl.innerHTML = ICON_SVG[key] ?? '';
-    iconEl.classList.toggle('hidden', !iconEl.innerHTML);
-  }
+  // One icon per layout (each detail card has its own slot). Update
+  // every [data-icon-slot] so both single + split stay in sync.
+  const key = vp?.icon ?? 'trending-up';
+  const svg = ICON_SVG[key] ?? '';
+  document.querySelectorAll('[data-icon-slot]').forEach((iconEl) => {
+    iconEl.innerHTML = svg;
+    iconEl.classList.toggle('hidden', !svg);
+  });
 }
 
 function renderSingle(vp, values, chartModel) {

@@ -43,11 +43,13 @@ body {
   position: relative;
 }
 
-/* Icon sits in the top-right of whichever detail card is visible. */
+/* Icon sits in the top-right corner of its detail card. Positioned
+   relative to .ts-detail-card so it can never escape the grey box when
+   the tile shrinks. */
 .ts-icon-corner {
   position: absolute;
-  top: 12px;
-  right: 14px;
+  top: 10px;
+  right: 10px;
   z-index: 2;
   width: 16px;
   height: 16px;
@@ -72,6 +74,8 @@ body {
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
   padding: 16px;
+  position: relative;
+  overflow: hidden; /* belt-and-braces: icon can't escape even if offsets ever go negative */
 }
 
 .ts-stat-row {
