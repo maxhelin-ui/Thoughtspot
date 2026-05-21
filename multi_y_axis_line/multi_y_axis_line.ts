@@ -435,7 +435,11 @@ function render(ctx: CustomChartContext) {
 
     const chartTitle    = visualProps.chartTitle    ?? '';
     const xAxisTitle    = visualProps.xAxisTitle    ?? '';
-    const yAxisTitle    = visualProps.yAxisTitle    ?? activeYCol.name;
+    const yAxisTitleRaw = visualProps.yAxisTitle    ?? '';
+    // Default the y-axis title to the active measure's name when the user
+    // leaves the setting blank (or at its placeholder ' ' value). The
+    // setting defaults to a single space so we have to trim before deciding.
+    const yAxisTitle    = yAxisTitleRaw.trim() ? yAxisTitleRaw : activeYCol.name;
     const numberFormat  = visualProps.numberFormat  ?? '0,0.[0]a';
     const currency      = visualProps.currency      ?? 'None';
     const showDataLabels = visualProps.showDataLabels ?? false;
