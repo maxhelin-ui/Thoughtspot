@@ -589,7 +589,13 @@ function render(ctx: CustomChartContext) {
             shared: true,
             formatter: function (this: any) {
                 const cat = this.x;
-                const rows = (this.points ?? []).map((p: any) =>
+                // Order the rows by value descending so the entry at the top
+                // of the tooltip matches the line that's visually highest at
+                // this x point.
+                const sorted = (this.points ?? []).slice().sort(
+                    (a: any, b: any) => (b.y ?? -Infinity) - (a.y ?? -Infinity),
+                );
+                const rows = sorted.map((p: any) =>
                     `<div style="display:flex;align-items:center;gap:6px;">
                         <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${p.color};"></span>
                         <span>${p.series.name}:</span>
