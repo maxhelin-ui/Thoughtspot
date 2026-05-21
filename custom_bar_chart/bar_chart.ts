@@ -635,6 +635,12 @@ function render(ctx: CustomChartContext) {
                     if (showSlicing && isMiddle) {
                         return { low: null, high: null, color: 'transparent', delta: d.delta, isTotal: false };
                     }
+                    // Null-out the start/end totals so Highcharts doesn't
+                    // catch hovers on the zero-height transparent bars — the
+                    // scatter hit-zones below own the start/end tooltip.
+                    if (d.isTotal) {
+                        return { low: null, high: null, color: 'transparent', delta: d.delta, isTotal: true };
+                    }
                     return {
                         low:     d.low,
                         high:    d.high,
@@ -682,7 +688,8 @@ function render(ctx: CustomChartContext) {
                     type:                'scatter',
                     name:                'start-marker',
                     data:                [{ x: 0, y: startValue }],
-                    marker:              { symbol: 'circle', radius: 26, fillColor: 'rgba(0,0,0,0)', lineWidth: 0 },
+                    // Near-zero alpha (not fully transparent) so SVG hit-testing still fires.
+                    marker:              { symbol: 'circle', radius: 26, fillColor: 'rgba(0,0,0,0.001)', lineWidth: 0 },
                     showInLegend:        false,
                     stickyTracking:      false,
                     enableMouseTracking: true,
@@ -691,7 +698,8 @@ function render(ctx: CustomChartContext) {
                     type:                'scatter',
                     name:                'end-marker',
                     data:                [{ x: categories.length - 1, y: endValue }],
-                    marker:              { symbol: 'circle', radius: 26, fillColor: 'rgba(0,0,0,0)', lineWidth: 0 },
+                    // Near-zero alpha (not fully transparent) so SVG hit-testing still fires.
+                    marker:              { symbol: 'circle', radius: 26, fillColor: 'rgba(0,0,0,0.001)', lineWidth: 0 },
                     showInLegend:        false,
                     stickyTracking:      false,
                     enableMouseTracking: true,
