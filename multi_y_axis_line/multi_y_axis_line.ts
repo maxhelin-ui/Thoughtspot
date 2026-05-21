@@ -318,25 +318,31 @@ function alignButtonAreasToPlot(chart: any, chartTitle: string) {
     };
     setStyle('topArea', {
         paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
-        paddingRight: `${Math.max(0, plotRightAbs)}px`,
+        // Keep the gridline-aligned start, but let the button row run to the
+        // layout's right edge before wrapping — gives buttons/legend the
+        // full available width on row 1 before they spill onto row 2.
+        paddingRight: '0px',
         paddingTop:    '6px',
         paddingBottom: '6px',
     });
     setStyle('bottomArea', {
         paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
-        paddingRight: `${Math.max(0, plotRightAbs)}px`,
+        paddingRight: '0px',
         paddingTop:    '6px',
         paddingBottom: '6px',
     });
     setStyle('leftArea', {
         paddingTop:    `${Math.max(0, plotTopAbs)}px`,
-        paddingBottom: `${Math.max(0, plotBottomAbs)}px`,
+        // Same idea for the vertical button column — gridline-aligned start,
+        // but allow the column to use the chart's full height before
+        // wrapping into a second column.
+        paddingBottom: '0px',
         paddingLeft:   '6px',
         paddingRight:  '6px',
     });
     setStyle('rightArea', {
         paddingTop:    `${Math.max(0, plotTopAbs)}px`,
-        paddingBottom: `${Math.max(0, plotBottomAbs)}px`,
+        paddingBottom: '0px',
         paddingLeft:   '6px',
         paddingRight:  '6px',
     });
