@@ -473,6 +473,16 @@ function render(ctx: CustomChartContext) {
     // axis label formatter and the tooltip/data-label formatter, so 0.85
     // renders as 85% on a percent measure and as 0.85 or $0.85 on a normal one.
     const yIsPercent = detectPercentByName(activeYCol.name, (activeYCol as any)?.format?.pattern);
+
+    // Percent measures get averaged across the rows that fed each x bucket
+    // rather than summed — five 70% values shouldn't add up to 350%.
+    // computeSeries already tracked counts alongside sums; just divide here.
+    if (yIsPercent) {
+        seriesGroups = seriesGroups.map(g => ({
+            ...g,
+            data: g.data.map((s, i) => g.counts[i] > 0 ? s / g.counts[i] : 0),
+        }));
+    }
     const fmtY = (v: number) => yIsPercent
         ? formatPercent(v, numberFormat.replace(/[\$€£¥₹]/g, ''))
         : formatCurrency(v, numberFormat, currency);
