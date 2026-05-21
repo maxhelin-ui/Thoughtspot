@@ -861,7 +861,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'markerEnabled',      type: 'checkbox',    defaultValue: true,           label: 'Show markers' },
                     { key: 'markerRadius',       type: 'number',      defaultValue: 4,              label: 'Marker size' },
                     { key: 'smoothLines',        type: 'checkbox',    defaultValue: false,          label: 'Smooth (spline) lines' },
-                    { key: 'showDataLabels',     type: 'checkbox',    defaultValue: false,          label: 'Show data labels on points' },
+                    { key: 'showDataLabels',     type: 'checkbox',    defaultValue: false,          label: 'Show value at each data point' },
                     ...measureColorPickers,
                     ...sliceColorPickers,
                 ],
