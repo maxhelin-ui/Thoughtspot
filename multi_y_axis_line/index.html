@@ -35,19 +35,17 @@
                 display: flex;
                 gap: 12px;
                 align-items: center;
-                padding: 6px 16px;
                 flex-wrap: wrap;
+                box-sizing: border-box;
             }
-            #topArea:empty, #bottomArea:empty { padding: 0; }
             #leftArea, #rightArea {
                 display: flex;
                 flex-direction: column;
                 gap: 12px;
                 align-items: stretch;
-                padding: 16px 6px;
                 min-width: 0;
+                box-sizing: border-box;
             }
-            #leftArea:empty, #rightArea:empty { padding: 0; }
             .button-group {
                 display: flex;
                 gap: 6px;
@@ -84,7 +82,8 @@
                 gap: 14px;
                 flex-wrap: wrap;
                 align-items: center;
-                padding: 4px 16px 8px 16px;
+                margin-left: auto;
+                flex-shrink: 0;
             }
             .legend-item {
                 display: inline-flex;

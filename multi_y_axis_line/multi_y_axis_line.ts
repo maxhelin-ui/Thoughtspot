@@ -37,23 +37,28 @@ interface VisualProps {
 const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
 const POSITION_OPTIONS = ['Top', 'Bottom', 'Left', 'Right'];
 
+// Fixed chart margins. Pinning these here (instead of letting Highcharts
+// auto-size) lets us align the button areas predictably with the plot
+// gridlines: top/bottom buttons start at marginLeft, left/right buttons start
+// at marginTop. Without fixed margins we'd be chasing dynamic plotLeft values
+// every render.
+const CHART_MARGIN_LEFT   = 80;
+const CHART_MARGIN_RIGHT  = 40;
+const CHART_MARGIN_BOTTOM = 60;
+const CHART_MARGIN_TOP_NO_TITLE   = 25;
+const CHART_MARGIN_TOP_WITH_TITLE = 50;
+
 let globalChartReference: any = null;
 let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
 
-// Which y-measure is currently rendered. Updated by the y-button click handler.
 let activeYColumnId: string | null = null;
-// Which slicer columns are currently active. Multiple can be active at once —
-// the cross-product of their distinct values defines the lines. Initialised
-// from the 'showSlicingByDefault' setting (turns the first bound slicer on).
 const activeSliceColumnIds = new Set<string>();
 let sliceDefaultsInitialised = false;
 let lastSeenSlicingDefault: boolean | null = null;
 
-// Hidden series per active-y key (so toggling Y doesn't lose the user's
-// per-y legend visibility choices).
 const hiddenSeriesByY = new Map<string, Set<string>>();
 
 const FALLBACK_PALETTE = ['#378ADD', '#E24B4A', '#534AB7', '#F0A937', '#52B788', '#E78AC3', '#67C2A5', '#FB9A99'];
@@ -83,6 +88,16 @@ function formatCurrency(value: number, format: string, currency: string): string
     return currency + formatted;
 }
 
+function formatPercent(value: number, format: string): string {
+    // numeral percent multiplies by 100, so divide here first to keep the
+    // y-axis values as the raw 0.85, 1.2 etc. that the source data provides.
+    try {
+        return numeral(value).format(format.endsWith('%') ? format : format + '%');
+    } catch {
+        return `${(value * 100).toFixed(1)}%`;
+    }
+}
+
 function pickColor(picker: unknown, fallback: string): string {
     return (typeof picker === 'string' && picker) ? picker : fallback;
 }
@@ -91,8 +106,15 @@ function naturalCompare(a: string, b: string): number {
     return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
 }
 
-// Borrowed from multi-axis-bar: detect date-bucketed columns so we sort and
-// label x-axis values chronologically instead of as raw epoch strings.
+// Heuristic: treat the active measure as a percent if its name or format
+// indicates one. Matches the pattern used in multi-axis-bar.
+function detectPercentByName(name?: string, format?: string): boolean {
+    const n = (name ?? '').toLowerCase();
+    if (n.includes('%') || /\bpct\b/.test(n) || /\bpercent\b/.test(n)) return true;
+    if ((format ?? '').includes('%')) return true;
+    return false;
+}
+
 function isDateLikeCol(col: { dataType?: DataType; timeBucket?: ColumnTimeBucket } | undefined): boolean {
     if (!col) return false;
     if (col.dataType === DataType.DATE || col.dataType === DataType.DATE_TIME) return true;
@@ -136,10 +158,6 @@ function renderChartMessage(text: string) {
     el.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#6B7280;font-size:14px;font-family:inherit;text-align:center;padding:20px;">${text}</div>`;
 }
 
-// Generic pill button group renderer. Used for both the y-axis and slicer
-// toggles so they look identical to the other charts (waterfall, multi-axis-
-// bar). isActive determines which buttons are highlighted; onClick fires per
-// button id.
 function renderToggleButtons(
     containerEl: HTMLElement,
     items: Array<{ id: string; name: string }>,
@@ -160,9 +178,6 @@ function renderToggleButtons(
     containerEl.appendChild(group);
 }
 
-// Spread the y-button and slicer-button groups across the 4 grid areas
-// (top/bottom/left/right) according to the user's settings. If both groups
-// land in the same area they sit side by side (or stacked in vertical areas).
 function paintButtonsInto(
     yPos: string,
     slicePos: string,
@@ -179,23 +194,15 @@ function paintButtonsInto(
     };
     Object.values(areas).forEach(el => { if (el) el.innerHTML = ''; });
 
-    const yTarget = areas[yPos] ?? areas.Top;
-    if (yTarget && yItems.length > 0) {
-        renderToggleButtons(
-            yTarget,
-            yItems,
-            id => id === activeYColumnId,
-            onYClick,
-        );
+    // Skip the y-button group entirely when only one y measure is bound —
+    // no point in offering a switcher with a single option.
+    if (yItems.length > 1) {
+        const yTarget = areas[yPos] ?? areas.Top;
+        if (yTarget) renderToggleButtons(yTarget, yItems, id => id === activeYColumnId, onYClick);
     }
-    const sliceTarget = areas[slicePos] ?? areas.Top;
-    if (sliceTarget && sliceItems.length > 0) {
-        renderToggleButtons(
-            sliceTarget,
-            sliceItems,
-            id => activeSliceColumnIds.has(id),
-            onSliceClick,
-        );
+    if (sliceItems.length > 0) {
+        const sliceTarget = areas[slicePos] ?? areas.Top;
+        if (sliceTarget) renderToggleButtons(sliceTarget, sliceItems, id => activeSliceColumnIds.has(id), onSliceClick);
     }
 }
 
@@ -204,10 +211,8 @@ function renderCustomLegend(
     hidden: Set<string>,
     onToggle: (name: string) => void,
 ) {
-    // Legend is appended to whichever area is least busy: prefer bottom if
-    // it's empty (or only has buttons), else top.
-    let host = document.getElementById('bottomArea');
-    if (!host) host = document.getElementById('topArea');
+    // Live alongside the buttons in the top row, like multi-axis-bar does.
+    const host = document.getElementById('topArea');
     if (!host) return;
     const legendEl = document.createElement('div');
     legendEl.id = 'customLegend';
@@ -228,9 +233,57 @@ function renderCustomLegend(
     host.appendChild(legendEl);
 }
 
+// Push the button areas so their content lines up with the chart's plot
+// area: top/bottom buttons start at plotLeft (i.e. after the y-axis labels)
+// and end at plotRight; left/right buttons sit within plotTop..plotBottom
+// vertically. Reads positions from getBoundingClientRect so it adapts to the
+// actual rendered layout, then applies padding to the four area elements.
+function alignButtonAreasToPlot(chartTitle: string) {
+    const layoutEl = document.getElementById('layout');
+    const chartEl  = document.getElementById('chart');
+    if (!layoutEl || !chartEl) return;
+    const layoutRect = layoutEl.getBoundingClientRect();
+    const chartRect  = chartEl.getBoundingClientRect();
+    const marginTop = chartTitle.trim() ? CHART_MARGIN_TOP_WITH_TITLE : CHART_MARGIN_TOP_NO_TITLE;
+
+    const plotLeftAbs   = (chartRect.left   - layoutRect.left) + CHART_MARGIN_LEFT;
+    const plotTopAbs    = (chartRect.top    - layoutRect.top)  + marginTop;
+    const plotRightAbs  = layoutRect.right  - (chartRect.right - CHART_MARGIN_RIGHT);
+    const plotBottomAbs = layoutRect.bottom - (chartRect.bottom - CHART_MARGIN_BOTTOM);
+
+    const setStyle = (id: string, s: Record<string, string>) => {
+        const el = document.getElementById(id);
+        if (el) Object.assign(el.style, s);
+    };
+    setStyle('topArea', {
+        paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
+        paddingRight: `${Math.max(0, plotRightAbs)}px`,
+        paddingTop:    '6px',
+        paddingBottom: '6px',
+    });
+    setStyle('bottomArea', {
+        paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
+        paddingRight: `${Math.max(0, plotRightAbs)}px`,
+        paddingTop:    '6px',
+        paddingBottom: '6px',
+    });
+    setStyle('leftArea', {
+        paddingTop:    `${Math.max(0, plotTopAbs)}px`,
+        paddingBottom: `${Math.max(0, plotBottomAbs)}px`,
+        paddingLeft:   '6px',
+        paddingRight:  '6px',
+    });
+    setStyle('rightArea', {
+        paddingTop:    `${Math.max(0, plotTopAbs)}px`,
+        paddingBottom: `${Math.max(0, plotBottomAbs)}px`,
+        paddingLeft:   '6px',
+        paddingRight:  '6px',
+    });
+}
+
 type DataModel = {
     xColumn?: { id: string; name: string; dataType?: DataType; timeBucket?: ColumnTimeBucket };
-    yColumns: Array<{ id: string; name: string }>;
+    yColumns: Array<{ id: string; name: string; format?: any }>;
     sliceColumns: Array<{ id: string; name: string }>;
     dataArr: DataPointsArray;
 };
@@ -245,10 +298,6 @@ function getDataModel(chartModel: ChartModel): DataModel {
     return { xColumn, yColumns, sliceColumns, dataArr };
 }
 
-// Build the line series for the current active y measure, broken down by
-// every distinct combination of active slicer values. Returns:
-//   xCategories: sorted unique x values (date-sorted if x is date)
-//   seriesGroups: [{ name, data: number[] indexed by xCategories }]
 function computeSeries(
     dataArr: DataPointsArray,
     xCol: { id: string; dataType?: DataType; timeBucket?: ColumnTimeBucket },
@@ -270,17 +319,15 @@ function computeSeries(
         return lower === '{null}' || lower === '(null)' || lower === 'null';
     };
 
-    // Two passes: collect unique x categories + unique slice keys, then sum.
     const xSet = new Set<string>();
     const sliceKeySet = new Set<string>();
-    const SEP = ' — '; // em dash so it won't collide with normal text
+    const SEP = ' — ';
     const NO_SLICE_KEY = '__noslice__';
 
     for (const row of dataArr.dataValue) {
         const xRaw = row[xColIdx];
         if (isExcluded(xRaw)) continue;
-        const x = String(xRaw);
-        xSet.add(x);
+        xSet.add(String(xRaw));
         if (sliceIdxs.length === 0) {
             sliceKeySet.add(NO_SLICE_KEY);
         } else {
@@ -303,9 +350,12 @@ function computeSeries(
     const xIndex = new Map<string, number>();
     xCategories.forEach((x, i) => xIndex.set(x, i));
 
-    // sums[sliceKey][xIdx] = aggregated value
     const sums: Record<string, number[]> = {};
-    for (const k of sliceKeys) sums[k] = new Array(xCategories.length).fill(0);
+    const counts: Record<string, number[]> = {};
+    for (const k of sliceKeys) {
+        sums[k] = new Array(xCategories.length).fill(0);
+        counts[k] = new Array(xCategories.length).fill(0);
+    }
 
     for (const row of dataArr.dataValue) {
         const xRaw = row[xColIdx];
@@ -329,11 +379,13 @@ function computeSeries(
         const v = parseFloat(String(raw));
         if (Number.isNaN(v)) continue;
         sums[key][xi] += v;
+        counts[key][xi] += 1;
     }
 
     const seriesGroups = sliceKeys.map(key => ({
         name: key === NO_SLICE_KEY ? '' : key,
         data: sums[key],
+        counts: counts[key],
     }));
     return { xCategories, seriesGroups };
 }
@@ -344,8 +396,6 @@ function render(ctx: CustomChartContext) {
     const { xColumn, yColumns, sliceColumns, dataArr } = getDataModel(chartModel);
 
     if (!xColumn || yColumns.length === 0) {
-        // Clear button areas to avoid orphan controls and show a helpful
-        // empty-state message in the chart area.
         ['topArea', 'bottomArea', 'leftArea', 'rightArea'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.innerHTML = '';
@@ -354,19 +404,15 @@ function render(ctx: CustomChartContext) {
         return;
     }
 
-    // Self-heal active Y if it was cleared / removed.
     if (!activeYColumnId || !yColumns.some(c => c.id === activeYColumnId)) {
         activeYColumnId = yColumns[0].id;
     }
     const activeYCol = yColumns.find(c => c.id === activeYColumnId)!;
 
-    // Drop active slicers that are no longer bound.
     for (const id of Array.from(activeSliceColumnIds)) {
         if (!sliceColumns.some(c => c.id === id)) activeSliceColumnIds.delete(id);
     }
 
-    // Apply 'show slicing by default' on first render (and re-apply whenever
-    // the user flips the setting). Activates the first bound slicer.
     const slicingDefault = visualProps.showSlicingByDefault ?? false;
     if (!sliceDefaultsInitialised || slicingDefault !== lastSeenSlicingDefault) {
         sliceDefaultsInitialised = true;
@@ -394,7 +440,6 @@ function render(ctx: CustomChartContext) {
     const yButtonsPos     = visualProps.yButtonsPosition     ?? 'Top';
     const sliceButtonsPos = visualProps.sliceButtonsPosition ?? 'Top';
 
-    // Paint the y-axis and slicer button groups into their configured areas.
     paintButtonsInto(
         yButtonsPos,
         sliceButtonsPos,
@@ -405,7 +450,6 @@ function render(ctx: CustomChartContext) {
             render(ctx);
         },
         (id) => {
-            // Slicer toggle — multiple can be active at once.
             if (activeSliceColumnIds.has(id)) activeSliceColumnIds.delete(id);
             else activeSliceColumnIds.add(id);
             render(ctx);
@@ -420,23 +464,27 @@ function render(ctx: CustomChartContext) {
         return;
     }
 
-    // Sort x labels chronologically for date columns (already done in
-    // computeSeries via numeric sort), and format the labels for display.
     const xIsDate = isDateLikeCol(xColumn);
     const xCategoryLabels = xIsDate
         ? xCategories.map(v => formatEpochByBucket(v, xColumn.timeBucket))
         : xCategories;
 
-    const fmtAxis  = (v: number) => formatCurrency(v, numberFormat.replace(/^[\$€£¥₹]/, ''), 'None');
-    const fmtLabel = (v: number) => formatCurrency(v, numberFormat, currency);
+    // Detect whether the active y measure is a percent — drives both the
+    // axis label formatter and the tooltip/data-label formatter, so 0.85
+    // renders as 85% on a percent measure and as 0.85 or $0.85 on a normal one.
+    const yIsPercent = detectPercentByName(activeYCol.name, (activeYCol as any)?.format?.pattern);
+    const fmtY = (v: number) => yIsPercent
+        ? formatPercent(v, numberFormat.replace(/[\$€£¥₹]/g, ''))
+        : formatCurrency(v, numberFormat, currency);
+    const fmtAxis = (v: number) => yIsPercent
+        ? formatPercent(v, numberFormat.replace(/[\$€£¥₹]/g, ''))
+        : formatCurrency(v, numberFormat.replace(/^[\$€£¥₹]/, ''), 'None');
 
     const palette = getEffectivePalette();
     const yKey = activeYCol.id;
     if (!hiddenSeriesByY.has(yKey)) hiddenSeriesByY.set(yKey, new Set());
     const hidden = hiddenSeriesByY.get(yKey)!;
 
-    // Series colours: prefer a user-configured per-series colour (keyed by
-    // series name), fall back to the org palette in series order.
     const seriesSpecs = seriesGroups.map((g, i) => {
         const isNoSlice = g.name === '';
         const displayName = isNoSlice ? activeYCol.name : g.name;
@@ -447,7 +495,9 @@ function render(ctx: CustomChartContext) {
         return { name: displayName, data: g.data, color };
     });
 
-    if (showLegend && (activeSliceCols.length > 0 || seriesSpecs.length > 1)) {
+    // Legend is meaningful when there's actually multiple series to
+    // distinguish (slicer active OR multiple measures combined).
+    if (showLegend && seriesSpecs.length > 1) {
         renderCustomLegend(
             seriesSpecs.map(s => ({ name: s.name, color: s.color })),
             hidden,
@@ -464,11 +514,15 @@ function render(ctx: CustomChartContext) {
         globalChartReference = null;
     }
 
+    const marginTop = chartTitle.trim() ? CHART_MARGIN_TOP_WITH_TITLE : CHART_MARGIN_TOP_NO_TITLE;
+
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type: smoothLines ? 'spline' : 'line',
-            marginTop:    chartTitle ? 50 : 25,
-            spacingBottom: 20,
+            marginLeft:   CHART_MARGIN_LEFT,
+            marginRight:  CHART_MARGIN_RIGHT,
+            marginTop,
+            marginBottom: CHART_MARGIN_BOTTOM,
             style: { fontFamily: 'Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif' },
         },
         title: {
@@ -499,7 +553,7 @@ function render(ctx: CustomChartContext) {
                 style: { color: '#555', fontSize: '11px' },
             },
         },
-        legend: { enabled: false }, // we render our own
+        legend: { enabled: false },
         tooltip: {
             useHTML: true,
             backgroundColor: 'rgba(0,0,0,0)',
@@ -513,7 +567,7 @@ function render(ctx: CustomChartContext) {
                     `<div style="display:flex;align-items:center;gap:6px;">
                         <span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${p.color};"></span>
                         <span>${p.series.name}:</span>
-                        <b style="margin-left:auto;">${fmtLabel(p.y)}</b>
+                        <b style="margin-left:auto;">${fmtY(p.y)}</b>
                     </div>`).join('');
                 return `<div style="border:1px solid #555;border-radius:8px;background:#3A3F48;padding:10px 12px;color:#FFFFFF;font-size:12px;min-width:160px;">
                     <div style="font-weight:600;margin-bottom:6px;">${cat}</div>
@@ -529,7 +583,7 @@ function render(ctx: CustomChartContext) {
                     enabled: showDataLabels,
                     formatter: function (this: any) {
                         if (this.y == null) return '';
-                        return fmtLabel(this.y);
+                        return fmtY(this.y);
                     },
                     style: { fontSize: '11px', fontWeight: '600', textOutline: 'none', color: '#333' },
                 },
@@ -545,6 +599,10 @@ function render(ctx: CustomChartContext) {
             showInLegend: false,
         })),
     });
+
+    // Now that the chart has rendered with its fixed margins, push the
+    // button areas in so they line up with the plot gridlines.
+    alignButtonAreasToPlot(chartTitle);
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
@@ -580,8 +638,6 @@ const renderChart = async (ctx: CustomChartContext) => {
 (async () => {
     const ctx = await getChartContext({
         getDefaultChartConfig: (chartModel: ChartModel) => {
-            // Pre-bind what's available but never throw — show an empty-state
-            // message if the user hasn't configured enough yet.
             const cols = chartModel.columns;
             const attributeColumns = cols.filter(c => c.type === ColumnType.ATTRIBUTE);
             const measureColumns   = cols.filter(c => c.type === ColumnType.MEASURE);
@@ -611,7 +667,7 @@ const renderChart = async (ctx: CustomChartContext) => {
         chartConfigEditorDefinition: [{
             key:             'main',
             label:           'Multi Y-Axis Line Chart',
-            descriptionText: 'Pick one attribute for the x-axis and one or more measures for the y-axis (toggle between them with the Y buttons). Add any number of slicer attributes — each slicer can be toggled on/off, and any combination active simultaneously will split the line by that cross-product.',
+            descriptionText: 'Pick one attribute for the x-axis and one or more measures for the y-axis (toggle between them with the Y buttons; the button row is hidden if there is only one measure). Add any number of slicer attributes — each slicer can be toggled on/off, and any combination active simultaneously splits the line by the cross-product of slice values.',
             columnSections: [
                 {
                     key: 'xAxis',
