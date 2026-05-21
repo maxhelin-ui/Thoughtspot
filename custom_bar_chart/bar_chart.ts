@@ -269,12 +269,12 @@ function getDataModel(chartModel: ChartModel) {
         return { column: { id: sliceColumn.id, name: sliceColumn.name }, sliceNames, contribsByMeasure };
     });
 
-    return { values, names, sliceColumns, slicesByColumn };
+    return { values, names, sliceColumns, slicesByColumn, yColumns };
 }
 
 function render(ctx: CustomChartContext) {
     const chartModel   = ctx.getChartModel();
-    const { values, names, sliceColumns, slicesByColumn } = getDataModel(chartModel);
+    const { values, names, sliceColumns, slicesByColumn, yColumns } = getDataModel(chartModel);
     const visualProps  = (chartModel.visualProps ?? {}) as VisualProps;
 
     const numberFormat        = visualProps.numberFormat        ?? '0.[0]a';
@@ -489,12 +489,31 @@ function render(ctx: CustomChartContext) {
             useHTML: true,
             formatter: function (this: any) {
                 const point = this.point as any;
-                if (point.isTotal) return false;
+                const seriesName = point.series?.name ?? '';
+                const isStartMarker = seriesName === 'start-marker';
+                const isEndMarker   = seriesName === 'end-marker';
+                // Suppress tooltip on the invisible zero-height columnrange
+                // totals; the scatter start/end markers carry the tooltip
+                // instead (and are mouse-tracked).
+                if (point.isTotal && !isStartMarker && !isEndMarker) return false;
 
-                const borderColor = point.color ?? point.series?.color ?? '#52B788';
+                const colIdx = point.x ?? 0;
+                const col    = yColumns[colIdx];
+                const extraText = col
+                    ? String(visualProps[`tooltipExtra_${col.id}`] ?? '').trim()
+                    : '';
+
+                const borderColor = point.color ?? point.series?.color ?? colorTotal ?? '#52B788';
 
                 const rows: Array<{ label: string; value: string }> = [];
-                if (point.isSlice) {
+
+                if (isStartMarker || isEndMarker) {
+                    const totalValue = point.y;
+                    rows.push({
+                        label: `${categories[colIdx] ?? ''}:`,
+                        value: formatNumber(totalValue, numberFormat),
+                    });
+                } else if (point.isSlice) {
                     const contribution = point.contribution ?? 0;
                     const sign         = contribution >= 0 ? '+' : '';
                     rows.push({
@@ -510,7 +529,7 @@ function render(ctx: CustomChartContext) {
                     const sign  = delta >= 0 ? '+' : '';
                     const runningTotal = delta >= 0 ? point.high : point.low;
                     rows.push({
-                        label: `${categories[point.x] ?? ''}:`,
+                        label: `${categories[colIdx] ?? ''}:`,
                         value: `${sign}${formatNumber(delta, numberFormat)}`,
                     });
                     rows.push({
@@ -519,9 +538,20 @@ function render(ctx: CustomChartContext) {
                     });
                 }
 
-                const rowsHtml = rows.map(({ label, value }, i) =>
-                    `<div style="${i > 0 ? 'margin-top:10px;' : ''}font-weight:600;">${label}<br/><span style="font-weight:700;">${value}</span></div>`,
-                ).join('');
+                if (extraText) {
+                    // Render extra info as plain text rows (no label, lighter weight).
+                    extraText.split(/\r?\n/).forEach(line => {
+                        const t = line.trim();
+                        if (t) rows.push({ label: '', value: t });
+                    });
+                }
+
+                const rowsHtml = rows.map(({ label, value }, i) => {
+                    const labelHtml = label
+                        ? `<span style="font-weight:600;">${label}</span><br/><span style="font-weight:700;">${value}</span>`
+                        : `<span style="font-weight:400;opacity:0.9;">${value}</span>`;
+                    return `<div style="${i > 0 ? 'margin-top:10px;' : ''}">${labelHtml}</div>`;
+                }).join('');
 
                 return `<div style="border:1px solid ${withAlpha(borderColor, 0.75)};border-radius:8px;background:#3A3F48;padding:12px;color:#FFFFFF;font-size:13px;">${rowsHtml}</div>`;
             },
@@ -619,7 +649,7 @@ function render(ctx: CustomChartContext) {
                     data:                [{ x: 0, y: startValue }],
                     marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
                     showInLegend:        false,
-                    enableMouseTracking: false,
+                    enableMouseTracking: true,
                 },
                 {
                     type:                'scatter',
@@ -627,7 +657,7 @@ function render(ctx: CustomChartContext) {
                     data:                [{ x: categories.length - 1, y: endValue }],
                     marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
                     showInLegend:        false,
-                    enableMouseTracking: false,
+                    enableMouseTracking: true,
                 },
             ] : []),
         ],
@@ -769,12 +799,23 @@ const renderChart = async (ctx: CustomChartContext) => {
             const yCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
             const sliceCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns ?? [];
 
-            const labelOverrides = yCols.map(col => ({
-                key:          `label_${col.id}`,
-                type:         'text' as const,
-                defaultValue: col.name,
-                label:        `Rename: ${col.name}`,
-            }));
+            // Per-column overrides: rename + extra tooltip line. Adjacent in
+            // the editor so each column's settings stay grouped.
+            const labelOverrides = yCols.flatMap(col => [
+                {
+                    key:          `label_${col.id}`,
+                    type:         'text' as const,
+                    defaultValue: col.name,
+                    label:        `Rename: ${col.name}`,
+                },
+                {
+                    key:          `tooltipExtra_${col.id}`,
+                    type:         'text' as const,
+                    multiline:    true,
+                    defaultValue: ' ',
+                    label:        `Tooltip extra info: ${col.name}`,
+                },
+            ]);
 
             const sliceColorPickers: any[] = [];
             const dataArr = chartModel.data?.[chartModel.data.length - 1]?.data;
