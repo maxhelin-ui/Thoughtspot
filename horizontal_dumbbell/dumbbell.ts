@@ -330,12 +330,10 @@ function render(ctx: CustomChartContext) {
     });
     const placement = legendPlacement(legendPosition, showLegend);
     // When the pager sits absolutely in the top-right and the legend is
-    // also at the top, slide the legend left so they share the row instead
-    // of overlapping. Also bump marginRight to reserve space for the pills.
+    // also at the top, slide the legend left so they share the row.
     const pagerVisible = showPager && allSortedRows.length > pageSize;
     if (pagerVisible && legendPosition === 'Top (horizontal)') {
         placement.align = 'left';
-        placement.marginRight = Math.max(placement.marginRight, 220);
     }
     const fmt = (v: number) => formatCurrency(v, numberFormat, currency);
 
@@ -356,19 +354,29 @@ function render(ctx: CustomChartContext) {
         globalChartReference = null;
     }
 
-    // Pin the top-aligned legend to plotLeft (so the first row starts where
-    // the gridlines start). If the items overflow into a second row, fall
-    // back to x:0 so the wrapped rows hug the chart's left edge.
+    // Pin the top-aligned legend to plotLeft so its first row starts at
+    // the gridlines. If that would put the legend within 6px of the
+    // (HTML-overlaid) pager pills, slide it left only as far as needed
+    // to keep the 6px gap. Capped at x=0 so it never goes off-canvas.
     const alignLegendToPlot = function (this: any) {
         const chart = this;
         if (!pagerVisible || legendPosition !== 'Top (horizontal)') return;
         if (chart._legendPosLock) return;
         chart._legendPosLock = true;
         try {
-            const items = chart.legend?.allItems ?? [];
-            const ys = items.map((it: any) => it._legendItemPos?.[1] ?? 0);
-            const wrapped = ys.length > 1 && (Math.max(...ys) - Math.min(...ys)) > 1;
-            const target  = wrapped ? 0 : (chart.plotLeft ?? 0);
+            const pagerEl = document.getElementById('pagerButtons');
+            const pagerWidth   = pagerEl?.offsetWidth ?? 0;
+            const pagerRightCss = 16;
+            const chartWidth   = chart.chartWidth ?? 0;
+            const pagerLeft    = chartWidth - pagerRightCss - pagerWidth;
+            const legendWidth  = chart.legend?.legendWidth ?? 0;
+
+            let target = chart.plotLeft ?? 0;
+            const legendRight = target + legendWidth;
+            const allowedRight = pagerLeft - 6;
+            if (legendRight > allowedRight) {
+                target = Math.max(0, allowedRight - legendWidth);
+            }
             if ((chart.legend.options.x ?? 0) !== target) {
                 chart.legend.update({ x: target }, false);
                 chart.redraw(false);
