@@ -211,11 +211,13 @@ function renderCustomLegend(
     hidden: Set<string>,
     onToggle: (name: string) => void,
 ) {
-    // Live alongside the buttons in the top row, like multi-axis-bar does.
     const host = document.getElementById('topArea');
     if (!host) return;
-    const legendEl = document.createElement('div');
-    legendEl.id = 'customLegend';
+    // Each legend item is appended as a direct sibling of the button groups.
+    // #topArea is a wrap flex row, so items fill the remaining space on the
+    // first row alongside the buttons, then wrap to row 2, 3, ... as needed
+    // — instead of the legend being a single block that either fits or
+    // overflows.
     items.forEach(item => {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -228,9 +230,8 @@ function renderCustomLegend(
         btn.appendChild(swatch);
         btn.appendChild(label);
         btn.onclick = () => onToggle(item.name);
-        legendEl.appendChild(btn);
+        host.appendChild(btn);
     });
-    host.appendChild(legendEl);
 }
 
 // Push the button areas so their content lines up with the chart's plot
