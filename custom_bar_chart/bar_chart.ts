@@ -658,15 +658,32 @@ function render(ctx: CustomChartContext) {
                 enableMouseTracking: false,
             }] : []),
             ...(showStartEndMarkers ? [
+                // Visible small dots (no mouse tracking).
+                {
+                    type:                'scatter',
+                    name:                'start-marker-dot',
+                    data:                [{ x: 0, y: startValue }],
+                    marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                    showInLegend:        false,
+                    enableMouseTracking: false,
+                },
+                {
+                    type:                'scatter',
+                    name:                'end-marker-dot',
+                    data:                [{ x: categories.length - 1, y: endValue }],
+                    marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                    showInLegend:        false,
+                    enableMouseTracking: false,
+                },
+                // Invisible large hit-zones so hovering anywhere on the
+                // start/end pill fires the tooltip. stickyTracking:false
+                // means moving the cursor off the pill hides it again.
                 {
                     type:                'scatter',
                     name:                'start-marker',
                     data:                [{ x: 0, y: startValue }],
-                    marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                    marker:              { symbol: 'circle', radius: 26, fillColor: 'rgba(0,0,0,0)', lineWidth: 0 },
                     showInLegend:        false,
-                    // stickyTracking: false + a tight hit area so the tooltip
-                    // fires only when the cursor is right on the dot/pill,
-                    // not anywhere on the chart.
                     stickyTracking:      false,
                     enableMouseTracking: true,
                 },
@@ -674,7 +691,7 @@ function render(ctx: CustomChartContext) {
                     type:                'scatter',
                     name:                'end-marker',
                     data:                [{ x: categories.length - 1, y: endValue }],
-                    marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                    marker:              { symbol: 'circle', radius: 26, fillColor: 'rgba(0,0,0,0)', lineWidth: 0 },
                     showInLegend:        false,
                     stickyTracking:      false,
                     enableMouseTracking: true,
@@ -692,12 +709,15 @@ function render(ctx: CustomChartContext) {
         const px = xAxisObj.toPixels(xCat, false);
         const py = yAxisObj.toPixels(yVal, false);
         const w = 80, h = 28, r = 14;
+        // pointer-events:none so the pill doesn't swallow hovers — the
+        // invisible scatter hit-zone underneath catches them instead.
         chart.renderer.rect(px - w / 2, py - h / 2, w, h, r)
             .attr({ fill: color, zIndex: 5 })
+            .css({ pointerEvents: 'none' })
             .add();
         chart.renderer.text(label, px, py + 5)
             .attr({ align: 'center', zIndex: 6 })
-            .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
+            .css({ color: '#fff', fontSize: '12px', fontWeight: '700', pointerEvents: 'none' })
             .add();
     };
 
