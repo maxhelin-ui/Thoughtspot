@@ -83,7 +83,13 @@
                 flex-wrap: wrap;
                 align-items: center;
                 margin-left: auto;
-                flex-shrink: 0;
+                justify-content: flex-end;
+                /* No flex-shrink: 0 here — when the buttons + legend don't fit
+                   in one row, the legend wraps to a 2nd row of #topArea; on
+                   that 2nd row it can shrink to the row width and its own
+                   flex-wrap then breaks the legend items across more rows
+                   as needed instead of overflowing. */
+                min-width: 0;
             }
             .legend-item {
                 display: inline-flex;
