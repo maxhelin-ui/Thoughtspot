@@ -355,9 +355,9 @@ function render(ctx: CustomChartContext) {
     }
 
     // Pin the top-aligned legend to plotLeft so its first row starts at
-    // the gridlines. If that would put the legend within 6px of the
+    // the gridlines. If that would put the legend within 10px of the
     // (HTML-overlaid) pager pills, slide it left only as far as needed
-    // to keep the 6px gap. Capped at x=0 so it never goes off-canvas.
+    // to keep the 10px gap. Capped at x=0 so it never goes off-canvas.
     const alignLegendToPlot = function (this: any) {
         const chart = this;
         if (!pagerVisible || legendPosition !== 'Top (horizontal)') return;
@@ -373,7 +373,7 @@ function render(ctx: CustomChartContext) {
 
             let target = chart.plotLeft ?? 0;
             const legendRight = target + legendWidth;
-            const allowedRight = pagerLeft - 6;
+            const allowedRight = pagerLeft - 10;
             if (legendRight > allowedRight) {
                 target = Math.max(0, allowedRight - legendWidth);
             }
