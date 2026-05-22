@@ -346,6 +346,24 @@ function paintButtonsInto(
     };
     Object.values(areas).forEach(el => { if (el) el.innerHTML = ''; });
 
+    // For the HORIZONTAL areas (top/bottom) only: insert a leading flex
+    // spacer that's sized to the chart's plotLeft so the buttons start at
+    // the gridline when there's room — but with flex-shrink: 1 + min-width: 0
+    // so when the buttons + legend overflow row 1, the spacer collapses and
+    // the row can use the full chart width before wrapping to a new row.
+    // alignButtonAreasToPlot sets the spacer's flex-basis after the chart
+    // measures itself.
+    ['topArea', 'bottomArea'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        const spacer = document.createElement('div');
+        spacer.className = 'area-spacer';
+        spacer.style.flex = '0 1 0';
+        spacer.style.minWidth = '0';
+        spacer.style.height = '0';
+        el.appendChild(spacer);
+    });
+
     // Skip the y-button group entirely when only one y measure is bound —
     // no point in offering a switcher with a single option.
     if (yItems.length > 1) {
@@ -408,21 +426,33 @@ function alignButtonAreasToPlot(chart: any, chartTitle: string) {
         const el = document.getElementById(id);
         if (el) Object.assign(el.style, s);
     };
+    // Horizontal areas: paddingLeft is delegated to the .area-spacer flex
+    // item (set below), so the spacer can collapse when the buttons need
+    // the full chart width. paddingRight stays 0 so row 1 can run to the
+    // layout's right edge before wrapping.
     setStyle('topArea', {
-        paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
-        // Keep the gridline-aligned start, but let the button row run to the
-        // layout's right edge before wrapping — gives buttons/legend the
-        // full available width on row 1 before they spill onto row 2.
+        paddingLeft:  '0px',
         paddingRight: '0px',
         paddingTop:    '6px',
         paddingBottom: '6px',
     });
     setStyle('bottomArea', {
-        paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
+        paddingLeft:  '0px',
         paddingRight: '0px',
         paddingTop:    '6px',
         paddingBottom: '6px',
     });
+
+    // Size the horizontal spacers to plotLeftAbs. flex-basis is set here;
+    // flex-shrink: 1 (configured in paintButtonsInto) lets it collapse when
+    // the buttons + legend overflow the row.
+    const setSpacer = (id: string, basis: number) => {
+        const spacer = document.querySelector(`#${id} > .area-spacer`) as HTMLElement | null;
+        if (!spacer) return;
+        spacer.style.flex = `0 1 ${Math.max(0, basis)}px`;
+    };
+    setSpacer('topArea',    plotLeftAbs);
+    setSpacer('bottomArea', plotLeftAbs);
     setStyle('leftArea', {
         paddingTop:    `${Math.max(0, plotTopAbs)}px`,
         // Same idea for the vertical button column — gridline-aligned start,
