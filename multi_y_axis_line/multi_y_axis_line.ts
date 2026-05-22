@@ -60,7 +60,12 @@ const activeSliceColumnIds = new Set<string>();
 let sliceDefaultsInitialised = false;
 let lastSeenSlicingDefault: boolean | null = null;
 
-const hiddenSeriesByY = new Map<string, Set<string>>();
+// When any slicer is active, the user wants one legend entry per
+// (slicer, value) pair — not per cross-product combination — so they can
+// toggle individual values off to "zoom in". This map persists those hidden
+// values across renders; a cross-product series is hidden if any of its
+// component slice values is in the corresponding slicer's set.
+const hiddenValuesBySlicer = new Map<string, Set<string>>();
 
 const FALLBACK_PALETTE = ['#378ADD', '#E24B4A', '#534AB7', '#F0A937', '#52B788', '#E78AC3', '#67C2A5', '#FB9A99'];
 
@@ -380,11 +385,9 @@ function paintButtonsInto(
     }
 }
 
-function renderCustomLegend(
-    items: Array<{ name: string; color: string }>,
-    hidden: Set<string>,
-    onToggle: (name: string) => void,
-) {
+type LegendItem = { name: string; color: string; hidden: boolean; onClick: () => void };
+
+function renderCustomLegend(items: Array<LegendItem>) {
     const host = document.getElementById('topArea');
     if (!host) return;
     // Each legend item is appended as a direct sibling of the button groups.
@@ -395,7 +398,7 @@ function renderCustomLegend(
     items.forEach(item => {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'legend-item' + (hidden.has(item.name) ? ' legend-hidden' : '');
+        btn.className = 'legend-item' + (item.hidden ? ' legend-hidden' : '');
         const swatch = document.createElement('span');
         swatch.className = 'legend-swatch';
         swatch.style.background = item.color;
@@ -403,7 +406,7 @@ function renderCustomLegend(
         label.textContent = item.name;
         btn.appendChild(swatch);
         btn.appendChild(label);
-        btn.onclick = () => onToggle(item.name);
+        btn.onclick = item.onClick;
         host.appendChild(btn);
     });
 }
@@ -866,9 +869,9 @@ function render(ctx: CustomChartContext) {
     };
 
     const palette = getEffectivePalette();
-    const yKey = activeY.id;
-    if (!hiddenSeriesByY.has(yKey)) hiddenSeriesByY.set(yKey, new Set());
-    const hidden = hiddenSeriesByY.get(yKey)!;
+    // Per-series-name hidden tracking was replaced by per-(slicer, value)
+    // hidden tracking (hiddenValuesBySlicer) so the legend can stay flat —
+    // one item per slicer value, not per cross-product combination.
 
     // Colour strategy:
     //   * No slicer active → series gets the active y's own colour
@@ -912,19 +915,64 @@ function render(ctx: CustomChartContext) {
         return { name: displayName, data: g.data, color };
     });
 
-    // Legend is meaningful when there's actually multiple series to
-    // distinguish (slicer active OR multiple measures combined).
-    if (showLegend && seriesSpecs.length > 1) {
-        renderCustomLegend(
-            seriesSpecs.map(s => ({ name: s.name, color: s.color })),
-            hidden,
-            (name) => {
-                if (hidden.has(name)) hidden.delete(name);
-                else hidden.add(name);
-                render(ctx);
-            },
-        );
+    // Legend: one item per (active slicer, distinct value). When multiple
+    // slicers are active the user gets one row per *value* per slicer (not
+    // one per cross-product combination), so they can click any single
+    // value to hide every series containing it — "zoom in" by exclusion.
+    // Series visibility below is then derived from hiddenValuesBySlicer.
+    const SEP = ' — ';
+    if (showLegend && activeSliceCols.length > 0) {
+        const legendItems: LegendItem[] = [];
+        for (const [sIdx, slicer] of activeSliceCols.entries()) {
+            const slicerColIdx = dataArr.columns.indexOf(slicer.id);
+            if (slicerColIdx < 0) continue;
+            const uniqueValues = new Set<string>();
+            for (const row of dataArr.dataValue) {
+                const v = row[slicerColIdx];
+                if (v == null) continue;
+                const s = String(v).trim();
+                if (!s) continue;
+                uniqueValues.add(s);
+            }
+            const sortedValues = Array.from(uniqueValues).sort(naturalCompare);
+            const slicerBase = pickColor(visualProps[`sliceBaseColor_${slicer.id}`], palette[sIdx % palette.length]);
+            const valueShades = generateShades(slicerBase, sortedValues.length);
+            const slicerLabel = customLabel(`sliceLabel_${slicer.id}`, slicer.name);
+            sortedValues.forEach((value, valueIdx) => {
+                const color = pickColor(
+                    visualProps[`sliceValueColor_${slicer.id}_${value}`],
+                    valueShades[valueIdx],
+                );
+                const displayName = activeSliceCols.length > 1 ? `${slicerLabel}: ${value}` : value;
+                const hiddenSet = hiddenValuesBySlicer.get(slicer.id);
+                const isHidden = hiddenSet?.has(value) ?? false;
+                legendItems.push({
+                    name:  displayName,
+                    color,
+                    hidden: isHidden,
+                    onClick: () => {
+                        if (!hiddenValuesBySlicer.has(slicer.id)) hiddenValuesBySlicer.set(slicer.id, new Set());
+                        const set = hiddenValuesBySlicer.get(slicer.id)!;
+                        if (set.has(value)) set.delete(value); else set.add(value);
+                        render(ctx);
+                    },
+                });
+            });
+        }
+        if (legendItems.length > 0) renderCustomLegend(legendItems);
     }
+
+    // A cross-product series is hidden if any of its component slice values
+    // is in the corresponding slicer's hidden set.
+    const isSeriesHidden = (seriesName: string): boolean => {
+        if (activeSliceCols.length === 0) return false;
+        const parts = seriesName.split(SEP);
+        return activeSliceCols.some((slicer, idx) => {
+            const set = hiddenValuesBySlicer.get(slicer.id);
+            if (!set) return false;
+            return set.has(parts[idx] ?? '');
+        });
+    };
 
     if (globalChartReference) {
         try { globalChartReference.destroy(); } catch { /* noop */ }
@@ -1018,7 +1066,7 @@ function render(ctx: CustomChartContext) {
             name:    s.name,
             data:    s.data,
             color:   s.color,
-            visible: !hidden.has(s.name),
+            visible: !isSeriesHidden(s.name),
             showInLegend: false,
         })),
     });
