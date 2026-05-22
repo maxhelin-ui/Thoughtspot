@@ -542,10 +542,6 @@ const renderChart = async (ctx, providedModel) => {
     visualPropEditorDefinition: {
       elements: [
         { key: 'mode', type: 'dropdown', label: 'Card layout', defaultValue: 'single', values: ['single', 'split'] },
-        // All free-text labels default to a single space ('' is rejected
-        // by the SDK). When left blank, the render code falls back to the
-        // bound column's display name.
-        { key: 'cardTitle', type: 'text', label: 'Card title (blank = use Primary value column name)', defaultValue: ' ' },
         {
           key: 'icon',
           type: 'dropdown',
