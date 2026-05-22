@@ -449,12 +449,25 @@ function render(ctx: CustomChartContext) {
         globalChartReference = null;
     }
 
+    // X-axis labels render as wrapped HTML (width:90px), so Highcharts'
+    // own measure-and-grow doesn't account for them. Estimate the line
+    // count from the longest category and reserve enough marginBottom so
+    // 2- or 3-line labels (e.g. "Price Increase / Discount Removal ARR")
+    // don't get clipped.
+    const LABEL_WIDTH_PX  = 90;
+    const APPROX_CHARS_PER_LINE = 13;   // ~7px per char at 11px font
+    const LINE_HEIGHT_PX  = 14;
+    const maxLabelLines = Math.max(1, ...categories.map(
+        cat => Math.ceil(String(cat ?? '').length / APPROX_CHARS_PER_LINE),
+    ));
+    const dynamicMarginBottom = Math.max(50, maxLabelLines * LINE_HEIGHT_PX + 28);
+
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type: 'columnrange',
             marginLeft:   80,
             marginRight:  showNetChange ? 110 : 40,
-            marginBottom: 50,
+            marginBottom: dynamicMarginBottom,
         },
         title:   { text: chartTitle, style: { fontWeight: 'bold', fontSize: '14px' } },
         credits: { enabled: false },
