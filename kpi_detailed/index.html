@@ -64,7 +64,8 @@
       </div>
     </div>
 
-    <!-- Main + Secondary layout (compact stack, no progress bar) -->
+    <!-- Main + Secondary layout (compact: big primary, footer line below
+         combining secondary value · footer value) -->
     <div id="mainSecLayout" class="ts-main-sec hidden">
       <div class="ts-detail-card">
         <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
@@ -75,14 +76,7 @@
             <span id="msMainSuffix" class="ts-stat-suffix"></span>
           </div>
         </div>
-        <div id="msSecRow" class="ts-main-sec-row">
-          <div id="msSecLabel" class="ts-side-label"></div>
-          <div class="ts-stat-row">
-            <span id="msSecValue" class="ts-stat-medium"></span>
-            <span id="msSecSuffix" class="ts-stat-suffix"></span>
-            <span id="msSecExtra" class="ts-stat-suffix"></span>
-          </div>
-        </div>
+        <div id="msFooterLine" class="ts-main-sec-footer hidden"></div>
       </div>
     </div>
 

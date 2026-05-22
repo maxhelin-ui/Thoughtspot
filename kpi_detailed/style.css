@@ -195,6 +195,16 @@ body {
   border-radius: 0;
 }
 
+/* Footer line under the big primary value, joining secondary value
+   and footerAvg with " · ". Two sizes bigger than .ts-stat-footer
+   so it reads as a primary context line rather than fine print. */
+.ts-main-sec-footer {
+  font-size: 16px;
+  color: var(--ts-text-secondary);
+  margin-top: 6px;
+  line-height: 1.25;
+}
+
 .ts-footer-metrics {
   display: flex;
   gap: 8px;

@@ -347,8 +347,11 @@ function renderSplit(vp, values, chartModel) {
   setText('splitFooter', footerLine);
 }
 
-// Compact "main + secondary" layout: two values stacked in one grey
-// card, no progress bar, no footer. Smallest layout the chart offers.
+// Compact "main + secondary" layout: big primary value on top, then a
+// single footer line that joins the secondary value and the footerAvg
+// value with a " · " separator. Footer line uses a larger font than the
+// stat-footer in the single / split layouts so it reads as a key piece
+// of context rather than a fine-print line.
 function renderMainSecondary(vp, values, chartModel) {
   const hasPrimary   = isSlotBound(chartModel, 'primaryValue');
   const hasSecondary = isSlotBound(chartModel, 'secondaryValue');
@@ -360,28 +363,36 @@ function renderMainSecondary(vp, values, chartModel) {
   if (!showLayout) return;
 
   setHidden('msMainRow', !hasPrimary);
-  setHidden('msSecRow',  !hasSecondary);
 
   setText('msMainLabel', labelOrColumnName(vp?.leftLabel, getColumnName(chartModel, 'primaryValue')));
   setText('msMainValue', formatBigValue(values.primaryValue, vp));
   setText('msMainSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
 
-  setText('msSecLabel', labelOrColumnName(vp?.rightLabel, getColumnName(chartModel, 'secondaryValue')));
-  setText('msSecValue', formatBigValue(values.secondaryValue, vp));
-  setText('msSecSuffix', hasSecondary ? (vp?.secondarySuffix ?? vp?.primarySuffix ?? '') : '');
+  // Footer line = "<secondary value> · <footerAvg label> <footerAvg value>"
+  // — whichever pieces are present. Mirrors the inline avgPart pattern the
+  // earlier layout used, but renders the secondary value WITHOUT its own
+  // label (matching the screenshot the user wanted).
+  const secValueFormatted = hasSecondary ? formatBigValue(values.secondaryValue, vp) : '';
+  const secSuffix = hasSecondary ? (vp?.secondarySuffix ?? vp?.primarySuffix ?? '') : '';
+  const secPart = hasSecondary
+    ? `${secValueFormatted}${secSuffix ? secSuffix : ''}`.trim()
+    : '';
 
-  // Inline footer value on the secondary line: "525 logos · original €22.9M"
   const avgFormatted = values.footerAvg != null
     ? formatMetricValue(values.footerAvg, vp?.footerAvgFormat ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
     : '';
-  let avgPart = '';
-  if (avgFormatted) {
-    const avgLabel = labelOrColumnName(vp?.footerAvgLabel, getColumnName(chartModel, 'footerAvg'));
-    avgPart = hasSecondary
-      ? ` · ${avgLabel ? `${avgLabel} ` : ''}${avgFormatted}`
-      : `${avgLabel ? `${avgLabel} ` : ''}${avgFormatted}`;
-  }
-  setText('msSecExtra', avgPart);
+  const avgLabel = labelOrColumnName(vp?.footerAvgLabel, getColumnName(chartModel, 'footerAvg'));
+  const avgPart = avgFormatted
+    ? `${avgLabel ? `${avgLabel} ` : ''}${avgFormatted}`.trim()
+    : '';
+
+  let footerLine = '';
+  if (secPart && avgPart) footerLine = `${secPart} · ${avgPart}`;
+  else if (secPart)       footerLine = secPart;
+  else if (avgPart)       footerLine = avgPart;
+
+  setHidden('msFooterLine', !footerLine);
+  setText('msFooterLine', footerLine);
 }
 
 function renderFooterMetrics(vp, values, chartModel) {
