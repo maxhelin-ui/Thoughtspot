@@ -759,6 +759,10 @@ function render(ctx: CustomChartContext) {
     // which is independent of the GROUP BY granularity, so the value stays
     // stable when you add/remove slicers.
     const NO_SLICE_KEY = '__noslice__';
+    // Diagnostic log for formula debugging — shows up in DevTools whenever
+    // the active Y is a formula. Logs the resolved input names, a sample
+    // valuesByName, and whether evalFormula returned null (unresolved).
+    let formulaDiagLogged = false;
     const seriesGroups: Array<{ name: string; data: number[] }> = sliceKeys.map(key => {
         let data: number[];
         if (activeY.kind === 'measure') {
@@ -772,6 +776,41 @@ function render(ctx: CustomChartContext) {
                     valuesByName[col.name] = sumsByCol[col.id]?.[key]?.[xi] ?? 0;
                 }
                 const v = evalFormula(activeY.expr, valuesByName);
+                if (!formulaDiagLogged) {
+                    formulaDiagLogged = true;
+                    // Reproduce the substitution evalFormula does, so the
+                    // log shows EXACTLY what's left unresolved after column
+                    // names are replaced. If processedExpr still contains
+                    // letters or brackets, those are names the chart can't
+                    // see — the user needs to bind that column to either
+                    // 'Y-axis options' or 'Formula inputs'.
+                    const sortedNames = Object.keys(valuesByName).sort((a, b) => b.length - a.length);
+                    let processedExpr = activeY.expr;
+                    for (const name of sortedNames) {
+                        processedExpr = processedExpr.split(`[${name}]`).join(`(${valuesByName[name]})`);
+                    }
+                    for (const name of sortedNames) {
+                        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                        processedExpr = processedExpr.replace(new RegExp(escaped, 'g'), `(${valuesByName[name]})`);
+                    }
+                    const unresolved = /[a-zA-Z_\[\]]/.test(processedExpr);
+                    console.log('[multi_y_axis_line formula]', {
+                        formulaName:    activeY.name,
+                        formulaExpr:    activeY.expr,
+                        boundMeasures:  allMeasureCols.map(c => c.name),
+                        sampleValuesByName: valuesByName,
+                        processedExpr,
+                        unresolvedNamesInExpr: unresolved,
+                        result:         v,
+                    });
+                    if (unresolved) {
+                        console.warn(
+                            '[multi_y_axis_line formula] Could not resolve all names in the formula. ' +
+                            'Names in the formula must EXACTLY match a column bound to "Y-axis options" or "Formula inputs". ' +
+                            'Currently bound: ' + allMeasureCols.map(c => `"${c.name}"`).join(', '),
+                        );
+                    }
+                }
                 return v ?? 0;
             });
         }
