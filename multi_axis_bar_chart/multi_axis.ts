@@ -884,7 +884,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     allowAttributeColumns: true,
                     allowMeasureColumns:   false,
                     allowTimeSeriesColumns: true,
-                    maxColumnCount:        8,
+                    maxColumnCount:        20,
                 },
                 {
                     key:                   'y',

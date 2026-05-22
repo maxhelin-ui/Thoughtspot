@@ -851,7 +851,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                         label:                 'Slice middle bars by (optional, multiple allowed)',
                         allowAttributeColumns: true,
                         allowMeasureColumns:   false,
-                        maxColumnCount:        5,
+                        maxColumnCount:        20,
                     },
                     {
                         key:                   'tooltipExtras',
