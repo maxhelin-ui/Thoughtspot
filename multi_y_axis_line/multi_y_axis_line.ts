@@ -673,7 +673,13 @@ function render(ctx: CustomChartContext) {
     const activeYName = activeY.name;
 
     for (const id of Array.from(activeSliceColumnIds)) {
-        if (!sliceColumns.some(c => c.id === id)) activeSliceColumnIds.delete(id);
+        if (!sliceColumns.some(c => c.id === id)) {
+            activeSliceColumnIds.delete(id);
+            // Slicer was unbound from the chart entirely — clear hidden
+            // values too, matching the "remove + re-add = fresh slate"
+            // expectation users have from re-binding columns.
+            hiddenValuesBySlicer.delete(id);
+        }
     }
 
     const slicingDefault = visualProps.showSlicingByDefault ?? false;
@@ -717,8 +723,17 @@ function render(ctx: CustomChartContext) {
             render(ctx);
         },
         (id) => {
-            if (activeSliceColumnIds.has(id)) activeSliceColumnIds.delete(id);
-            else activeSliceColumnIds.add(id);
+            if (activeSliceColumnIds.has(id)) {
+                activeSliceColumnIds.delete(id);
+                // Deactivating a slicer is "remove" in the user's mental
+                // model — drop its hidden values so re-activating starts
+                // fresh and shows everything. Hidden values for OTHER
+                // slicers stay intact, so the user can layer slicers
+                // without losing their existing zoom-in state.
+                hiddenValuesBySlicer.delete(id);
+            } else {
+                activeSliceColumnIds.add(id);
+            }
             render(ctx);
         },
     );
