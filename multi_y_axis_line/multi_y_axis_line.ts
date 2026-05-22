@@ -170,20 +170,24 @@ function evalMathExpression(s: string): number {
 // Substitute the user's formula-input column names with their numeric sums,
 // then run the math evaluator. Longer names match first so overlapping
 // names ('ARR' inside 'Renewed ARR') don't collide. Supports `[bracketed]`
-// names too so users can disambiguate names containing spaces.
+// names too so users can disambiguate names containing spaces. Matching is
+// case-insensitive and collapses runs of whitespace so the user's formula
+// text doesn't need to byte-match the bound column name exactly.
 function evalFormula(expr: string, columnValues: Record<string, number>): number | null {
     if (!expr || !expr.trim()) return null;
+    const normalizeWs = (s: string) => s.replace(/\s+/g, ' ').trim();
     const names = Object.keys(columnValues).sort((a, b) => b.length - a.length);
-    let processed = expr;
+    let processed = normalizeWs(expr);
     for (const name of names) {
-        const bracketed = `[${name}]`;
-        while (processed.indexOf(bracketed) !== -1) {
-            processed = processed.split(bracketed).join(`(${columnValues[name]})`);
-        }
+        const norm = normalizeWs(name);
+        const escaped = norm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // [bracketed] form first.
+        processed = processed.replace(new RegExp(`\\[${escaped}\\]`, 'gi'), `(${columnValues[name]})`);
     }
     for (const name of names) {
-        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        processed = processed.replace(new RegExp(escaped, 'g'), `(${columnValues[name]})`);
+        const norm = normalizeWs(name);
+        const escaped = norm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        processed = processed.replace(new RegExp(escaped, 'gi'), `(${columnValues[name]})`);
     }
     if (/[a-zA-Z_\[\]]/.test(processed)) return null;
     try {
@@ -794,7 +798,14 @@ function render(ctx: CustomChartContext) {
                         processedExpr = processedExpr.replace(new RegExp(escaped, 'g'), `(${valuesByName[name]})`);
                     }
                     const unresolved = /[a-zA-Z_\[\]]/.test(processedExpr);
-                    console.log('[multi_y_axis_line formula]', {
+                    // Print the expression and bound names on top-level lines
+                    // so the user doesn't have to expand a collapsed Object in
+                    // DevTools to see them.
+                    console.log('[multi_y_axis_line formula] EXPRESSION:', activeY.expr);
+                    console.log('[multi_y_axis_line formula] BOUND NAMES:', allMeasureCols.map(c => c.name));
+                    console.log('[multi_y_axis_line formula] AFTER SUBSTITUTION:', processedExpr);
+                    console.log('[multi_y_axis_line formula] RESULT @ first x:', v);
+                    console.log('[multi_y_axis_line formula] (full diag)', {
                         formulaName:    activeY.name,
                         formulaExpr:    activeY.expr,
                         boundMeasures:  allMeasureCols.map(c => c.name),
@@ -806,8 +817,9 @@ function render(ctx: CustomChartContext) {
                     if (unresolved) {
                         console.warn(
                             '[multi_y_axis_line formula] Could not resolve all names in the formula. ' +
-                            'Names in the formula must EXACTLY match a column bound to "Y-axis options" or "Formula inputs". ' +
-                            'Currently bound: ' + allMeasureCols.map(c => `"${c.name}"`).join(', '),
+                            'Names must match a column bound to "Y-axis options" or "Formula inputs" ' +
+                            '(matching is case-insensitive). Currently bound: ' +
+                            allMeasureCols.map(c => `"${c.name}"`).join(', '),
                         );
                     }
                 }
