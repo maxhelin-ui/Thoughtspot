@@ -12,12 +12,12 @@
     <div id="singleLayout" class="ts-single hidden">
       <div class="ts-detail-card">
         <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
-        <div class="ts-stat-row">
+        <div id="singleStatRow" class="ts-stat-row">
           <span id="singleValue" class="ts-stat-big"></span>
           <span id="singleSuffix" class="ts-stat-suffix"></span>
           <span id="singleDescription" class="ts-stat-desc"></span>
         </div>
-        <div class="ts-progress-row">
+        <div id="singleProgressRow" class="ts-progress-row">
           <div class="ts-progress-track">
             <div id="singleBarFill" class="ts-progress-fill"></div>
           </div>
@@ -32,27 +32,27 @@
       <div class="ts-detail-card">
         <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
         <div class="ts-split-grid">
-          <div class="ts-split-side">
+          <div id="splitLeftSide" class="ts-split-side">
             <div id="leftLabel" class="ts-side-label"></div>
             <div class="ts-stat-row">
               <span id="leftValue" class="ts-stat-medium"></span>
               <span id="leftSuffix" class="ts-stat-suffix"></span>
             </div>
-            <div class="ts-progress-row">
+            <div id="leftProgressRow" class="ts-progress-row">
               <div class="ts-progress-track">
                 <div id="leftBarFill" class="ts-progress-fill"></div>
               </div>
               <span id="leftPercent" class="ts-progress-label"></span>
             </div>
           </div>
-          <div class="ts-split-divider"></div>
-          <div class="ts-split-side">
+          <div id="splitDivider" class="ts-split-divider"></div>
+          <div id="splitRightSide" class="ts-split-side">
             <div id="rightLabel" class="ts-side-label"></div>
             <div class="ts-stat-row">
               <span id="rightValue" class="ts-stat-medium"></span>
               <span id="rightSuffix" class="ts-stat-suffix"></span>
             </div>
-            <div class="ts-progress-row">
+            <div id="rightProgressRow" class="ts-progress-row">
               <div class="ts-progress-track">
                 <div id="rightBarFill" class="ts-progress-fill"></div>
               </div>
@@ -68,14 +68,14 @@
     <div id="mainSecLayout" class="ts-main-sec hidden">
       <div class="ts-detail-card">
         <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
-        <div class="ts-main-sec-row">
+        <div id="msMainRow" class="ts-main-sec-row">
           <div id="msMainLabel" class="ts-side-label"></div>
           <div class="ts-stat-row">
             <span id="msMainValue" class="ts-stat-big"></span>
             <span id="msMainSuffix" class="ts-stat-suffix"></span>
           </div>
         </div>
-        <div class="ts-main-sec-row">
+        <div id="msSecRow" class="ts-main-sec-row">
           <div id="msSecLabel" class="ts-side-label"></div>
           <div class="ts-stat-row">
             <span id="msSecValue" class="ts-stat-medium"></span>
