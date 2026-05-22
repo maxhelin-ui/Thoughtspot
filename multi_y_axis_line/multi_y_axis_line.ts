@@ -36,6 +36,7 @@ interface VisualProps {
 
 const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
 const POSITION_OPTIONS = ['Top', 'Bottom', 'Left', 'Right'];
+const MAX_FORMULAS = 4;
 
 // Fixed chart margins. Pinning these here (instead of letting Highcharts
 // auto-size) lets us align the button areas predictably with the plot
@@ -100,6 +101,97 @@ function formatPercent(value: number, format: string): string {
 
 function pickColor(picker: unknown, fallback: string): string {
     return (typeof picker === 'string' && picker) ? picker : fallback;
+}
+
+// CSP-safe recursive-descent math evaluator. Supports +, -, *, /, parens,
+// unary +/-, and scientific notation. Same parser as multi-axis-bar — the
+// chart uses it to evaluate user-defined formula expressions on top of the
+// raw input-column sums, so percent-like formulas (numerator/denominator)
+// give the right answer at every aggregation level.
+function evalMathExpression(s: string): number {
+    let pos = 0;
+    const len = s.length;
+    const skipWs = () => { while (pos < len && (s.charCodeAt(pos) === 32 || s.charCodeAt(pos) === 9)) pos++; };
+
+    const parseNumber = (): number => {
+        skipWs();
+        const start = pos;
+        while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++;
+        if (s[pos] === '.') { pos++; while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++; }
+        if (s[pos] === 'e' || s[pos] === 'E') {
+            pos++;
+            if (s[pos] === '+' || s[pos] === '-') pos++;
+            while (pos < len && s[pos] >= '0' && s[pos] <= '9') pos++;
+        }
+        const n = parseFloat(s.slice(start, pos));
+        if (Number.isNaN(n)) throw new Error('Expected number');
+        return n;
+    };
+    const parsePrimary = (): number => {
+        skipWs();
+        if (s[pos] === '(') { pos++; const v = parseAdditive(); skipWs(); if (s[pos] !== ')') throw new Error('Expected )'); pos++; return v; }
+        return parseNumber();
+    };
+    const parseUnary = (): number => {
+        skipWs();
+        if (s[pos] === '+') { pos++; return parseUnary(); }
+        if (s[pos] === '-') { pos++; return -parseUnary(); }
+        return parsePrimary();
+    };
+    const parseMultiplicative = (): number => {
+        let left = parseUnary();
+        skipWs();
+        while (s[pos] === '*' || s[pos] === '/') {
+            const op = s[pos++];
+            const right = parseUnary();
+            left = op === '*' ? left * right : (right !== 0 ? left / right : 0);
+            skipWs();
+        }
+        return left;
+    };
+    const parseAdditive = (): number => {
+        let left = parseMultiplicative();
+        skipWs();
+        while (s[pos] === '+' || s[pos] === '-') {
+            const op = s[pos++];
+            const right = parseMultiplicative();
+            left = op === '+' ? left + right : left - right;
+            skipWs();
+        }
+        return left;
+    };
+
+    const result = parseAdditive();
+    skipWs();
+    if (pos < len) throw new Error('Unexpected trailing input');
+    return result;
+}
+
+// Substitute the user's formula-input column names with their numeric sums,
+// then run the math evaluator. Longer names match first so overlapping
+// names ('ARR' inside 'Renewed ARR') don't collide. Supports `[bracketed]`
+// names too so users can disambiguate names containing spaces.
+function evalFormula(expr: string, columnValues: Record<string, number>): number | null {
+    if (!expr || !expr.trim()) return null;
+    const names = Object.keys(columnValues).sort((a, b) => b.length - a.length);
+    let processed = expr;
+    for (const name of names) {
+        const bracketed = `[${name}]`;
+        while (processed.indexOf(bracketed) !== -1) {
+            processed = processed.split(bracketed).join(`(${columnValues[name]})`);
+        }
+    }
+    for (const name of names) {
+        const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        processed = processed.replace(new RegExp(escaped, 'g'), `(${columnValues[name]})`);
+    }
+    if (/[a-zA-Z_\[\]]/.test(processed)) return null;
+    try {
+        const result = evalMathExpression(processed);
+        return Number.isFinite(result) ? result : 0;
+    } catch {
+        return null;
+    }
 }
 
 // Hex → HSL → hex helpers used to derive shades of a slicer's base colour
@@ -358,6 +450,7 @@ function alignButtonAreasToPlot(chart: any, chartTitle: string) {
 type DataModel = {
     xColumn?: { id: string; name: string; dataType?: DataType; timeBucket?: ColumnTimeBucket };
     yColumns: Array<{ id: string; name: string; format?: any }>;
+    formulaInputColumns: Array<{ id: string; name: string; format?: any }>;
     sliceColumns: Array<{ id: string; name: string }>;
     dataArr: DataPointsArray;
 };
@@ -366,24 +459,37 @@ function getDataModel(chartModel: ChartModel): DataModel {
     const dataArr: DataPointsArray =
         chartModel.data?.[chartModel.data.length - 1]?.data ?? { columns: [], dataValue: [] };
     const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
-    const xColumn      = dims.find(d => d.key === 'xAxis')?.columns?.[0];
-    const yColumns     = dims.find(d => d.key === 'yOptions')?.columns ?? [];
-    const sliceColumns = dims.find(d => d.key === 'slices')?.columns ?? [];
-    return { xColumn, yColumns, sliceColumns, dataArr };
+    const xColumn             = dims.find(d => d.key === 'xAxis')?.columns?.[0];
+    const yColumns            = dims.find(d => d.key === 'yOptions')?.columns ?? [];
+    const formulaInputColumns = dims.find(d => d.key === 'formulaInputs')?.columns ?? [];
+    const sliceColumns        = dims.find(d => d.key === 'slices')?.columns ?? [];
+    return { xColumn, yColumns, formulaInputColumns, sliceColumns, dataArr };
 }
 
-function computeSeries(
+// One pass over the rows that builds per-(slice, x) sums + counts for every
+// measure column the caller might need (the active y measure if it's a real
+// column, plus all formula input columns). The caller picks a column for
+// regular measures, or evaluates a formula against the summed inputs for
+// formula-as-y.
+function computeAllMeasureSums(
     dataArr: DataPointsArray,
     xCol: { id: string; dataType?: DataType; timeBucket?: ColumnTimeBucket },
-    yCol: { id: string },
+    measureCols: Array<{ id: string; name: string }>,
     activeSliceCols: Array<{ id: string; name: string }>,
 ) {
     const xColIdx = dataArr.columns.indexOf(xCol.id);
-    const yColIdx = dataArr.columns.indexOf(yCol.id);
-    if (xColIdx < 0 || yColIdx < 0) {
-        return { xCategories: [] as string[], seriesGroups: [] as Array<{ name: string; data: number[] }> };
+    if (xColIdx < 0) {
+        return {
+            xCategories: [] as string[],
+            sliceKeys:   [] as string[],
+            // sumsByCol[col.id][sliceKey][xIdx] = aggregated value
+            sumsByCol:   {} as Record<string, Record<string, number[]>>,
+            countsByCol: {} as Record<string, Record<string, number[]>>,
+        };
     }
+
     const sliceIdxs = activeSliceCols.map(c => dataArr.columns.indexOf(c.id)).filter(i => i >= 0);
+    const measureIdxs = measureCols.map(c => ({ col: c, idx: dataArr.columns.indexOf(c.id) }));
 
     const isExcluded = (v: any): boolean => {
         if (v == null) return true;
@@ -424,11 +530,15 @@ function computeSeries(
     const xIndex = new Map<string, number>();
     xCategories.forEach((x, i) => xIndex.set(x, i));
 
-    const sums: Record<string, number[]> = {};
-    const counts: Record<string, number[]> = {};
-    for (const k of sliceKeys) {
-        sums[k] = new Array(xCategories.length).fill(0);
-        counts[k] = new Array(xCategories.length).fill(0);
+    const sumsByCol: Record<string, Record<string, number[]>> = {};
+    const countsByCol: Record<string, Record<string, number[]>> = {};
+    for (const { col } of measureIdxs) {
+        sumsByCol[col.id]   = {};
+        countsByCol[col.id] = {};
+        for (const k of sliceKeys) {
+            sumsByCol[col.id][k]   = new Array(xCategories.length).fill(0);
+            countsByCol[col.id][k] = new Array(xCategories.length).fill(0);
+        }
     }
 
     for (const row of dataArr.dataValue) {
@@ -448,40 +558,82 @@ function computeSeries(
             if (parts.some(p => p == null)) continue;
             key = parts.join(SEP);
         }
-        const raw = row[yColIdx];
-        if (raw == null) continue;
-        const v = parseFloat(String(raw));
-        if (Number.isNaN(v)) continue;
-        sums[key][xi] += v;
-        counts[key][xi] += 1;
+        for (const { col, idx } of measureIdxs) {
+            if (idx < 0) continue;
+            const raw = row[idx];
+            if (raw == null) continue;
+            const v = parseFloat(String(raw));
+            if (Number.isNaN(v)) continue;
+            sumsByCol[col.id][key][xi]   += v;
+            countsByCol[col.id][key][xi] += 1;
+        }
     }
 
-    const seriesGroups = sliceKeys.map(key => ({
-        name: key === NO_SLICE_KEY ? '' : key,
-        data: sums[key],
-        counts: counts[key],
-    }));
-    return { xCategories, seriesGroups };
+    return { xCategories, sliceKeys, sumsByCol, countsByCol };
 }
+
+type FormulaDef = { name: string; expr: string };
+type YOption =
+    | { kind: 'measure'; id: string; name: string; column: { id: string; name: string; format?: any } }
+    | { kind: 'formula'; id: string; name: string; expr: string; formulaIdx: number };
 
 function render(ctx: CustomChartContext) {
     const chartModel = ctx.getChartModel();
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
-    const { xColumn, yColumns, sliceColumns, dataArr } = getDataModel(chartModel);
+    const { xColumn, yColumns, formulaInputColumns, sliceColumns, dataArr } = getDataModel(chartModel);
 
-    if (!xColumn || yColumns.length === 0) {
+    // Pick up any defined formulas — same pattern as multi-axis-bar. Each
+    // (name, expr) pair becomes a switchable Y option alongside the bound
+    // y measures. Formulas reference formulaInputColumns by name and the
+    // chart evaluates them against the column-sum-per-(x,slice).
+    const formulas: FormulaDef[] = [];
+    for (let i = 1; i <= MAX_FORMULAS; i++) {
+        const name = (visualProps[`formula${i}Name`] ?? '').trim();
+        const expr = (visualProps[`formula${i}Expr`] ?? '').trim();
+        if (name && expr) formulas.push({ name, expr });
+    }
+
+    // Resolve a per-column custom label, falling back to the bound column
+    // name when the user hasn't typed one (or only typed whitespace).
+    const customLabel = (key: string, fallback: string): string => {
+        const v = visualProps[key];
+        return (typeof v === 'string' && v.trim()) ? v.trim() : fallback;
+    };
+
+    // Build the unified Y option list: bound y measures first, then any
+    // formula defs. Each gets a button in the Y switcher. Measure labels
+    // honour measureLabel_<id> for the user-renamed display name; formula
+    // names are already user-defined.
+    const yOptions: YOption[] = [
+        ...yColumns.map(c => ({
+            kind: 'measure' as const,
+            id: c.id,
+            name: customLabel(`measureLabel_${c.id}`, c.name),
+            column: c,
+        })),
+        ...formulas.map((f, i) => ({
+            kind: 'formula' as const,
+            id: `formula_${i}`,
+            name: f.name,
+            expr: f.expr,
+            formulaIdx: i,
+        })),
+    ];
+
+    if (!xColumn || yOptions.length === 0) {
         ['topArea', 'bottomArea', 'leftArea', 'rightArea'].forEach(id => {
             const el = document.getElementById(id);
             if (el) el.innerHTML = '';
         });
-        renderChartMessage('Add an X-axis attribute and at least one Y-axis measure to render this chart.');
+        renderChartMessage('Add an X-axis attribute and at least one Y-axis measure (or define a formula in settings) to render this chart.');
         return;
     }
 
-    if (!activeYColumnId || !yColumns.some(c => c.id === activeYColumnId)) {
-        activeYColumnId = yColumns[0].id;
+    if (!activeYColumnId || !yOptions.some(o => o.id === activeYColumnId)) {
+        activeYColumnId = yOptions[0].id;
     }
-    const activeYCol = yColumns.find(c => c.id === activeYColumnId)!;
+    const activeY = yOptions.find(o => o.id === activeYColumnId)!;
+    const activeYName = activeY.name;
 
     for (const id of Array.from(activeSliceColumnIds)) {
         if (!sliceColumns.some(c => c.id === id)) activeSliceColumnIds.delete(id);
@@ -505,7 +657,7 @@ function render(ctx: CustomChartContext) {
     // Default the y-axis title to the active measure's name when the user
     // leaves the setting blank (or at its placeholder ' ' value). The
     // setting defaults to a single space so we have to trim before deciding.
-    const yAxisTitle    = yAxisTitleRaw.trim() ? yAxisTitleRaw : activeYCol.name;
+    const yAxisTitle    = yAxisTitleRaw.trim() ? yAxisTitleRaw : activeYName;
     const numberFormat  = visualProps.numberFormat  ?? '0,0.[0]a';
     const currency      = visualProps.currency      ?? 'None';
     const showDataLabels = visualProps.showDataLabels ?? false;
@@ -521,8 +673,8 @@ function render(ctx: CustomChartContext) {
     paintButtonsInto(
         yButtonsPos,
         sliceButtonsPos,
-        yColumns.map(c => ({ id: c.id, name: c.name })),
-        sliceColumns.map(c => ({ id: c.id, name: c.name })),
+        yOptions.map(o => ({ id: o.id, name: o.name })),
+        sliceColumns.map(c => ({ id: c.id, name: customLabel(`sliceLabel_${c.id}`, c.name) })),
         (id) => {
             activeYColumnId = id;
             render(ctx);
@@ -535,9 +687,23 @@ function render(ctx: CustomChartContext) {
     );
 
     const activeSliceCols = sliceColumns.filter(c => activeSliceColumnIds.has(c.id));
-    let { xCategories, seriesGroups } = computeSeries(dataArr, xColumn, activeYCol, activeSliceCols);
 
-    if (xCategories.length === 0 || seriesGroups.length === 0) {
+    // Build the full set of measure columns we need sums for: the y measures
+    // (so simple measure renders still work) AND the formula inputs (so
+    // formulas can reference them). Dedupe by column id.
+    const allMeasureCols: Array<{ id: string; name: string }> = [];
+    const seen = new Set<string>();
+    for (const c of [...yColumns, ...formulaInputColumns]) {
+        if (seen.has(c.id)) continue;
+        seen.add(c.id);
+        allMeasureCols.push(c);
+    }
+
+    const { xCategories, sliceKeys, sumsByCol, countsByCol } = computeAllMeasureSums(
+        dataArr, xColumn, allMeasureCols, activeSliceCols,
+    );
+
+    if (xCategories.length === 0 || sliceKeys.length === 0) {
         renderChartMessage('No data to render for the current selection.');
         return;
     }
@@ -547,20 +713,40 @@ function render(ctx: CustomChartContext) {
         ? xCategories.map(v => formatEpochByBucket(v, xColumn.timeBucket))
         : xCategories;
 
-    // Detect whether the active y measure is a percent — drives both the
-    // axis label formatter and the tooltip/data-label formatter, so 0.85
-    // renders as 85% on a percent measure and as 0.85 or $0.85 on a normal one.
-    const yIsPercent = detectPercentByName(activeYCol.name, (activeYCol as any)?.format?.pattern);
+    // Percent detection: a measure is a percent if its column name/format
+    // looks like one; a formula is a percent if its name looks like one OR
+    // its expression contains a division (since 'numerator/denominator' is
+    // almost always a ratio). The flag drives both the axis formatter and
+    // whether we average vs sum.
+    const yIsPercent = activeY.kind === 'measure'
+        ? detectPercentByName(activeY.column.name, (activeY.column as any)?.format?.pattern)
+        : (/[\/]/.test(activeY.expr) || detectPercentByName(activeY.name));
 
-    // Percent measures get averaged across the rows that fed each x bucket
-    // rather than summed — five 70% values shouldn't add up to 350%.
-    // computeSeries already tracked counts alongside sums; just divide here.
-    if (yIsPercent) {
-        seriesGroups = seriesGroups.map(g => ({
-            ...g,
-            data: g.data.map((s, i) => g.counts[i] > 0 ? s / g.counts[i] : 0),
-        }));
-    }
+    // Build seriesGroups for the active y. For a measure: pick that column's
+    // sums per (slice, x), divide by count if percent. For a formula:
+    // evaluate the expression per (slice, x) cell using the per-cell sums
+    // of every formulaInputColumn — that gives a SUM(num)/SUM(den) ratio
+    // which is independent of the GROUP BY granularity, so the value stays
+    // stable when you add/remove slicers.
+    const NO_SLICE_KEY = '__noslice__';
+    const seriesGroups: Array<{ name: string; data: number[] }> = sliceKeys.map(key => {
+        let data: number[];
+        if (activeY.kind === 'measure') {
+            const sums   = sumsByCol[activeY.column.id][key]   ?? new Array(xCategories.length).fill(0);
+            const counts = countsByCol[activeY.column.id][key] ?? new Array(xCategories.length).fill(0);
+            data = sums.map((s, i) => yIsPercent ? (counts[i] > 0 ? s / counts[i] : 0) : s);
+        } else {
+            data = xCategories.map((_, xi) => {
+                const valuesByName: Record<string, number> = {};
+                for (const col of allMeasureCols) {
+                    valuesByName[col.name] = sumsByCol[col.id]?.[key]?.[xi] ?? 0;
+                }
+                const v = evalFormula(activeY.expr, valuesByName);
+                return v ?? 0;
+            });
+        }
+        return { name: key === NO_SLICE_KEY ? '' : key, data };
+    });
     // Always abbreviate non-percent values to K/M/B in tooltips and data
     // labels too — big numbers like 1,775,000,000 are unreadable. The
     // user's numberFormat is still honoured for decimals/grouping; we just
@@ -582,18 +768,20 @@ function render(ctx: CustomChartContext) {
     };
 
     const palette = getEffectivePalette();
-    const yKey = activeYCol.id;
+    const yKey = activeY.id;
     if (!hiddenSeriesByY.has(yKey)) hiddenSeriesByY.set(yKey, new Set());
     const hidden = hiddenSeriesByY.get(yKey)!;
 
     // Colour strategy:
-    //   * No slicer active → series gets the active measure's own colour
-    //     (measureColor_<id>), default = palette[0].
-    //   * One or more slicers active → take the first active slicer's
-    //     "base colour" (sliceBaseColor_<id>) and generate N evenly-spaced
-    //     lightness shades for the N cross-product series. Same hue/sat
-    //     so visually it reads as a single colour family with light/dark
-    //     variants, matching the user's request.
+    //   * No slicer active → series gets the active y's own colour
+    //     (measureColor_<id> or formulaColor_<idx>), default = palette[0].
+    //   * Exactly ONE slicer active → for each series, check if the user
+    //     set a per-slice-value colour (sliceValueColor_<slicerId>_<value>);
+    //     if so use that, else fall back to a shade of the slicer's base
+    //     colour. Lets users individually colour every distinct value.
+    //   * MULTIPLE slicers active → cross-product series get auto-generated
+    //     light/dark shades of the primary slicer's base colour, since per-
+    //     value colours don't really apply to combinations.
     const primarySlicer = sliceColumns.find(c => activeSliceColumnIds.has(c.id));
     const baseSlicerColor = primarySlicer
         ? pickColor(visualProps[`sliceBaseColor_${primarySlicer.id}`], palette[0])
@@ -601,13 +789,25 @@ function render(ctx: CustomChartContext) {
     const slicedShades = baseSlicerColor
         ? generateShades(baseSlicerColor, seriesGroups.length)
         : [];
+    const singleSlicerActive = activeSliceCols.length === 1 && primarySlicer;
+
+    const measureColorKey = activeY.kind === 'measure'
+        ? `measureColor_${activeY.column.id}`
+        : `formulaColor_${activeY.formulaIdx}`;
 
     const seriesSpecs = seriesGroups.map((g, i) => {
         const isNoSlice = g.name === '';
-        const displayName = isNoSlice ? activeYCol.name : g.name;
+        const displayName = isNoSlice ? activeYName : g.name;
         let color: string;
         if (isNoSlice || !baseSlicerColor) {
-            color = pickColor(visualProps[`measureColor_${activeYCol.id}`], palette[i % palette.length]);
+            color = pickColor(visualProps[measureColorKey], palette[i % palette.length]);
+        } else if (singleSlicerActive) {
+            // g.name == one slice value; look up the user-set per-value
+            // colour first, then fall back to the auto-generated shade.
+            color = pickColor(
+                visualProps[`sliceValueColor_${primarySlicer!.id}_${g.name}`],
+                slicedShades[i],
+            );
         } else {
             color = slicedShades[i];
         }
@@ -769,9 +969,10 @@ const renderChart = async (ctx: CustomChartContext) => {
             return [{
                 key: 'main',
                 dimensions: [
-                    { key: 'xAxis',    columns: attributeColumns.slice(0, 1) },
-                    { key: 'yOptions', columns: measureColumns.slice(0, 1)   },
-                    { key: 'slices',   columns: []                           },
+                    { key: 'xAxis',         columns: attributeColumns.slice(0, 1) },
+                    { key: 'yOptions',      columns: measureColumns.slice(0, 1)   },
+                    { key: 'formulaInputs', columns: []                           },
+                    { key: 'slices',        columns: []                           },
                 ],
             }];
         },
@@ -810,6 +1011,13 @@ const renderChart = async (ctx: CustomChartContext) => {
                     allowTimeSeriesColumns: false,
                 },
                 {
+                    key: 'formulaInputs',
+                    label: 'Formula inputs (measures) — referenced by name in formula expressions',
+                    allowAttributeColumns: false,
+                    allowMeasureColumns: true,
+                    allowTimeSeriesColumns: false,
+                },
+                {
                     key: 'slices',
                     label: 'Slicers (attributes) — toggleable',
                     allowAttributeColumns: true,
@@ -819,31 +1027,97 @@ const renderChart = async (ctx: CustomChartContext) => {
             ],
         }],
         visualPropEditorDefinition: (chartModel: ChartModel) => {
-            // Dynamic so we can emit one colorpicker per bound y measure and
-            // per bound slicer. Without this the editor schema would be
-            // fixed at chart-init and couldn't expose per-column colour
-            // controls.
+            // Dynamic so we can emit:
+            //   - rename + colour per bound y measure (measureLabel_, measureColor_)
+            //   - rename + base-colour per bound slicer (sliceLabel_, sliceBaseColor_)
+            //   - per-slice-value colour picker for every distinct value of
+            //     each bound slicer (sliceValueColor_<slicer>_<value>)
+            //   - per-formula slots so the user can name formulas + their
+            //     expression and pick a colour for each
             const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
             const yCols  = dims.find(d => d.key === 'yOptions')?.columns ?? [];
             const slices = dims.find(d => d.key === 'slices')?.columns ?? [];
             const editorPalette = getEffectivePalette();
+            const dataArr = chartModel.data?.[chartModel.data.length - 1]?.data;
 
-            const measureColorPickers = yCols.map((col, i) => ({
-                key:          `measureColor_${col.id}`,
-                type:         'colorpicker' as const,
-                defaultValue: editorPalette[i % editorPalette.length],
-                label:        `Colour: ${col.name}`,
-            }));
+            const measureControls: any[] = [];
+            yCols.forEach((col, i) => {
+                measureControls.push({
+                    key:          `measureLabel_${col.id}`,
+                    type:         'text' as const,
+                    defaultValue: ' ',
+                    label:        `Label: ${col.name} (blank = column name)`,
+                });
+                measureControls.push({
+                    key:          `measureColor_${col.id}`,
+                    type:         'colorpicker' as const,
+                    defaultValue: editorPalette[i % editorPalette.length],
+                    label:        `Colour: ${col.name}`,
+                });
+            });
 
-            // One base colour per slicer. When that slicer is the first
-            // active one, render() generates light/dark shades of this
-            // colour for each cross-product series.
-            const sliceColorPickers = slices.map((col, i) => ({
-                key:          `sliceBaseColor_${col.id}`,
-                type:         'colorpicker' as const,
-                defaultValue: editorPalette[(yCols.length + i) % editorPalette.length],
-                label:        `Slicer base colour: ${col.name}`,
-            }));
+            const slicerControls: any[] = [];
+            slices.forEach((col, i) => {
+                slicerControls.push({
+                    key:          `sliceLabel_${col.id}`,
+                    type:         'text' as const,
+                    defaultValue: ' ',
+                    label:        `Slicer label: ${col.name} (blank = column name)`,
+                });
+                slicerControls.push({
+                    key:          `sliceBaseColor_${col.id}`,
+                    type:         'colorpicker' as const,
+                    defaultValue: editorPalette[(yCols.length + i) % editorPalette.length],
+                    label:        `Slicer base colour: ${col.name} (used when 2+ slicers active)`,
+                });
+
+                // Per-value colour pickers. Only meaningful when this slicer
+                // is the only active one — otherwise the chart auto-shades.
+                if (dataArr) {
+                    const sliceColIdx = dataArr.columns.indexOf(col.id);
+                    if (sliceColIdx >= 0) {
+                        const uniqueValues: string[] = [];
+                        const seen = new Set<string>();
+                        for (const row of dataArr.dataValue) {
+                            const raw = row[sliceColIdx];
+                            if (raw == null) continue;
+                            const v = String(raw);
+                            if (!v.trim()) continue;
+                            if (!seen.has(v)) { seen.add(v); uniqueValues.push(v); }
+                        }
+                        uniqueValues.sort((a, b) =>
+                            a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+                        );
+                        uniqueValues.forEach((v, j) => {
+                            slicerControls.push({
+                                key:          `sliceValueColor_${col.id}_${v}`,
+                                type:         'colorpicker' as const,
+                                defaultValue: editorPalette[(yCols.length + i + j + 1) % editorPalette.length],
+                                label:        `${col.name} — ${v}`,
+                            });
+                        });
+                    }
+                }
+            });
+
+            // Formula slots. Progressive: always one empty slot after the
+            // last filled formula (so the UI looks like an "add formula"
+            // button without literally being one).
+            const visualPropsForEditor = (chartModel.visualProps ?? {}) as VisualProps;
+            let maxFilledIdx = 0;
+            for (let i = 1; i <= MAX_FORMULAS; i++) {
+                const n = (visualPropsForEditor[`formula${i}Name`] ?? '').trim();
+                if (n) maxFilledIdx = i;
+            }
+            const visibleFormulas = Math.max(1, Math.min(maxFilledIdx + 1, MAX_FORMULAS));
+            const formulaControls: any[] = [];
+            for (let i = 1; i <= visibleFormulas; i++) {
+                formulaControls.push(
+                    { key: `formula${i}Name`,  type: 'text' as const,        defaultValue: ' ', label: `Formula ${i} name (blank = unused)` },
+                    { key: `formula${i}Expr`,  type: 'text' as const,        defaultValue: ' ', label: `Formula ${i} expression (use Formula inputs by name)` },
+                    { key: `formulaColor_${i - 1}`, type: 'colorpicker' as const, defaultValue: editorPalette[(yCols.length + slices.length + i - 1) % editorPalette.length], label: `Colour: Formula ${i}` },
+                );
+            }
 
             return {
                 elements: [
@@ -862,8 +1136,9 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'markerRadius',       type: 'number',      defaultValue: 4,              label: 'Marker size' },
                     { key: 'smoothLines',        type: 'checkbox',    defaultValue: false,          label: 'Smooth (spline) lines' },
                     { key: 'showDataLabels',     type: 'checkbox',    defaultValue: false,          label: 'Show value at each data point' },
-                    ...measureColorPickers,
-                    ...sliceColorPickers,
+                    ...measureControls,
+                    ...formulaControls,
+                    ...slicerControls,
                 ],
             };
         },
