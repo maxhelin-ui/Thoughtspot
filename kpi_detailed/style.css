@@ -48,8 +48,8 @@ body {
    the tile shrinks. */
 .ts-icon-corner {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  top: 8px;
+  right: 8px;
   z-index: 2;
   width: 16px;
   height: 16px;
@@ -112,6 +112,10 @@ body {
   font-size: 12px;
   color: var(--ts-text-tertiary);
   margin-top: 4px;
+}
+
+#splitFooter {
+  margin-top: 10px;
 }
 
 .ts-progress-row {
