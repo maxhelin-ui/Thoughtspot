@@ -779,6 +779,23 @@ function render(ctx: CustomChartContext) {
                 for (const col of allMeasureCols) {
                     valuesByName[col.name] = sumsByCol[col.id]?.[key]?.[xi] ?? 0;
                 }
+                // Iteratively resolve formula → formula references. Each
+                // pass tries every formula whose name isn't yet in
+                // valuesByName; if its expression resolves with what we
+                // already know, we add its result. Repeat until a pass
+                // adds nothing new (or until we've made #formulas passes,
+                // which caps cycles). After this loop every resolvable
+                // formula value is available by name so the active
+                // formula can reference any other.
+                for (let pass = 0; pass <= formulas.length; pass++) {
+                    let progress = false;
+                    for (const f of formulas) {
+                        if (valuesByName[f.name] != null) continue;
+                        const r = evalFormula(f.expr, valuesByName);
+                        if (r != null) { valuesByName[f.name] = r; progress = true; }
+                    }
+                    if (!progress) break;
+                }
                 const v = evalFormula(activeY.expr, valuesByName);
                 if (!formulaDiagLogged) {
                     formulaDiagLogged = true;
