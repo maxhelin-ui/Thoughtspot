@@ -1,6 +1,6 @@
 {
     "name": "horizontal-dumbbell-chart",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "Horizontal dumbbell plot (original vs renewed value per category) for ThoughtSpot",
     "main": "dist/index.html",
     "scripts": {
