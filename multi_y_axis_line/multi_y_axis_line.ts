@@ -895,37 +895,78 @@ function render(ctx: CustomChartContext) {
     //     set a per-slice-value colour (sliceValueColor_<slicerId>_<value>);
     //     if so use that, else fall back to a shade of the slicer's base
     //     colour. Lets users individually colour every distinct value.
-    //   * MULTIPLE slicers active → cross-product series get auto-generated
-    //     light/dark shades of the primary slicer's base colour, since per-
-    //     value colours don't really apply to combinations.
+    //   * MULTIPLE slicers active → take the PRIMARY slicer's value colour
+    //     for each series (so the user's per-value picks for the primary
+    //     slicer are preserved) and then derive light/dark shades using the
+    //     secondary slicer's value index, so secondary values just vary
+    //     lightness within each primary colour.
     const primarySlicer = sliceColumns.find(c => activeSliceColumnIds.has(c.id));
-    const baseSlicerColor = primarySlicer
-        ? pickColor(visualProps[`sliceBaseColor_${primarySlicer.id}`], palette[0])
-        : null;
-    const slicedShades = baseSlicerColor
-        ? generateShades(baseSlicerColor, seriesGroups.length)
-        : [];
-    const singleSlicerActive = activeSliceCols.length === 1 && primarySlicer;
+
+    // Precompute unique values for each active slicer (insertion order from
+    // dataArr — matches what the legend uses). Cached so colour derivation
+    // and the legend itself don't both iterate dataValue.
+    const slicerUniqueValues = new Map<string, string[]>();
+    for (const slicer of activeSliceCols) {
+        const slicerColIdx = dataArr.columns.indexOf(slicer.id);
+        if (slicerColIdx < 0) continue;
+        const set = new Set<string>();
+        for (const row of dataArr.dataValue) {
+            const v = row[slicerColIdx];
+            if (v == null) continue;
+            const s = String(v).trim();
+            if (!s) continue;
+            set.add(s);
+        }
+        slicerUniqueValues.set(slicer.id, Array.from(set));
+    }
 
     const measureColorKey = activeY.kind === 'measure'
         ? `measureColor_${activeY.column.id}`
         : `formulaColor_${activeY.formulaIdx}`;
 
+    // Look up the user-chosen colour for a specific primary-slicer value,
+    // falling back to a shade of the slicer's base colour across its full
+    // value list when no per-value pick exists.
+    const primaryValueColor = (primaryValue: string): string => {
+        if (!primarySlicer) return palette[0];
+        const explicit = visualProps[`sliceValueColor_${primarySlicer.id}_${primaryValue}`];
+        if (typeof explicit === 'string' && explicit) return explicit;
+        const primaryValues = slicerUniqueValues.get(primarySlicer.id) ?? [];
+        const base = pickColor(visualProps[`sliceBaseColor_${primarySlicer.id}`], palette[0]);
+        const shades = generateShades(base, primaryValues.length);
+        const idx = primaryValues.indexOf(primaryValue);
+        return idx >= 0 ? shades[idx] : base;
+    };
+
     const seriesSpecs = seriesGroups.map((g, i) => {
         const isNoSlice = g.name === '';
         const displayName = isNoSlice ? activeYName : g.name;
         let color: string;
-        if (isNoSlice || !baseSlicerColor) {
+        if (isNoSlice || !primarySlicer) {
             color = pickColor(visualProps[measureColorKey], palette[i % palette.length]);
-        } else if (singleSlicerActive) {
-            // g.name == one slice value; look up the user-set per-value
-            // colour first, then fall back to the auto-generated shade.
-            color = pickColor(
-                visualProps[`sliceValueColor_${primarySlicer!.id}_${g.name}`],
-                slicedShades[i],
-            );
         } else {
-            color = slicedShades[i];
+            const parts = g.name.split(' — ');
+            const primaryValue = parts[0];
+            const baseColor = primaryValueColor(primaryValue);
+            if (activeSliceCols.length === 1) {
+                color = baseColor;
+            } else {
+                // 2+ slicers: shade the primary value's colour by the
+                // secondary slicer's value index. Each primary keeps its
+                // user-picked colour; secondary just varies lightness.
+                const secondarySlicer = activeSliceCols[1];
+                const secondaryValues = slicerUniqueValues.get(secondarySlicer.id) ?? [];
+                const secondaryIdx = secondaryValues.indexOf(parts[1] ?? '');
+                if (secondaryValues.length > 1 && secondaryIdx >= 0) {
+                    const shades = generateShades(baseColor, secondaryValues.length);
+                    color = shades[secondaryIdx];
+                } else {
+                    color = baseColor;
+                }
+                // 3+ active slicers fall through with the 2-slicer shade —
+                // additional slicers don't add further variation; the user
+                // can hide individual values via the legend if needed.
+            }
         }
         return { name: displayName, data: g.data, color };
     });
@@ -939,20 +980,8 @@ function render(ctx: CustomChartContext) {
     if (showLegend && activeSliceCols.length > 0) {
         const legendItems: LegendItem[] = [];
         for (const [sIdx, slicer] of activeSliceCols.entries()) {
-            const slicerColIdx = dataArr.columns.indexOf(slicer.id);
-            if (slicerColIdx < 0) continue;
-            const uniqueValues = new Set<string>();
-            for (const row of dataArr.dataValue) {
-                const v = row[slicerColIdx];
-                if (v == null) continue;
-                const s = String(v).trim();
-                if (!s) continue;
-                uniqueValues.add(s);
-            }
-            // Preserve the order TS returned the values in — Set iteration
-            // is insertion-ordered, so this matches whatever default sort
-            // TS applied (typically by count or by the column's own sort).
-            const sortedValues = Array.from(uniqueValues);
+            const sortedValues = slicerUniqueValues.get(slicer.id) ?? [];
+            if (sortedValues.length === 0) continue;
             const slicerBase = pickColor(visualProps[`sliceBaseColor_${slicer.id}`], palette[sIdx % palette.length]);
             const valueShades = generateShades(slicerBase, sortedValues.length);
             const slicerLabel = customLabel(`sliceLabel_${slicer.id}`, slicer.name);
