@@ -246,6 +246,7 @@ function composeFooterLine(vp, values, chartModel, fraction) {
 function renderSingle(vp, values, chartModel) {
   setHidden('singleLayout', false);
   setHidden('splitLayout', true);
+  setHidden('mainSecLayout', true);
 
   const formatted = vp?.primaryAsNumber
     ? formatNumber(values.primaryValue, vp?.numberFormat, vp?.currencySymbol)
@@ -275,6 +276,7 @@ function renderSingle(vp, values, chartModel) {
 function renderSplit(vp, values, chartModel) {
   setHidden('singleLayout', true);
   setHidden('splitLayout', false);
+  setHidden('mainSecLayout', true);
 
   const fmt = (v) => vp?.primaryAsNumber
     ? formatNumber(v, vp?.numberFormat, vp?.currencySymbol)
@@ -309,6 +311,26 @@ function renderSplit(vp, values, chartModel) {
   // Same footer composition as single — uses the primary value/percent
   // for the {value}/{base}/{percent} tokens and the bound footerAvg.
   setText('splitFooter', composeFooterLine(vp, values, chartModel, leftFraction));
+}
+
+// Compact "main + secondary" layout: two values stacked in one grey
+// card, no progress bar, no footer. Smallest layout the chart offers.
+function renderMainSecondary(vp, values, chartModel) {
+  setHidden('singleLayout', true);
+  setHidden('splitLayout', true);
+  setHidden('mainSecLayout', false);
+
+  const fmt = (v) => vp?.primaryAsNumber
+    ? formatNumber(v, vp?.numberFormat, vp?.currencySymbol)
+    : (v == null ? '' : String(Math.round(v)));
+
+  setText('msMainLabel', labelOrColumnName(vp?.leftLabel, getColumnName(chartModel, 'primaryValue')));
+  setText('msMainValue', fmt(values.primaryValue));
+  setText('msMainSuffix', vp?.primarySuffix ?? '');
+
+  setText('msSecLabel', labelOrColumnName(vp?.rightLabel, getColumnName(chartModel, 'secondaryValue')));
+  setText('msSecValue', fmt(values.secondaryValue));
+  setText('msSecSuffix', vp?.secondarySuffix ?? vp?.primarySuffix ?? '');
 }
 
 function renderFooterMetrics(vp, values, chartModel) {
@@ -399,8 +421,11 @@ function render(ctx, providedModel) {
 
     renderHeader(vp);
 
-    if ((vp?.mode ?? 'single') === 'split') {
+    const mode = vp?.mode ?? 'single';
+    if (mode === 'split') {
       renderSplit(vp, values, chartModel);
+    } else if (mode === 'main-secondary') {
+      renderMainSecondary(vp, values, chartModel);
     } else {
       renderSingle(vp, values, chartModel);
     }
@@ -541,7 +566,7 @@ const renderChart = async (ctx, providedModel) => {
     ],
     visualPropEditorDefinition: {
       elements: [
-        { key: 'mode', type: 'dropdown', label: 'Card layout', defaultValue: 'single', values: ['single', 'split'] },
+        { key: 'mode', type: 'dropdown', label: 'Card layout', defaultValue: 'single', values: ['single', 'split', 'main-secondary'] },
         {
           key: 'icon',
           type: 'dropdown',
