@@ -187,6 +187,14 @@ body {
   margin-bottom: 0;
 }
 
+/* Main + Secondary mode: skip the grey card entirely so the first
+   value hugs the top-left of whatever space the TS tile gives us. */
+.ts-main-sec .ts-detail-card {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+
 .ts-footer-metrics {
   display: flex;
   gap: 8px;
