@@ -685,6 +685,8 @@ function render(ctx: CustomChartContext) {
     // leaves the setting blank (or at its placeholder ' ' value). The
     // setting defaults to a single space so we have to trim before deciding.
     const yAxisTitle    = yAxisTitleRaw.trim() ? yAxisTitleRaw : activeYName;
+    const showXAxisTitle = visualProps.showXAxisTitle ?? true;
+    const showYAxisTitle = visualProps.showYAxisTitle ?? true;
     const numberFormat  = visualProps.numberFormat  ?? '0,0.[0]a';
     const currency      = visualProps.currency      ?? 'None';
     const showDataLabels = visualProps.showDataLabels ?? false;
@@ -1029,7 +1031,7 @@ function render(ctx: CustomChartContext) {
         xAxis: {
             categories: xCategoryLabels,
             title: {
-                text:  xAxisTitle.trim() ? xAxisTitle : xColumn.name,
+                text:  showXAxisTitle ? (xAxisTitle.trim() ? xAxisTitle : xColumn.name) : null,
                 style: { fontWeight: 'bold', color: '#555' },
             },
             labels: {
@@ -1041,7 +1043,7 @@ function render(ctx: CustomChartContext) {
             tickWidth: 0,
         },
         yAxis: {
-            title: { text: yAxisTitle, style: { fontWeight: '500', color: '#555' } },
+            title: { text: showYAxisTitle ? yAxisTitle : null, style: { fontWeight: '500', color: '#555' } },
             gridLineWidth: showGridLines ? 1 : 0,
             gridLineColor: '#EEF1F4',
             labels: {
@@ -1299,7 +1301,9 @@ const renderChart = async (ctx: CustomChartContext) => {
             return {
                 elements: [
                     { key: 'chartTitle',         type: 'text',        defaultValue: ' ',            label: 'Chart title' },
+                    { key: 'showXAxisTitle',     type: 'checkbox',    defaultValue: true,           label: 'Show X-axis title' },
                     { key: 'xAxisTitle',         type: 'text',        defaultValue: ' ',            label: 'X-axis title (blank = column name)' },
+                    { key: 'showYAxisTitle',     type: 'checkbox',    defaultValue: true,           label: 'Show Y-axis title' },
                     { key: 'yAxisTitle',         type: 'text',        defaultValue: ' ',            label: 'Y-axis title (blank = measure name)' },
                     { key: 'numberFormat',       type: 'text',        defaultValue: '0,0.[0]a',     label: 'Number format' },
                     { key: 'currency',           type: 'dropdown',    defaultValue: 'None',         values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
