@@ -1,12 +1,14 @@
 # Custom ThoughtSpot Chart — Lessons Learned
 
-Compiled from building the waterfall chart. Read before starting a new viz.
+Compiled across the waterfall, dumbbell, KPI-detailed, multi-axis-bar, and
+multi-y-axis-line charts. Read before starting a new viz.
 
 ## If the chart doesn't load at all (#1 source of pain)
 
 - `visualPropEditorDefinition` throwing kills the whole chart silently. Wrap every data access with `?.` and `??`.
-- `getDefaultChartConfig` throwing also kills it — double-check your throw conditions.
-- `text` input `defaultValue` cannot be `''` (empty string). Use `' '` (single space). Hit this twice.
+- `getDefaultChartConfig` throwing also kills it — same issue. Return empty-slot defaults instead and handle the empty case in `render()` with a polite in-chart message.
+- **`getQueriesFromChartConfig` must return at least one query with at least one column.** If your defaults bind columns to `[]`, your reducer will produce `[{ queryColumns: [] }]` and the SDK validator rejects it with `"queries[0].queryColumns" must contain at least 1 items` — the chart fails to load with the generic 55009 "Cannot display custom chart". Fix: filter empty queries, and if none remain include a placeholder column from `chartModel.columns[0]`.
+- `text` input `defaultValue` cannot be `''` (empty string). Use `' '` (single space). Then in render, `.trim() || fallback` to detect the placeholder. Forgetting this means `?? fallback` never fires.
 - Highcharts `columnrange` (and several other types) needs `highcharts-more.js` — easy to forget in `index.html`.
 - If the chart URL 403s in a browser tab, it's Vercel Deployment Protection — disable in the Vercel dashboard.
 
@@ -25,12 +27,30 @@ Compiled from building the waterfall chart. Read before starting a new viz.
 - `vercel.json` needs `frame-ancestors *` (or specific TS domain) for the iframe to load.
 - Vercel Deployment Protection re-enables itself after every deploy by default — disable in the dashboard.
 
+### Per-chart Vercel projects + Ignored Build Step
+
+In a monorepo of charts, each chart can live in its own Vercel project with **Settings → Build and Deployment → Ignored Build Step**:
+
+```
+git diff HEAD^ HEAD --quiet -- ./<chart-folder>
+```
+
+Exit 0 (no changes in that folder) → Vercel skips the build for that project; exit 1 → builds. This means commits to one chart don't churn through builds of the others.
+
+**Gotcha:** Empty commits do NOT trigger rebuilds when this is configured. An empty commit doesn't change any files, so `git diff` exits 0 and the build is skipped. To force a chart-specific rebuild without touching code, either temporarily clear the Command field in that project's Ignored Build Step → save → push → restore the command, or make a one-character cosmetic change inside the folder. "Deploys haven't appeared in hours for chart X" is almost always this — check git log for the last commit that touched that folder.
+
+A yellow **"Configuration Settings differ from your current Project Settings"** banner means the last successful Production deploy used a different Ignored-Build-Step config than what's now saved. Hit Save to lock the current settings in for future deploys.
+
 ## Visual prop types
 
 - `checkbox` works. `toggle` renders but **doesn't fire updates** in TS UI — don't use it.
 - `dropdown` needs `values: string[]`.
 - `colorpicker`, `number`, `text` all fine (with the empty-default caveat).
-- `visualPropEditorDefinition` can be a **function** `(chartModel) => ({ elements: [...] })` — use this to generate per-column inputs dynamically (e.g. rename inputs, per-slice colour pickers).
+- **`visualPropEditorDefinition` can be a function** `(chartModel) => ({ elements: [...] })` — use this to generate per-bound-column inputs dynamically:
+  - One colorpicker per measure: `measureColor_<col.id>`.
+  - One rename input per measure/slicer: `measureLabel_<col.id>`, `sliceLabel_<col.id>`.
+  - Per-slice-value colorpickers: iterate `chartModel.data?.[last]?.data` to find distinct values for each bound slicer, emit `sliceValueColor_<slicerId>_<value>` per unique value.
+  - Progressive "add formula" UX: show N+1 formula slots where N is the index of the highest-numbered slot the user has typed into.
 
 ## Render event order (the SDK actually checks this)
 
@@ -50,10 +70,160 @@ const renderChart = async (ctx: CustomChartContext) => {
 };
 ```
 
+## Resilience patterns
+
+Make every chart match the waterfall's robustness. The patterns the waterfall uses:
+
+- Every `dataArr.columns.indexOf(colId)` is guarded — `if (idx < 0) return 0` (or skip the row). Without this, `row[-1]` silently returns `undefined` and produces zeros, masking the real "column missing from data" issue.
+- `if (values.length < 2) return;` style early-exits when there's nothing to draw.
+- `renderChartMessage(text)` helper that clears the chart container and writes a centred message ("Add a measure to render this chart"). Replace silent `return;` paths with this — users need to know *why* the chart is empty.
+
+If you find yourself debugging "chart shows blank with valid bindings", the cause is almost always an unguarded `indexOf` returning -1 somewhere.
+
+## Date column handling
+
+Date-bucketed columns come over the wire as **epoch-second strings** (e.g. `"1775001600"`), not formatted date strings.
+
+```ts
+function isDateLikeCol(col): boolean {
+    if (col?.dataType === DataType.DATE || col?.dataType === DataType.DATE_TIME) return true;
+    if (col?.timeBucket != null && col.timeBucket !== ColumnTimeBucket.NO_BUCKET) return true;
+    return false;
+}
+```
+
+- Sort categories **numerically** (by epoch) for date columns — not alphabetically.
+- Format display labels via `timeBucket`: MONTHLY → `"Apr 2026"`, QUARTERLY → `"Q2 2026"`, YEARLY → `"2026"`, DAILY/WEEKLY → `"Apr 1, 2026"`, MONTH_OF_YEAR → `"Apr"`, etc.
+- Use **UTC** methods (`d.getUTCFullYear()`, `toLocaleString({ timeZone: 'UTC' })`) — viewer's local timezone shouldn't shift bucket boundaries.
+
+## Number formatting
+
+- **Axis labels: always abbreviate** to K/M/B regardless of the user's `numberFormat`. Otherwise verbose formats like `0,0.00` blow up the axis with `1,775,001,600.00` labels. Use `0.[0]a` for non-percent, `0.[0]%` for percent.
+- **Tooltip / data labels: respect numberFormat but force abbreviation** — append `'a'` to the format if not present. Keeps user-chosen precision (decimals, grouping) but always gets K/M/B.
+- **Detect percent measures by name + format**: `/[\/]/` in the expression (for formulas), or `%/pct/percent` in the column name. Percent measures should be **averaged** across rows that fed each bucket (mean), not summed — five 70% values summed to 350% is meaningless.
+- **Currency symbol on labels only**: strip the leading `[\$€£¥₹]` from the axis format so the axis stays clean, then prepend the symbol again for tooltip values.
+
+## Data aggregation & truncation (the formula workaround)
+
+TS GROUP BYs across every column you put into a single `Query`. With many bound attributes, the cross-product cardinality explodes and TS silently drops groups when it hits the row limit. Symptom: slice values disappear under broad filters, totals undercount, and the SAME quarter shows different values when filters change.
+
+**Don't** bind 5+ attribute columns to a single `Query` without considering this. If you must, set `queryParams.size: 100000` to push past the default row limit.
+
+**Don't** try to fix percent-measure aggregation by averaging at the chart side. The percent at the (Month) GROUP BY level is *not* the mean of the percents at the (Month, Region) level — it depends on the underlying counts. You can't recover the coarse percent from finer-grained percent rows.
+
+**Do** use the formula pattern: bind the raw SUM components (numerator + denominator) to a "Formula inputs" slot, define a formula in settings like `Multi Year / (Multi Year + Single Year)`, and the chart sums the inputs per (x, slice) and divides. SUM is aggregation-invariant, so the ratio is the same regardless of GROUP BY granularity.
+
+### Formula pattern recipe
+
+1. Add a `formulaInputs` dimension to `chartConfigEditorDefinition` (measures only).
+2. In `visualPropEditorDefinition` add a "progressive" set of formula slots: name + expression + colour per slot, where slot N+1 appears once the user has filled slot N.
+3. Read `formula1Name`/`formula1Expr` etc. in render, build a list of `{name, expr}`.
+4. CSP-safe math evaluator (recursive descent — never use `Function`/`eval`):
+   - Parse digits, `.`, scientific notation, unary `+/-`, binary `+ - * /`, parens.
+   - Substitute column names with their numeric values FIRST (longest-name-first so `ARR` doesn't clobber `Renewed ARR`).
+   - Support `[Bracketed Name]` syntax for names with spaces.
+   - **Match column names case-insensitively** and **normalize runs of whitespace** so the user doesn't have to byte-match.
+   - After substitution, if any letter or bracket remains in the expression, the name is unresolved → return null → render as 0.
+5. **Formulas-referencing-formulas**: iteratively resolve formulas — each pass tries `evalFormula(expr, valuesByName)` for each formula whose name isn't yet in `valuesByName`; if it resolves, add the result. Bounded by the number of formulas to cap cycles.
+6. **Diagnostic logs are critical**: print `EXPRESSION`, `BOUND NAMES`, `AFTER SUBSTITUTION`, `RESULT` on separate `console.log` lines (not collapsed inside one Object) so the user can spot which name didn't resolve.
+
+### Critical reminder
+
+A formula can only reference columns the chart actually receives, which means columns **dragged into a chart slot** — not just "in the search". If your `BOUND NAMES` log doesn't include a name your expression mentions, bind that column to either `yOptions` or `formulaInputs`.
+
+## Highcharts tips
+
+- **`chart.reflow()` after container changes.** When you set padding on outer divs after the chart has rendered, Highcharts doesn't auto-resize — the SVG keeps its original dimensions and overflows. Call `reflow()` to make it remeasure.
+- **Shared tooltip ordering**: with `shared: true`, sort `this.points` by `p.y` descending so the entry at the top of the tooltip matches the line that's visually highest at that x point.
+- **Stacked-by-slice bars**: when a slicer is bound, force `stacking: 'normal'` and tag each series with `stack: m<measureIdx>` so series for the same measure stack together but different measures land side-by-side (grouped-stacked bars).
+- **In-bar segment labels vs stack totals**: keep segment labels at normal weight (`fontWeight: '400'`) and stack totals at bold (`fontWeight: '700'`) so the total is visually emphasised over its sub-labels.
+
+## Layout patterns
+
+### CSS Grid for button areas
+
+For charts with switchable buttons (Y-axis switcher, slicer toggles, etc.), use a 5-area grid:
+
+```css
+#layout {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+        "top    top    top"
+        "left   chart  right"
+        "bottom bottom bottom";
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+}
+```
+
+`overflow: hidden` on body + `#layout` prevents stray page scrollbars when content overflows.
+
+### Aligning buttons to the chart's gridlines
+
+Pin chart margins to fixed values (e.g. `marginLeft: 80, marginRight: 40`) so plot positions are predictable, then `padding-left = plotLeftAbs` on the button area aligns its content with the chart's gridline.
+
+**Wrapped rows must use `padding-left`, not a flex spacer.** A leading flex spacer only fills the start of row 1; wrapped rows have no padding and end up at the layout's left edge. `padding-left` on the container applies to every wrapped row, keeping all rows aligned with the gridline.
+
+Set `padding-right: 0` so each row can extend to the layout's right edge before wrapping (more horizontal room before items spill into a new row).
+
+### Custom legend that flows with buttons
+
+Don't wrap legend items in their own flex container. Append each `.legend-item` as a **direct sibling** of the button groups in the top area:
+
+```css
+.legend-item {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+```
+
+`#topArea`'s `flex-wrap: wrap` then distributes everything (buttons + legend items) across rows naturally. Each item is treated as an atomic unit — they wrap to a new row instead of getting truncated mid-text.
+
+### Highcharts container reflow on layout change
+
+When the button-area padding changes the chart cell size, the chart SVG can end up larger than its container and produce a horizontal scrollbar in the chart cell. Call `chart.reflow()` at the end of `alignButtonAreasToPlot()` so the chart re-measures its new container size.
+
+## Switchable Y-axis / X-axis pattern
+
+For charts where the user picks one of N bound measures or attributes via on-chart buttons (multi-axis-bar's X, multi-y-axis-line's Y):
+
+- Bind multiple to a `yOptions` / `xOptions` slot.
+- Render a button per option; **skip rendering the button row when there's only one option** (no point in a one-option switcher).
+- Module-level `activeYColumnId` / `activeXColumnId` tracks the choice; self-heal to first bound when the column is removed.
+- Y-axis title defaults to the active measure's name when the user leaves the setting blank — handle whitespace-only defaults explicitly (`yAxisTitleRaw.trim() ? yAxisTitleRaw : activeY.name`).
+- Y-axis formatter adapts to the active measure (`yIsPercent` detection at render time, not once at init).
+
+## Multi-slicer color + legend strategy
+
+When a chart supports multiple toggleable slicers (multi_y_axis_line):
+
+- **Legend = one item per (active slicer, distinct value)**, NOT per cross-product combination. With 2 slicers each having 3 values you get 6 legend items, not 9. Prefix with slicer name when more than one slicer is active (`Region: APAC`).
+- **Hidden tracking is per-slicer-per-value**: `Map<slicerId, Set<value>>`. A cross-product series is hidden if ANY of its component values is in the corresponding slicer's hidden set. Lets the user "zoom in" by toggling individual values off.
+- **Color hierarchy**:
+  - 1 active slicer → each line uses its primary value's user-picked color (`sliceValueColor_<slicer>_<value>`), falling back to a shade of the slicer's base.
+  - 2+ active slicers → use the PRIMARY value's color, then derive light/dark shades from the SECONDARY slicer's value index. Each primary value keeps its picked color; secondary just varies lightness within that hue.
+- **Hidden-value lifecycle**:
+  - Adding a new slicer (toggle on) → keep existing hidden values for the original slicer (existing "zoom-in" state persists).
+  - Removing a slicer (toggle off OR unbind from the chart) → clear that slicer's hidden values so re-activating starts fresh.
+- **Slicer value ordering in the legend**: preserve insertion order from `dataArr.dataValue` — that matches whatever default sort TS applied to the column. Don't `localeCompare` it.
+
+## Date filter sanity check
+
+If you see different aggregates for the same quarter under different overall date filters, suspect TS truncation. Log `samplingRatio` / `completionRatio` / `totalRowCount` from `chartModel.data[i]` to confirm. Fixing it requires the formula pattern (above) or fewer GROUP BY attributes — not more chart-side averaging.
+
+## SDK gotchas you'll hit
+
+- `emitEvent(GetDataForQuery, ...)` resolves to `Promise<any>` — the response shape isn't documented. Multi-query approaches (one Query per X option) didn't reliably return per-query data in our tests and broke the slicer. **Stick to single combined queries.** The simplest fix for "too many rows" is `queryParams.size: 100000`, plus the formula pattern for correct ratios.
+- `chartModel.data` is `QueryData[]` — if you emit multiple queries, you'd get multiple entries. Picking the right one based on column ids was unreliable; another reason to use a single query.
+
 ## Workflow
 
 - Every squash-merge diverges the feature branch. Before each new PR: `git rebase origin/main && git push -f`.
 - After a merge, wait ~30s for Vercel, then hard-refresh in TS (Cmd/Ctrl+Shift+R).
+- If a chart's Vercel project isn't redeploying after a push, check git log for the last commit touching that folder — and check the project's Ignored Build Step.
 
 ## Settings panels in TS (for end users)
 
@@ -62,13 +232,15 @@ const renderChart = async (ctx: CustomChartContext) => {
 
 ## In-chart UI controls
 
-The `index.html` `#buttonContainer` div is mounted above the chart. Use it for dashboard-viewer-facing controls (toggle buttons, measure switchers) that should work without entering edit mode. Combine with a module-level state variable that persists for the page lifetime; reset it when the corresponding settings default changes.
+The `index.html` `#buttonContainer` (or `#topArea` etc.) div is mounted above the chart. Use it for dashboard-viewer-facing controls (toggle buttons, measure switchers, pager arrows) that should work without entering edit mode. Combine with a module-level state variable that persists for the page lifetime; reset it when the corresponding settings default changes.
 
 ## Debug checklist when the chart doesn't show
 
 1. Open the chart URL directly in a browser tab — if it 403s, it's deployment protection.
-2. If it loads but errors, check devtools console. Two errors to recognise:
+2. If it loads but errors, check devtools console. Common errors:
    - `Failed to resolve module specifier "@thoughtspot/ts-chart-sdk"` → chart isn't being bundled. Subfolder needs its own `package.json` + `vite build`.
+   - `"queries[0].queryColumns" must contain at least 1 items` → your `getQueriesFromChartConfig` is returning an empty query. Add a placeholder column fallback.
    - CSP `Refused to load the stylesheet/script` → external CDN blocked by `default-src 'self'`. Bundle from npm or drop the dependency.
 3. If TS shows nothing, check Vercel build log for a failed deploy.
 4. Verify the custom viz is pointed at the correct Vercel URL in TS settings.
+5. If "deploy hasn't appeared in hours", check whether the chart's folder has any changes since the last successful build — Ignored Build Step might be skipping it.
