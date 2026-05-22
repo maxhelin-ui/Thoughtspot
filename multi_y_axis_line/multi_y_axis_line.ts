@@ -934,7 +934,10 @@ function render(ctx: CustomChartContext) {
                 if (!s) continue;
                 uniqueValues.add(s);
             }
-            const sortedValues = Array.from(uniqueValues).sort(naturalCompare);
+            // Preserve the order TS returned the values in — Set iteration
+            // is insertion-ordered, so this matches whatever default sort
+            // TS applied (typically by count or by the column's own sort).
+            const sortedValues = Array.from(uniqueValues);
             const slicerBase = pickColor(visualProps[`sliceBaseColor_${slicer.id}`], palette[sIdx % palette.length]);
             const valueShades = generateShades(slicerBase, sortedValues.length);
             const slicerLabel = customLabel(`sliceLabel_${slicer.id}`, slicer.name);
