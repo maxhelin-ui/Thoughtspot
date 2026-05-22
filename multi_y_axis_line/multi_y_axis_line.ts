@@ -355,22 +355,15 @@ function paintButtonsInto(
     };
     Object.values(areas).forEach(el => { if (el) el.innerHTML = ''; });
 
-    // For the HORIZONTAL areas (top/bottom) only: insert a leading flex
-    // spacer that's sized to the chart's plotLeft so the buttons start at
-    // the gridline when there's room — but with flex-shrink: 1 + min-width: 0
-    // so when the buttons + legend overflow row 1, the spacer collapses and
-    // the row can use the full chart width before wrapping to a new row.
-    // alignButtonAreasToPlot sets the spacer's flex-basis after the chart
-    // measures itself.
+    // For the HORIZONTAL areas (top/bottom) only: padding-left will be set
+    // to plotLeftAbs in alignButtonAreasToPlot so the buttons start at the
+    // gridline — and so any wrapped rows (legend overflow) also start at
+    // the gridline rather than the layout's left edge.
     ['topArea', 'bottomArea'].forEach(id => {
         const el = document.getElementById(id);
         if (!el) return;
-        const spacer = document.createElement('div');
-        spacer.className = 'area-spacer';
-        spacer.style.flex = '0 1 0';
-        spacer.style.minWidth = '0';
-        spacer.style.height = '0';
-        el.appendChild(spacer);
+        // Nothing else to do here — the area itself is empty before the
+        // buttons/legend are appended below.
     });
 
     // Skip the y-button group entirely when only one y measure is bound —
@@ -433,33 +426,24 @@ function alignButtonAreasToPlot(chart: any, chartTitle: string) {
         const el = document.getElementById(id);
         if (el) Object.assign(el.style, s);
     };
-    // Horizontal areas: paddingLeft is delegated to the .area-spacer flex
-    // item (set below), so the spacer can collapse when the buttons need
-    // the full chart width. paddingRight stays 0 so row 1 can run to the
-    // layout's right edge before wrapping.
+    // Horizontal areas: padding-left = plotLeftAbs so every row (including
+    // wrapped legend rows) starts at the chart's gridline. padding-right
+    // stays 0 so the row can run to the layout's right edge before
+    // wrapping — gives the most horizontal room on row 1 before items
+    // spill into row 2, while keeping wrapped rows visually aligned with
+    // the original buttons above.
     setStyle('topArea', {
-        paddingLeft:  '0px',
+        paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
         paddingRight: '0px',
         paddingTop:    '6px',
         paddingBottom: '6px',
     });
     setStyle('bottomArea', {
-        paddingLeft:  '0px',
+        paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
         paddingRight: '0px',
         paddingTop:    '6px',
         paddingBottom: '6px',
     });
-
-    // Size the horizontal spacers to plotLeftAbs. flex-basis is set here;
-    // flex-shrink: 1 (configured in paintButtonsInto) lets it collapse when
-    // the buttons + legend overflow the row.
-    const setSpacer = (id: string, basis: number) => {
-        const spacer = document.querySelector(`#${id} > .area-spacer`) as HTMLElement | null;
-        if (!spacer) return;
-        spacer.style.flex = `0 1 ${Math.max(0, basis)}px`;
-    };
-    setSpacer('topArea',    plotLeftAbs);
-    setSpacer('bottomArea', plotLeftAbs);
     setStyle('leftArea', {
         paddingTop:    `${Math.max(0, plotTopAbs)}px`,
         // Same idea for the vertical button column — gridline-aligned start,
