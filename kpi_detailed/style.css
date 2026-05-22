@@ -173,6 +173,20 @@ body {
   align-self: stretch;
 }
 
+/* Main + Secondary layout — compact stack inside one grey card.
+   Tight gap between rows so it's the most space-efficient option. */
+.ts-main-sec .ts-main-sec-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ts-main-sec .ts-main-sec-row + .ts-main-sec-row {
+  margin-top: 8px;
+}
+.ts-main-sec .ts-side-label {
+  margin-bottom: 0;
+}
+
 .ts-footer-metrics {
   display: flex;
   gap: 8px;
