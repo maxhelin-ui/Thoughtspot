@@ -19,8 +19,8 @@ import numeral from 'numeral';
  *   - Primary percent base
  *   - Secondary value (numerator, split layout)
  *   - Secondary percent base (split layout)
- *   - Footer metric 1
- *   - Footer metric 2
+ *   - Metric 1
+ *   - Metric 2
  *
  * The progress bar fills based on `primaryPercentMode`:
  *   - "ratio" (default): bar = primaryValue / primaryPercent  (the typical
@@ -369,6 +369,19 @@ function renderMainSecondary(vp, values, chartModel) {
   setText('msSecLabel', labelOrColumnName(vp?.rightLabel, getColumnName(chartModel, 'secondaryValue')));
   setText('msSecValue', formatBigValue(values.secondaryValue, vp));
   setText('msSecSuffix', hasSecondary ? (vp?.secondarySuffix ?? vp?.primarySuffix ?? '') : '');
+
+  // Inline footer value on the secondary line: "525 logos · original €22.9M"
+  const avgFormatted = values.footerAvg != null
+    ? formatMetricValue(values.footerAvg, vp?.footerAvgFormat ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
+    : '';
+  let avgPart = '';
+  if (avgFormatted) {
+    const avgLabel = labelOrColumnName(vp?.footerAvgLabel, getColumnName(chartModel, 'footerAvg'));
+    avgPart = hasSecondary
+      ? ` · ${avgLabel ? `${avgLabel} ` : ''}${avgFormatted}`
+      : `${avgLabel ? `${avgLabel} ` : ''}${avgFormatted}`;
+  }
+  setText('msSecExtra', avgPart);
 }
 
 function renderFooterMetrics(vp, values, chartModel) {
@@ -577,7 +590,7 @@ const renderChart = async (ctx, providedModel) => {
           },
           {
             key: 'metric1',
-            label: 'Footer metric 1',
+            label: 'Metric 1',
             allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
@@ -585,7 +598,7 @@ const renderChart = async (ctx, providedModel) => {
           },
           {
             key: 'metric2',
-            label: 'Footer metric 2',
+            label: 'Metric 2',
             allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
@@ -593,7 +606,7 @@ const renderChart = async (ctx, providedModel) => {
           },
           {
             key: 'footerAvg',
-            label: 'Footer avg value (appended to footer line)',
+            label: 'Footer value (appended to footer line)',
             allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
@@ -615,11 +628,11 @@ const renderChart = async (ctx, providedModel) => {
         { key: 'primarySuffix', type: 'text', label: 'Suffix after big number', defaultValue: 'accounts' },
         { key: 'primaryDescription', type: 'text', label: 'Description (single layout)', defaultValue: ' ' },
         { key: 'primaryFooter', type: 'text', label: 'Footer line — tokens: {base}, {value}, {percent}', defaultValue: 'of {base} closed accounts' },
-        { key: 'footerAvgLabel', type: 'text', label: 'Footer avg label (blank = use bound column name)', defaultValue: ' ' },
+        { key: 'footerAvgLabel', type: 'text', label: 'Footer value label (blank = use bound column name)', defaultValue: ' ' },
         {
           key: 'footerAvgFormat',
           type: 'dropdown',
-          label: 'Footer avg value format',
+          label: 'Footer value format',
           defaultValue: 'currency',
           values: ['currency', 'number', 'percent'],
         },
