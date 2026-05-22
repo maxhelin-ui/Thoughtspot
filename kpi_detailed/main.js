@@ -142,6 +142,10 @@ function getColumnName(chartModel, key) {
   return getDimColumn(chartModel, key)?.name ?? '';
 }
 
+function isSlotBound(chartModel, key) {
+  return !!getDimColumn(chartModel, key);
+}
+
 // Aggregate this column's values into a single number for the card.
 // Single-row results (the common case for a KPI with no group-by) just
 // return that one value. Multi-row results get aggregated according to
@@ -243,24 +247,43 @@ function composeFooterLine(vp, values, chartModel, fraction) {
     : (footerText || avgPart);
 }
 
+// Always abbreviates with K/M/B; currency prefix only when the user
+// has the "Format primary value as number (currency + K/M/B)" toggle on.
+function formatBigValue(v, vp) {
+  if (v == null) return '';
+  const mode = vp?.primaryAsNumber ? 'currency' : 'number';
+  return formatMetricValue(v, mode, vp?.numberFormat, vp?.currencySymbol);
+}
+
 function renderSingle(vp, values, chartModel) {
-  setHidden('singleLayout', false);
+  const hasPrimary  = isSlotBound(chartModel, 'primaryValue');
+  const hasBase     = isSlotBound(chartModel, 'primaryPercent');
+  const hasFootAvg  = isSlotBound(chartModel, 'footerAvg');
+  const footerText  = (vp?.primaryFooter ?? '').trim();
+  // If nothing in this layout is bound, drop the whole grey card so the
+  // chart shows only what the user actually configured (e.g. just the
+  // footer metric tiles).
+  const showLayout  = hasPrimary || hasBase || hasFootAvg || !!footerText;
+
+  setHidden('singleLayout', !showLayout);
   setHidden('splitLayout', true);
   setHidden('mainSecLayout', true);
+  if (!showLayout) return;
 
-  const formatted = vp?.primaryAsNumber
-    ? formatNumber(values.primaryValue, vp?.numberFormat, vp?.currencySymbol)
-    : (values.primaryValue == null ? '' : String(Math.round(values.primaryValue)));
+  setHidden('singleStatRow',     !hasPrimary);
+  setHidden('singleProgressRow', !hasBase);
 
-  setText('singleValue', formatted);
-  setText('singleSuffix', vp?.primarySuffix ?? '');
+  setText('singleValue', formatBigValue(values.primaryValue, vp));
+  setText('singleSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
   const desc = (vp?.primaryDescription ?? '').trim();
-  setText('singleDescription', desc ? `· ${desc}` : '');
+  setText('singleDescription', hasPrimary && desc ? `· ${desc}` : '');
 
   const fraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
   const percentFormatted = formatPercent(fraction);
 
-  setText('singleFooter', composeFooterLine(vp, values, chartModel, fraction));
+  const footerLine = composeFooterLine(vp, values, chartModel, fraction);
+  setHidden('singleFooter', !footerLine);
+  setText('singleFooter', footerLine);
 
   setText('singlePercent', percentFormatted);
 
@@ -274,17 +297,28 @@ function renderSingle(vp, values, chartModel) {
 }
 
 function renderSplit(vp, values, chartModel) {
-  setHidden('singleLayout', true);
-  setHidden('splitLayout', false);
-  setHidden('mainSecLayout', true);
+  const hasPrimary    = isSlotBound(chartModel, 'primaryValue');
+  const hasSecondary  = isSlotBound(chartModel, 'secondaryValue');
+  const hasLeftBase   = isSlotBound(chartModel, 'primaryPercent');
+  const hasRightBase  = isSlotBound(chartModel, 'secondaryPercent');
+  const hasFootAvg    = isSlotBound(chartModel, 'footerAvg');
+  const footerText    = (vp?.primaryFooter ?? '').trim();
+  const showLayout    = hasPrimary || hasSecondary || hasFootAvg || !!footerText;
 
-  const fmt = (v) => vp?.primaryAsNumber
-    ? formatNumber(v, vp?.numberFormat, vp?.currencySymbol)
-    : (v == null ? '' : String(Math.round(v)));
+  setHidden('singleLayout', true);
+  setHidden('splitLayout', !showLayout);
+  setHidden('mainSecLayout', true);
+  if (!showLayout) return;
+
+  setHidden('splitLeftSide',     !hasPrimary);
+  setHidden('splitRightSide',    !hasSecondary);
+  setHidden('splitDivider',      !(hasPrimary && hasSecondary));
+  setHidden('leftProgressRow',   !hasLeftBase);
+  setHidden('rightProgressRow',  !hasRightBase);
 
   setText('leftLabel', labelOrColumnName(vp?.leftLabel, getColumnName(chartModel, 'primaryValue')));
-  setText('leftValue', fmt(values.primaryValue));
-  setText('leftSuffix', vp?.primarySuffix ?? '');
+  setText('leftValue', formatBigValue(values.primaryValue, vp));
+  setText('leftSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
   const leftFraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
   setText('leftPercent', formatPercent(leftFraction));
   const leftFill = document.getElementById('leftBarFill');
@@ -296,8 +330,8 @@ function renderSplit(vp, values, chartModel) {
   if (leftLabelEl) leftLabelEl.style.color = 'var(--ts-accent)';
 
   setText('rightLabel', labelOrColumnName(vp?.rightLabel, getColumnName(chartModel, 'secondaryValue')));
-  setText('rightValue', fmt(values.secondaryValue));
-  setText('rightSuffix', vp?.secondarySuffix ?? vp?.primarySuffix ?? '');
+  setText('rightValue', formatBigValue(values.secondaryValue, vp));
+  setText('rightSuffix', hasSecondary ? (vp?.secondarySuffix ?? vp?.primarySuffix ?? '') : '');
   const rightFraction = computeBarFraction(values.secondaryValue, values.secondaryPercent, vp?.secondaryPercentMode ?? 'ratio');
   setText('rightPercent', formatPercent(rightFraction));
   const rightFill = document.getElementById('rightBarFill');
@@ -308,29 +342,33 @@ function renderSplit(vp, values, chartModel) {
   const rightLabelEl = document.getElementById('rightPercent');
   if (rightLabelEl) rightLabelEl.style.color = 'var(--ts-secondary-accent)';
 
-  // Same footer composition as single — uses the primary value/percent
-  // for the {value}/{base}/{percent} tokens and the bound footerAvg.
-  setText('splitFooter', composeFooterLine(vp, values, chartModel, leftFraction));
+  const footerLine = composeFooterLine(vp, values, chartModel, leftFraction);
+  setHidden('splitFooter', !footerLine);
+  setText('splitFooter', footerLine);
 }
 
 // Compact "main + secondary" layout: two values stacked in one grey
 // card, no progress bar, no footer. Smallest layout the chart offers.
 function renderMainSecondary(vp, values, chartModel) {
+  const hasPrimary   = isSlotBound(chartModel, 'primaryValue');
+  const hasSecondary = isSlotBound(chartModel, 'secondaryValue');
+  const showLayout   = hasPrimary || hasSecondary;
+
   setHidden('singleLayout', true);
   setHidden('splitLayout', true);
-  setHidden('mainSecLayout', false);
+  setHidden('mainSecLayout', !showLayout);
+  if (!showLayout) return;
 
-  const fmt = (v) => vp?.primaryAsNumber
-    ? formatNumber(v, vp?.numberFormat, vp?.currencySymbol)
-    : (v == null ? '' : String(Math.round(v)));
+  setHidden('msMainRow', !hasPrimary);
+  setHidden('msSecRow',  !hasSecondary);
 
   setText('msMainLabel', labelOrColumnName(vp?.leftLabel, getColumnName(chartModel, 'primaryValue')));
-  setText('msMainValue', fmt(values.primaryValue));
-  setText('msMainSuffix', vp?.primarySuffix ?? '');
+  setText('msMainValue', formatBigValue(values.primaryValue, vp));
+  setText('msMainSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
 
   setText('msSecLabel', labelOrColumnName(vp?.rightLabel, getColumnName(chartModel, 'secondaryValue')));
-  setText('msSecValue', fmt(values.secondaryValue));
-  setText('msSecSuffix', vp?.secondarySuffix ?? vp?.primarySuffix ?? '');
+  setText('msSecValue', formatBigValue(values.secondaryValue, vp));
+  setText('msSecSuffix', hasSecondary ? (vp?.secondarySuffix ?? vp?.primarySuffix ?? '') : '');
 }
 
 function renderFooterMetrics(vp, values, chartModel) {
