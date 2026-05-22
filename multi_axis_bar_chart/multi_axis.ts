@@ -748,10 +748,13 @@ function render(ctx: CustomChartContext) {
                 groupPadding: 0.12,
                 stacking,
                 dataLabels: [
-                    // (a) Existing inside-bar label (per-series value).
+                    // (a) Existing inside-bar label (per-series value). Kept
+                    // at normal weight — the bold treatment is reserved for
+                    // the per-bar total/stack total above the bar so the
+                    // total stands out from its sub-labels.
                     {
                         enabled: showDataLabels,
-                        style: { fontSize: '11px', fontWeight: '600', textOutline: 'none', color: '#333' },
+                        style: { fontSize: '11px', fontWeight: '400', textOutline: 'none', color: '#333' },
                         formatter: function (this: any) {
                             if (this.y == null || this.y === 0) return '';
                             const yIdx = seriesNameToYIdx.get(this.series.name) ?? 0;
