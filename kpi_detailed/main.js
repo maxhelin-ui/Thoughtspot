@@ -211,25 +211,10 @@ function renderHeader(vp) {
   });
 }
 
-function renderSingle(vp, values, chartModel) {
-  setHidden('singleLayout', false);
-  setHidden('splitLayout', true);
-
-  const formatted = vp?.primaryAsNumber
-    ? formatNumber(values.primaryValue, vp?.numberFormat, vp?.currencySymbol)
-    : (values.primaryValue == null ? '' : String(Math.round(values.primaryValue)));
-
-  setText('singleValue', formatted);
-  setText('singleSuffix', vp?.primarySuffix ?? '');
-  const desc = (vp?.primaryDescription ?? '').trim();
-  setText('singleDescription', desc ? `· ${desc}` : '');
-
-  const fraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
-
-  // Tokens the user can drop into the footer text. The {base} token is
-  // the most common — it pulls the denominator value (e.g. "of {base}
-  // closed accounts" -> "of 557 closed accounts") so the footer stays
-  // in sync with the data.
+// Compose the "{footer} · {avgLabel} {avgValue}" line. Shared by both
+// single and split layouts so the configured footer text + bound
+// footerAvg measure render identically regardless of mode.
+function composeFooterLine(vp, values, chartModel, fraction) {
   const baseFormatted = values.primaryPercent != null
     ? formatMetricValue(values.primaryPercent, 'number', vp?.numberFormat, vp?.currencySymbol)
     : '';
@@ -253,10 +238,28 @@ function renderSingle(vp, values, chartModel) {
     avgPart = avgLabel ? `${avgLabel} ${avgFormatted}` : avgFormatted;
   }
 
-  const fullFooter = footerText && avgPart
+  return footerText && avgPart
     ? `${footerText} · ${avgPart}`
     : (footerText || avgPart);
-  setText('singleFooter', fullFooter);
+}
+
+function renderSingle(vp, values, chartModel) {
+  setHidden('singleLayout', false);
+  setHidden('splitLayout', true);
+
+  const formatted = vp?.primaryAsNumber
+    ? formatNumber(values.primaryValue, vp?.numberFormat, vp?.currencySymbol)
+    : (values.primaryValue == null ? '' : String(Math.round(values.primaryValue)));
+
+  setText('singleValue', formatted);
+  setText('singleSuffix', vp?.primarySuffix ?? '');
+  const desc = (vp?.primaryDescription ?? '').trim();
+  setText('singleDescription', desc ? `· ${desc}` : '');
+
+  const fraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
+  const percentFormatted = formatPercent(fraction);
+
+  setText('singleFooter', composeFooterLine(vp, values, chartModel, fraction));
 
   setText('singlePercent', percentFormatted);
 
@@ -302,6 +305,10 @@ function renderSplit(vp, values, chartModel) {
   }
   const rightLabelEl = document.getElementById('rightPercent');
   if (rightLabelEl) rightLabelEl.style.color = 'var(--ts-secondary-accent)';
+
+  // Same footer composition as single — uses the primary value/percent
+  // for the {value}/{base}/{percent} tokens and the bound footerAvg.
+  setText('splitFooter', composeFooterLine(vp, values, chartModel, leftFraction));
 }
 
 function renderFooterMetrics(vp, values, chartModel) {
