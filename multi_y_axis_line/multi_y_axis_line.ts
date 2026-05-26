@@ -383,11 +383,13 @@ type LegendItem = { name: string; color: string; hidden: boolean; onClick: () =>
 function renderCustomLegend(items: Array<LegendItem>) {
     const host = document.getElementById('topArea');
     if (!host) return;
-    // Each legend item is appended as a direct sibling of the button groups.
-    // #topArea is a wrap flex row, so items fill the remaining space on the
-    // first row alongside the buttons, then wrap to row 2, 3, ... as needed
-    // — instead of the legend being a single block that either fits or
-    // overflows.
+    // Legend items go in a single wrapping box that takes a full row in
+    // #topArea's flex layout (flex-basis: 100%) so the box wraps to its
+    // own line below any buttons, and items inside that box are centered.
+    // Within the box the items still wrap across additional rows when
+    // there are too many to fit on one.
+    const legendBox = document.createElement('div');
+    legendBox.id = 'customLegend';
     items.forEach(item => {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -400,8 +402,9 @@ function renderCustomLegend(items: Array<LegendItem>) {
         btn.appendChild(swatch);
         btn.appendChild(label);
         btn.onclick = item.onClick;
-        host.appendChild(btn);
+        legendBox.appendChild(btn);
     });
+    host.appendChild(legendBox);
 }
 
 // Push the button areas so their content lines up with the chart's plot

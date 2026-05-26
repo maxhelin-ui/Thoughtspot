@@ -82,10 +82,20 @@
                 background: #6B7280;
                 color: #FFFFFF;
             }
-            /* Legend items are appended directly into #topArea as siblings
-               of the button groups so they flow into the same wrap row,
-               filling row 1 next to the buttons and continuing onto rows
-               2, 3, ... as needed. */
+            /* Legend items live in a wrapping box that takes a full row of
+               #topArea (flex-basis: 100%) so the legend always lands on
+               its own line below the buttons, and items are centered
+               horizontally. Inside the box, items still wrap across more
+               rows when too many to fit on one. */
+            #customLegend {
+                display: flex;
+                flex-wrap: wrap;
+                justify-content: center;
+                align-items: center;
+                gap: 12px;
+                flex-basis: 100%;
+                min-width: 0;
+            }
             .legend-item {
                 display: inline-flex;
                 align-items: center;
