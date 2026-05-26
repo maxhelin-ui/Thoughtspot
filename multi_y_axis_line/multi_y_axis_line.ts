@@ -1,3 +1,4 @@
+// Deploy trigger: 2026-05-26
 import {
     ChartToTSEvent,
     ColumnType,
