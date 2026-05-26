@@ -201,6 +201,38 @@ function setText(id, text) {
   if (el) el.textContent = text ?? '';
 }
 
+// When the 'colourBySign' visualProp is on, render any displayed numeric
+// value with a green/red colour based on the raw value's sign (zero stays
+// the inherited colour). Helpers below colour individual text spans
+// (singleValue, msMainValue, etc.) and build the main+secondary footer
+// line as HTML so the secondary and footer values can be coloured
+// independently.
+const SIGN_GREEN = '#038922';
+const SIGN_RED   = '#D54035';
+
+function colourForValue(v, on) {
+  if (!on || v == null || isNaN(v)) return '';
+  if (v > 0) return SIGN_GREEN;
+  if (v < 0) return SIGN_RED;
+  return '';
+}
+
+function setTextColoured(id, text, colour) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = text ?? '';
+  el.style.color = colour || '';
+}
+
+function escapeHtml(s) {
+  return String(s ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function setHidden(id, hidden) {
   const el = document.getElementById(id);
   if (!el) return;
@@ -379,9 +411,15 @@ function renderMainSecondary(vp, values, chartModel) {
   setHidden('msMainRow', !hasPrimary);
 
   // Title (msMainLabel) intentionally not set — main+secondary layout
-  // drops the column-name title above the big value.
+  // drops the column-name title above the big value. CSS also hides
+  // #msMainLabel inside .ts-main-sec so it doesn't reserve any vertical
+  // space.
   setText('msMainLabel', '');
-  setText('msMainValue', formatBigValue(values.primaryValue, vp, vp?.primaryFormat ?? (vp?.primaryAsNumber ? 'number' : 'currency')));
+  setTextColoured(
+    'msMainValue',
+    formatBigValue(values.primaryValue, vp, vp?.primaryFormat ?? (vp?.primaryAsNumber ? 'number' : 'currency')),
+    colourForValue(values.primaryValue, vp?.colourBySign),
+  );
   setText('msMainSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
 
   // Footer line = "<secondary value+suffix> · <footerAvg value> <label>"
@@ -674,6 +712,7 @@ const renderChart = async (ctx, providedModel) => {
           values: ['ratio', 'as-is'],
         },
         { key: 'primaryColor', type: 'colorpicker', label: 'Primary colour (percent text + bar)', defaultValue: getEffectivePalette()[0] ?? '#534AB7' },
+        { key: 'colourBySign', type: 'checkbox', label: 'Colour main+secondary primary by sign (positive = green, negative = red)', defaultValue: false },
         {
           key: 'primaryFormat',
           type: 'dropdown',

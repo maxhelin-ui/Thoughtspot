@@ -198,8 +198,13 @@ body {
 /* Primary value in main+secondary mode — overrides the default
    .ts-stat-big size so the value dominates the (small) tile. */
 .ts-main-sec .ts-stat-big {
-  font-size: 36px;
+  font-size: 32px;
 }
+
+/* Title above the primary value is intentionally hidden in
+   main+secondary — collapse the empty label so the value really
+   sits at the very top of the available space (no phantom row). */
+.ts-main-sec #msMainLabel { display: none; }
 
 /* Footer line under the big primary value, joining secondary value
    and footerAvg with " · ". Sits between .ts-stat-footer (12px) and

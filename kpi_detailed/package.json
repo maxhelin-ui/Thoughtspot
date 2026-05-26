@@ -1,6 +1,6 @@
 {
     "name": "kpi-detailed",
-    "version": "1.0.6",
+    "version": "1.0.7",
     "description": "ThoughtSpot BYOC: KPI - Detailed card",
     "main": "dist/index.html",
     "scripts": {
