@@ -179,10 +179,21 @@ function sumForKey(chartModel, key) {
 
 function applyCardStyles(vp) {
   const root = document.documentElement;
-  if (vp?.primaryAccentColor) root.style.setProperty('--ts-accent', vp.primaryAccentColor);
-  if (vp?.primaryBarColor) root.style.setProperty('--ts-accent-bar', vp.primaryBarColor);
-  if (vp?.secondaryAccentColor) root.style.setProperty('--ts-secondary-accent', vp.secondaryAccentColor);
-  if (vp?.secondaryBarColor) root.style.setProperty('--ts-secondary-accent-bar', vp.secondaryBarColor);
+  // One colour per side now — both the percent text and its progress bar
+  // use the same colour. primaryColor / secondaryColor are the new
+  // single-source-of-truth settings; the older primaryAccentColor /
+  // primaryBarColor (and secondary counterparts) are honoured as
+  // fallbacks for charts saved before the merge.
+  const primary   = vp?.primaryColor   ?? vp?.primaryAccentColor   ?? vp?.primaryBarColor;
+  const secondary = vp?.secondaryColor ?? vp?.secondaryAccentColor ?? vp?.secondaryBarColor;
+  if (primary) {
+    root.style.setProperty('--ts-accent', primary);
+    root.style.setProperty('--ts-accent-bar', primary);
+  }
+  if (secondary) {
+    root.style.setProperty('--ts-secondary-accent', secondary);
+    root.style.setProperty('--ts-secondary-accent-bar', secondary);
+  }
 }
 
 function setText(id, text) {
@@ -247,11 +258,14 @@ function composeFooterLine(vp, values, chartModel, fraction) {
     : (footerText || avgPart);
 }
 
-// Always abbreviates with K/M/B; currency prefix only when the user
-// has the "Format primary value as number (currency + K/M/B)" toggle on.
-function formatBigValue(v, vp) {
+// Always abbreviates with K/M/B; the format argument decides whether the
+// currency prefix is applied ('currency'), plain number ('number'), or
+// percent ('percent'). Falls back to currency for backwards-compat with
+// the older primaryAsNumber boolean shape.
+function formatBigValue(v, vp, format) {
   if (v == null) return '';
-  const mode = vp?.primaryAsNumber ? 'currency' : 'number';
+  // Back-compat: if 'format' isn't passed, derive from primaryAsNumber.
+  const mode = format ?? (vp?.primaryAsNumber === true ? 'number' : 'currency');
   return formatMetricValue(v, mode, vp?.numberFormat, vp?.currencySymbol);
 }
 
@@ -273,7 +287,7 @@ function renderSingle(vp, values, chartModel) {
   setHidden('singleStatRow',     !hasPrimary);
   setHidden('singleProgressRow', !hasBase);
 
-  setText('singleValue', formatBigValue(values.primaryValue, vp));
+  setText('singleValue', formatBigValue(values.primaryValue, vp, vp?.primaryFormat ?? (vp?.primaryAsNumber ? 'number' : 'currency')));
   setText('singleSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
   const desc = (vp?.primaryDescription ?? '').trim();
   setText('singleDescription', hasPrimary && desc ? `· ${desc}` : '');
@@ -317,7 +331,7 @@ function renderSplit(vp, values, chartModel) {
   setHidden('rightProgressRow',  !hasRightBase);
 
   setText('leftLabel', labelOrColumnName(vp?.leftLabel, getColumnName(chartModel, 'primaryValue')));
-  setText('leftValue', formatBigValue(values.primaryValue, vp));
+  setText('leftValue', formatBigValue(values.primaryValue, vp, vp?.primaryFormat ?? (vp?.primaryAsNumber ? 'number' : 'currency')));
   setText('leftSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
   const leftFraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
   setText('leftPercent', formatPercent(leftFraction));
@@ -330,7 +344,7 @@ function renderSplit(vp, values, chartModel) {
   if (leftLabelEl) leftLabelEl.style.color = 'var(--ts-accent)';
 
   setText('rightLabel', labelOrColumnName(vp?.rightLabel, getColumnName(chartModel, 'secondaryValue')));
-  setText('rightValue', formatBigValue(values.secondaryValue, vp));
+  setText('rightValue', formatBigValue(values.secondaryValue, vp, vp?.secondaryFormat ?? 'currency'));
   setText('rightSuffix', hasSecondary ? (vp?.secondarySuffix ?? vp?.primarySuffix ?? '') : '');
   const rightFraction = computeBarFraction(values.secondaryValue, values.secondaryPercent, vp?.secondaryPercentMode ?? 'ratio');
   setText('rightPercent', formatPercent(rightFraction));
@@ -364,26 +378,30 @@ function renderMainSecondary(vp, values, chartModel) {
 
   setHidden('msMainRow', !hasPrimary);
 
-  setText('msMainLabel', labelOrColumnName(vp?.leftLabel, getColumnName(chartModel, 'primaryValue')));
-  setText('msMainValue', formatBigValue(values.primaryValue, vp));
+  // Title (msMainLabel) intentionally not set — main+secondary layout
+  // drops the column-name title above the big value.
+  setText('msMainLabel', '');
+  setText('msMainValue', formatBigValue(values.primaryValue, vp, vp?.primaryFormat ?? (vp?.primaryAsNumber ? 'number' : 'currency')));
   setText('msMainSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
 
-  // Footer line = "<secondary value> · <footerAvg label> <footerAvg value>"
-  // — whichever pieces are present. Mirrors the inline avgPart pattern the
-  // earlier layout used, but renders the secondary value WITHOUT its own
-  // label (matching the screenshot the user wanted).
-  const secValueFormatted = hasSecondary ? formatBigValue(values.secondaryValue, vp) : '';
+  // Footer line = "<secondary value+suffix> · <footerAvg value> <label>"
+  // — value first, then label (with a space between), per the user's
+  // request to flip the order so values lead and labels read as units.
+  const secValueFormatted = hasSecondary
+    ? formatBigValue(values.secondaryValue, vp, vp?.secondaryFormat ?? 'currency')
+    : '';
   const secSuffix = hasSecondary ? (vp?.secondarySuffix ?? vp?.primarySuffix ?? '') : '';
   const secPart = hasSecondary
-    ? `${secValueFormatted}${secSuffix ? secSuffix : ''}`.trim()
+    ? `${secValueFormatted}${secSuffix ? ' ' + secSuffix : ''}`.trim()
     : '';
 
   const avgFormatted = values.footerAvg != null
     ? formatMetricValue(values.footerAvg, vp?.footerAvgFormat ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
     : '';
   const avgLabel = labelOrColumnName(vp?.footerAvgLabel, getColumnName(chartModel, 'footerAvg'));
+  // value first, label after.
   const avgPart = avgFormatted
-    ? `${avgLabel ? `${avgLabel} ` : ''}${avgFormatted}`.trim()
+    ? `${avgFormatted}${avgLabel ? ` ${avgLabel}` : ''}`.trim()
     : '';
 
   let footerLine = '';
@@ -655,9 +673,14 @@ const renderChart = async (ctx, providedModel) => {
           defaultValue: 'ratio',
           values: ['ratio', 'as-is'],
         },
-        { key: 'primaryAccentColor', type: 'colorpicker', label: 'Primary percent text color', defaultValue: getEffectivePalette()[0] ?? '#534AB7' },
-        { key: 'primaryBarColor', type: 'colorpicker', label: 'Primary bar color', defaultValue: getEffectivePalette()[0] ?? '#7F77DD' },
-        { key: 'primaryAsNumber', type: 'checkbox', label: 'Format primary value as number (currency + K/M/B)', defaultValue: false },
+        { key: 'primaryColor', type: 'colorpicker', label: 'Primary colour (percent text + bar)', defaultValue: getEffectivePalette()[0] ?? '#534AB7' },
+        {
+          key: 'primaryFormat',
+          type: 'dropdown',
+          label: 'Primary value format',
+          defaultValue: 'currency',
+          values: ['currency', 'number', 'percent'],
+        },
         { key: 'secondarySuffix', type: 'text', label: 'Secondary suffix (split)', defaultValue: 'accounts' },
         { key: 'rightLabel', type: 'text', label: 'Right label (split, blank = use Secondary value column name)', defaultValue: ' ' },
         {
@@ -667,8 +690,14 @@ const renderChart = async (ctx, providedModel) => {
           defaultValue: 'ratio',
           values: ['ratio', 'as-is'],
         },
-        { key: 'secondaryAccentColor', type: 'colorpicker', label: 'Secondary percent text color', defaultValue: getEffectivePalette()[1] ?? '#5F5E5A' },
-        { key: 'secondaryBarColor', type: 'colorpicker', label: 'Secondary bar color', defaultValue: getEffectivePalette()[1] ?? '#888780' },
+        { key: 'secondaryColor', type: 'colorpicker', label: 'Secondary colour (percent text + bar)', defaultValue: getEffectivePalette()[1] ?? '#5F5E5A' },
+        {
+          key: 'secondaryFormat',
+          type: 'dropdown',
+          label: 'Secondary value format',
+          defaultValue: 'currency',
+          values: ['currency', 'number', 'percent'],
+        },
         { key: 'metric1Label', type: 'text', label: 'Metric 1 label (blank = use column name)', defaultValue: ' ' },
         {
           key: 'metric1Format',
