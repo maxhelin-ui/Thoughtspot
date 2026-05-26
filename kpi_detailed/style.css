@@ -1,7 +1,7 @@
 /* KPI - Detailed
    ThoughtSpot-style detailed KPI card.
    Color tokens follow ThoughtSpot defaults; runtime overrides come from main.js.
-   Deploy trigger: 2026-05-26 */
+   Deploy trigger: 2026-05-26 (retry) */
 
 :root {
   --ts-bg-primary: #FFFFFF;
