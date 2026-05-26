@@ -471,9 +471,19 @@ function renderFooterMetrics(vp, values, chartModel) {
 
 let lastModel = null;
 let globalAppConfig = null;
-let renderDebounceTimer = null;
-let firstRenderDone = false;
-let lastRenderedDataRef = null;
+
+// Visual-prop keys whose editor is a free-text input. Typing into these
+// fires onPropChange on every keystroke, so we hold renders for 2s of
+// idle before applying — otherwise the chart flashes on every letter.
+// Dropdowns / colorpickers / checkboxes commit once per click and render
+// immediately.
+const TEXT_PROP_KEYS = new Set([
+  'primarySuffix', 'primaryDescription', 'primaryFooter',
+  'footerAvgLabel', 'leftLabel', 'rightLabel',
+  'metric1Label', 'metric2Label', 'numberFormat', 'currencySymbol',
+  'secondarySuffix',
+]);
+const TEXT_PROP_DEBOUNCE_MS = 2000;
 
 const FALLBACK_PALETTE = ['#7F77DD', '#888780', '#534AB7', '#5F5E5A'];
 
@@ -556,30 +566,18 @@ const renderChart = async (ctx, providedModel) => {
   if (!globalAppConfig) {
     try { globalAppConfig = ctx.getAppConfig?.() ?? null; } catch { /* ignore */ }
   }
-  const doRender = async () => {
-    try {
-      ctx.emitEvent(ChartToTSEvent.RenderStart);
-      await render(ctx, providedModel);
-      ctx.emitEvent(ChartToTSEvent.RenderComplete);
-      firstRenderDone = true;
-      lastRenderedDataRef = ctx.getChartModel().data;
-    } catch (error) {
-      console.error('KPI - Detailed render error:', error);
-      ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error });
-    }
-  };
-  if (!firstRenderDone) { await doRender(); return; }
-  const currentData = ctx.getChartModel().data;
-  if (currentData !== lastRenderedDataRef) {
-    if (renderDebounceTimer) { clearTimeout(renderDebounceTimer); renderDebounceTimer = null; }
-    await doRender();
-    return;
+  try {
+    ctx.emitEvent(ChartToTSEvent.RenderStart);
+    await render(ctx, providedModel);
+    ctx.emitEvent(ChartToTSEvent.RenderComplete);
+  } catch (error) {
+    console.error('KPI - Detailed render error:', error);
+    ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error });
   }
-  if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
-  renderDebounceTimer = setTimeout(doRender, 1000);
 };
 
 (async () => {
+  let propChangeTimer = null;
   const ctx = await getChartContext({
     // Leave every slot empty by default. Previously this auto-bound
     // measureCols[0..6] to slots in order, which meant adding or removing
@@ -757,7 +755,18 @@ const renderChart = async (ctx, providedModel) => {
         { key: 'currencySymbol', type: 'text', label: 'Currency symbol prefix', defaultValue: '€' },
       ],
     },
-    onPropChange: () => renderChart(ctx),
+    onPropChange: (propKey) => {
+      if (propChangeTimer) clearTimeout(propChangeTimer);
+      if (typeof propKey === 'string' && TEXT_PROP_KEYS.has(propKey)) {
+        propChangeTimer = setTimeout(() => {
+          propChangeTimer = null;
+          renderChart(ctx);
+        }, TEXT_PROP_DEBOUNCE_MS);
+      } else {
+        propChangeTimer = null;
+        renderChart(ctx);
+      }
+    },
   });
 
   // Use the event payload directly when the SDK pushes an update — the
