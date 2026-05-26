@@ -24,6 +24,7 @@ interface VisualProps {
     currency?: string;
     showDataLabels?: boolean;
     showLegend?: boolean;
+    legendSortMode?: string;
     showGridLines?: boolean;
     lineWidth?: number;
     markerEnabled?: boolean;
@@ -37,6 +38,7 @@ interface VisualProps {
 
 const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
 const POSITION_OPTIONS = ['Top', 'Bottom', 'Left', 'Right'];
+const LEGEND_SORT_OPTIONS = ['Slicer order', 'Last value (high to low)'];
 const MAX_FORMULAS = 4;
 
 // Fixed chart margins. Pinning these here (instead of letting Highcharts
@@ -967,18 +969,49 @@ function render(ctx: CustomChartContext) {
     // value to hide every series containing it — "zoom in" by exclusion.
     // Series visibility below is then derived from hiddenValuesBySlicer.
     const SEP = ' — ';
+
+    // Sort order for legend entries within each slicer. 'Slicer order' keeps
+    // the insertion order from the TS query (the default). 'Last value
+    // (high to low)' ranks values by their summed Y at the rightmost
+    // x-category — useful for "which series is on top right now". Colors
+    // stay tied to the insertion-order index so reordering the legend
+    // doesn't reshuffle the chart's series colors.
+    const legendSortMode = visualProps.legendSortMode ?? LEGEND_SORT_OPTIONS[0];
+    const sortByLastValue = legendSortMode === 'Last value (high to low)';
+    const lastXIdx = xCategories.length - 1;
+
+    const orderValuesForLegend = (slicerIdx: number, baseValues: string[]): string[] => {
+        if (!sortByLastValue || lastXIdx < 0) return baseValues;
+        const totalByValue = new Map<string, number>();
+        for (const value of baseValues) {
+            let total = 0;
+            for (const g of seriesGroups) {
+                const parts = g.name.split(SEP);
+                if (parts[slicerIdx] !== value) continue;
+                const v = g.data[lastXIdx];
+                if (typeof v === 'number' && !Number.isNaN(v)) total += v;
+            }
+            totalByValue.set(value, total);
+        }
+        return [...baseValues].sort(
+            (a, b) => (totalByValue.get(b) ?? 0) - (totalByValue.get(a) ?? 0),
+        );
+    };
+
     if (showLegend && activeSliceCols.length > 0) {
         const legendItems: LegendItem[] = [];
         for (const [sIdx, slicer] of activeSliceCols.entries()) {
-            const sortedValues = slicerUniqueValues.get(slicer.id) ?? [];
-            if (sortedValues.length === 0) continue;
+            const baseValues = slicerUniqueValues.get(slicer.id) ?? [];
+            if (baseValues.length === 0) continue;
             const slicerBase = pickColor(visualProps[`sliceBaseColor_${slicer.id}`], palette[sIdx % palette.length]);
-            const valueShades = generateShades(slicerBase, sortedValues.length);
+            const valueShades = generateShades(slicerBase, baseValues.length);
             const slicerLabel = customLabel(`sliceLabel_${slicer.id}`, slicer.name);
-            sortedValues.forEach((value, valueIdx) => {
+            const displayValues = orderValuesForLegend(sIdx, baseValues);
+            displayValues.forEach((value) => {
+                const baseIdx = baseValues.indexOf(value);
                 const color = pickColor(
                     visualProps[`sliceValueColor_${slicer.id}_${value}`],
-                    valueShades[valueIdx],
+                    valueShades[baseIdx >= 0 ? baseIdx : 0],
                 );
                 const displayName = activeSliceCols.length > 1 ? `${slicerLabel}: ${value}` : value;
                 const hiddenSet = hiddenValuesBySlicer.get(slicer.id);
@@ -1315,6 +1348,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'sliceButtonsPosition', type: 'dropdown', defaultValue: 'Top', values: POSITION_OPTIONS, label: 'Slicer buttons position' },
                     { key: 'showSlicingByDefault', type: 'checkbox', defaultValue: false, label: 'Activate first slicer by default' },
                     { key: 'showLegend',         type: 'checkbox',    defaultValue: true,           label: 'Show legend' },
+                    { key: 'legendSortMode',     type: 'dropdown',    defaultValue: LEGEND_SORT_OPTIONS[0], values: LEGEND_SORT_OPTIONS, label: 'Legend order' },
                     { key: 'showGridLines',      type: 'checkbox',    defaultValue: true,           label: 'Show grid lines' },
                     { key: 'lineWidth',          type: 'number',      defaultValue: 2,              label: 'Line width' },
                     { key: 'markerEnabled',      type: 'checkbox',    defaultValue: true,           label: 'Show markers' },
