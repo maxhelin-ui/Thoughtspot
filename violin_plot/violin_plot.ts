@@ -1,6 +1,5 @@
 import {
     ChartToTSEvent,
-    ColumnType,
     ColumnTimeBucket,
     DataType,
     getChartContext,
@@ -521,14 +520,11 @@ const renderChart = async (ctx: CustomChartContext) => {
 (async () => {
     const ctx = await getChartContext({
         getDefaultChartConfig: (chartModel: ChartModel) => {
-            const cols = chartModel.columns ?? [];
-            const attributeColumns = cols.filter(c => c.type === ColumnType.ATTRIBUTE);
-            const measureColumns = cols.filter(c => c.type === ColumnType.MEASURE);
             return [{
                 key: 'main',
                 dimensions: [
-                    { key: 'xAxis', columns: attributeColumns.slice(0, 1) },
-                    { key: 'yValue', columns: measureColumns.slice(0, 1) },
+                    { key: 'xAxis', columns: [] },
+                    { key: 'yValue', columns: [] },
                     { key: 'color', columns: [] },
                 ],
             }];
