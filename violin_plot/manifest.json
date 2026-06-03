@@ -1,0 +1,13 @@
+{
+    "defaultLocale": "en_US",
+    "name": "Violin Plot",
+    "description": "Combined violin and stripplot chart for showing distributions by category, with optional slice-based point colouring.",
+    "author": {
+        "name": "Your Name",
+        "email": "your.email@example.com",
+        "org": "Your Organization"
+    },
+    "sourceUrl": "TBD",
+    "iconUrl": "https://cdn-icons-png.flaticon.com/512/2728/2728246.png",
+    "manifestVersion": "v0.1"
+}
