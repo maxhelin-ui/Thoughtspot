@@ -1,6 +1,5 @@
 import {
     ChartToTSEvent,
-    ColumnType,
     ColumnTimeBucket,
     DataType,
     getChartContext,
@@ -32,9 +31,12 @@ interface VisualProps {
     violinStroke?: string;
     violinOpacity?: number;
     violinMaxWidth?: number;
+    violinMinWidth?: number;
     dotRadius?: number;
     dotOpacity?: number;
     jitterWidth?: number;
+    categoryButtonsPosition?: string;
+    yValueFormat?: string;
     singlePointColor?: string;
     [key: string]: any;
 }
@@ -53,6 +55,7 @@ type PlotPoint = {
     category: string;
     categoryLabel: string;
     categoryColor: string;
+    categoryValueColor: string;
     slice?: string;
     sliceColor?: string;
 };
@@ -67,15 +70,17 @@ type CategoryGroup = {
 
 const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
 const POINT_COLOUR_OPTIONS = ['Category', 'Slice', 'Single'];
+const CATEGORY_BUTTON_POSITION_OPTIONS = ['Top', 'Bottom'];
+const Y_VALUE_FORMAT_OPTIONS = ['Number', 'Currency', 'Percent'];
 const DEFAULT_PALETTE = ['#378ADD', '#E24B4A', '#00A64F', '#F01313', '#534AB7', '#F0A937', '#52B788', '#E78AC3'];
 const KDE_SAMPLE_COUNT = 64;
-const MIN_VIOLIN_HALF_WIDTH = 0.04;
 
 let globalChartReference: any = null;
 let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
+let activeXColumnId: string | null = null;
 
 function getEffectivePalette(): string[] {
     const palettes = globalAppConfig?.styleConfig?.chartColorPalettes;
@@ -108,6 +113,15 @@ function formatCurrency(value: number, format: string, currency: string): string
     if (!currency || currency === 'None') return formatted;
     if (formatted.startsWith('-')) return '-' + currency + formatted.slice(1);
     return currency + formatted;
+}
+
+function formatPercent(value: number, format: string): string {
+    const cleanFormat = format.replace(/^[\$€£¥₹]/, '');
+    try {
+        return numeral(value).format(cleanFormat.endsWith('%') ? cleanFormat : cleanFormat + '%');
+    } catch {
+        return `${(value * 100).toFixed(1)}%`;
+    }
 }
 
 function isExcluded(value: unknown): boolean {
@@ -189,7 +203,7 @@ function gaussianKernel(u: number): number {
     return Math.exp(-0.5 * u * u) / Math.sqrt(2 * Math.PI);
 }
 
-function buildViolinPolygon(values: number[], x: number, maxHalfWidth: number): Array<[number, number]> {
+function buildViolinPolygon(values: number[], x: number, maxHalfWidth: number, minHalfWidth: number): Array<[number, number]> {
     if (values.length === 0) return [];
     const bw = bandwidth(values);
     const minValue = Math.min(...values);
@@ -209,14 +223,45 @@ function buildViolinPolygon(values: number[], x: number, maxHalfWidth: number): 
     if (!Number.isFinite(maxDensity) || maxDensity <= 0) return [];
 
     const left: Array<[number, number]> = samples.map(s => {
-        const width = Math.max(MIN_VIOLIN_HALF_WIDTH, (s.density / maxDensity) * maxHalfWidth);
+        const width = Math.max(minHalfWidth, (s.density / maxDensity) * maxHalfWidth);
         return [x - width, s.y];
     });
     const right: Array<[number, number]> = samples.slice().reverse().map(s => {
-        const width = Math.max(MIN_VIOLIN_HALF_WIDTH, (s.density / maxDensity) * maxHalfWidth);
+        const width = Math.max(minHalfWidth, (s.density / maxDensity) * maxHalfWidth);
         return [x + width, s.y];
     });
     return [...left, ...right, left[0]];
+}
+
+function customLabel(visualProps: VisualProps, key: string, fallback: string): string {
+    const value = visualProps[key];
+    return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function renderCategoryButtons(
+    position: string,
+    items: Array<{ id: string; name: string }>,
+    onClick: (id: string) => void,
+) {
+    const top = document.getElementById('topArea');
+    const bottom = document.getElementById('bottomArea');
+    if (top) top.innerHTML = '';
+    if (bottom) bottom.innerHTML = '';
+    if (items.length <= 1) return;
+
+    const target = position === 'Bottom' ? bottom : top;
+    if (!target) return;
+    const group = document.createElement('div');
+    group.className = 'button-group';
+    items.forEach(item => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'category-toggle-btn' + (item.id === activeXColumnId ? ' active' : '');
+        btn.textContent = item.name;
+        btn.onclick = () => onClick(item.id);
+        group.appendChild(btn);
+    });
+    target.appendChild(group);
 }
 
 function renderChartMessage(text: string) {
@@ -233,10 +278,10 @@ function getDataModel(chartModel: ChartModel) {
     const dataArr: DataPointsArray =
         chartModel.data?.[chartModel.data.length - 1]?.data ?? { columns: [], dataValue: [] };
     const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
-    const xColumn = dims.find(d => d.key === 'xAxis')?.columns?.[0] as BoundColumn | undefined;
+    const xColumns = (dims.find(d => d.key === 'xAxis')?.columns ?? []) as BoundColumn[];
     const yColumn = dims.find(d => d.key === 'yValue')?.columns?.[0] as BoundColumn | undefined;
     const colorColumn = dims.find(d => d.key === 'color')?.columns?.[0] as BoundColumn | undefined;
-    return { dataArr, xColumn, yColumn, colorColumn };
+    return { dataArr, xColumns, yColumn, colorColumn };
 }
 
 function buildGroups(
@@ -286,7 +331,7 @@ function buildGroups(
     const jitterRange = clamp(Number(visualProps.jitterWidth ?? 0.24), 0, 0.45);
     const groups = orderedCategories.map((category, categoryIndex) => {
         const label = isDateLikeCol(xColumn) ? formatEpochByBucket(category, xColumn.timeBucket) : category;
-        const categoryColor = palette[categoryIndex % palette.length];
+        const categoryColor = pickColor(visualProps[`categoryValueColor_${xColumn.id}_${category}`], palette[categoryIndex % palette.length]);
         const rows = rawGroups.get(category) ?? [];
         const group: CategoryGroup = {
             raw: category,
@@ -303,6 +348,7 @@ function buildGroups(
                 category,
                 categoryLabel: label,
                 categoryColor,
+                categoryValueColor: categoryColor,
                 slice: row.slice,
                 sliceColor: row.slice ? sliceColors.get(row.slice) : undefined,
             };
@@ -316,7 +362,22 @@ function buildGroups(
 function render(ctx: CustomChartContext) {
     const chartModel = ctx.getChartModel();
     const visualProps = (chartModel.visualProps ?? {}) as VisualProps;
-    const { dataArr, xColumn, yColumn, colorColumn } = getDataModel(chartModel);
+    const { dataArr, xColumns, yColumn, colorColumn } = getDataModel(chartModel);
+
+    for (const id of [activeXColumnId]) {
+        if (id && !xColumns.some(c => c.id === id)) activeXColumnId = null;
+    }
+    if (!activeXColumnId && xColumns.length > 0) activeXColumnId = xColumns[0].id;
+    const xColumn = xColumns.find(c => c.id === activeXColumnId);
+    const categoryButtonsPosition = visualProps.categoryButtonsPosition ?? 'Top';
+    renderCategoryButtons(
+        categoryButtonsPosition,
+        xColumns.map(c => ({ id: c.id, name: customLabel(visualProps, `categoryLabel_${c.id}`, c.name) })),
+        (id) => {
+            activeXColumnId = id;
+            render(ctx);
+        },
+    );
 
     if (!xColumn || !yColumn) {
         renderChartMessage('Add one category attribute and one numeric value measure to render this violin plot.');
@@ -335,10 +396,14 @@ function render(ctx: CustomChartContext) {
     }
 
     const chartTitle = visualProps.chartTitle ?? '';
-    const xAxisTitle = (visualProps.xAxisTitle ?? '').trim() || xColumn.name;
+    const xColumnLabel = customLabel(visualProps, `categoryLabel_${xColumn.id}`, xColumn.name);
+    const xAxisTitle = (visualProps.xAxisTitle ?? '').trim() || xColumnLabel;
     const yAxisTitle = (visualProps.yAxisTitle ?? '').trim() || yColumn.name;
     const numberFormat = visualProps.numberFormat ?? '0,0.[0]a';
     const currency = visualProps.currency ?? 'None';
+    const yValueFormat = Y_VALUE_FORMAT_OPTIONS.includes(visualProps.yValueFormat ?? '')
+        ? visualProps.yValueFormat
+        : 'Number';
     const showGridLines = visualProps.showGridLines ?? true;
     const showLegend = visualProps.showLegend ?? true;
     const showDots = visualProps.showDots ?? true;
@@ -346,7 +411,8 @@ function render(ctx: CustomChartContext) {
     const violinFill = pickColor(visualProps.violinFill, '#D9D9D9');
     const violinStroke = pickColor(visualProps.violinStroke, '#7A7A7A');
     const violinOpacity = clamp(Number(visualProps.violinOpacity ?? 0.78), 0.05, 1);
-    const violinMaxWidth = clamp(Number(visualProps.violinMaxWidth ?? 0.38), 0.08, 0.48);
+    const violinMaxWidth = clamp(Number(visualProps.violinMaxWidth ?? 0.38), 0.001, 0.48);
+    const violinMinWidth = clamp(Number(visualProps.violinMinWidth ?? 0.004), 0, 0.2);
     const dotRadius = clamp(Number(visualProps.dotRadius ?? 3.5), 1, 12);
     const dotOpacity = clamp(Number(visualProps.dotOpacity ?? 0.9), 0.05, 1);
     const singlePointColor = pickColor(visualProps.singlePointColor, '#378ADD');
@@ -354,9 +420,13 @@ function render(ctx: CustomChartContext) {
         ? visualProps.pointColourMode
         : 'Category';
 
-    const fmt = (value: number) => formatCurrency(value, numberFormat, currency);
+    const fmt = (value: number) => {
+        if (yValueFormat === 'Percent') return formatPercent(value, numberFormat);
+        if (yValueFormat === 'Currency') return formatCurrency(value, numberFormat, currency);
+        return formatNumber(value, numberFormat);
+    };
     const scatterData: PlotPoint[] = groups.flatMap(g => g.points.map(p => {
-        let color = p.categoryColor;
+        let color = p.categoryValueColor;
         if (pointColourMode === 'Single') color = singlePointColor;
         if (pointColourMode === 'Slice' && p.sliceColor) color = p.sliceColor;
         return { ...p, color } as PlotPoint & { color: string };
@@ -366,7 +436,7 @@ function render(ctx: CustomChartContext) {
         ? groups.map((group, idx) => ({
             type: 'polygon',
             name: group.label,
-            data: buildViolinPolygon(group.values, idx, violinMaxWidth),
+            data: buildViolinPolygon(group.values, idx, violinMaxWidth, violinMinWidth),
             color: violinFill,
             fillColor: violinFill,
             lineColor: violinStroke,
@@ -521,14 +591,11 @@ const renderChart = async (ctx: CustomChartContext) => {
 (async () => {
     const ctx = await getChartContext({
         getDefaultChartConfig: (chartModel: ChartModel) => {
-            const cols = chartModel.columns ?? [];
-            const attributeColumns = cols.filter(c => c.type === ColumnType.ATTRIBUTE);
-            const measureColumns = cols.filter(c => c.type === ColumnType.MEASURE);
             return [{
                 key: 'main',
                 dimensions: [
-                    { key: 'xAxis', columns: attributeColumns.slice(0, 1) },
-                    { key: 'yValue', columns: measureColumns.slice(0, 1) },
+                    { key: 'xAxis', columns: [] },
+                    { key: 'yValue', columns: [] },
                     { key: 'color', columns: [] },
                 ],
             }];
@@ -559,7 +626,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     allowAttributeColumns: true,
                     allowMeasureColumns: false,
                     allowTimeSeriesColumns: true,
-                    maxColumnCount: 1,
+                    maxColumnCount: 20,
                 },
                 {
                     key: 'yValue',
@@ -579,13 +646,62 @@ const renderChart = async (ctx: CustomChartContext) => {
                 },
             ],
         }],
-        visualPropEditorDefinition: {
-            elements: [
+        visualPropEditorDefinition: (chartModel: ChartModel) => {
+            const dims = chartModel.config?.chartConfig?.[0]?.dimensions ?? [];
+            const xCols = (dims.find(d => d.key === 'xAxis')?.columns ?? []) as BoundColumn[];
+            const yCol = dims.find(d => d.key === 'yValue')?.columns?.[0] as BoundColumn | undefined;
+            const dataArr: DataPointsArray | undefined = chartModel.data?.[chartModel.data.length - 1]?.data;
+            const palette = getEffectivePalette();
+
+            const categoryControls: any[] = [];
+            xCols.forEach((col, colIdx) => {
+                categoryControls.push({
+                    key: `categoryLabel_${col.id}`,
+                    type: 'text' as const,
+                    defaultValue: ' ',
+                    label: `Category button label: ${col.name} (blank = column name)`,
+                });
+                if (dataArr) {
+                    const idx = dataArr.columns.indexOf(col.id);
+                    if (idx >= 0) {
+                        const uniqueValues: string[] = [];
+                        const seen = new Set<string>();
+                        for (const row of dataArr.dataValue) {
+                            const raw = row[idx];
+                            if (isExcluded(raw)) continue;
+                            const value = String(raw);
+                            if (!seen.has(value)) {
+                                seen.add(value);
+                                uniqueValues.push(value);
+                            }
+                        }
+                        uniqueValues.sort(
+                            isDateLikeCol(col)
+                                ? (a, b) => Number(a) - Number(b)
+                                : (a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }),
+                        );
+                        uniqueValues.forEach((value, valueIdx) => {
+                            const display = isDateLikeCol(col) ? formatEpochByBucket(value, col.timeBucket) : value;
+                            categoryControls.push({
+                                key: `categoryValueColor_${col.id}_${value}`,
+                                type: 'colorpicker' as const,
+                                defaultValue: palette[(colIdx + valueIdx) % palette.length],
+                                label: `${col.name} — ${display}`,
+                            });
+                        });
+                    }
+                }
+            });
+
+            return {
+                elements: [
                 { key: 'chartTitle', type: 'text', defaultValue: ' ', label: 'Chart title' },
                 { key: 'xAxisTitle', type: 'text', defaultValue: ' ', label: 'X-axis title (blank = category name)' },
                 { key: 'yAxisTitle', type: 'text', defaultValue: ' ', label: 'Y-axis title (blank = value name)' },
                 { key: 'numberFormat', type: 'text', defaultValue: '0,0.[0]a', label: 'Number format' },
+                { key: 'yValueFormat', type: 'dropdown', defaultValue: 'Number', values: Y_VALUE_FORMAT_OPTIONS, label: `Y value format${yCol ? ` (${yCol.name})` : ''}` },
                 { key: 'currency', type: 'dropdown', defaultValue: 'None', values: CURRENCY_OPTIONS, label: 'Currency symbol' },
+                { key: 'categoryButtonsPosition', type: 'dropdown', defaultValue: 'Top', values: CATEGORY_BUTTON_POSITION_OPTIONS, label: 'Category buttons position' },
                 { key: 'pointColourMode', type: 'dropdown', defaultValue: 'Category', values: POINT_COLOUR_OPTIONS, label: 'Dot colour mode' },
                 { key: 'singlePointColor', type: 'colorpicker', defaultValue: '#378ADD', label: 'Single dot colour' },
                 { key: 'showLegend', type: 'checkbox', defaultValue: true, label: 'Show slice legend' },
@@ -596,10 +712,13 @@ const renderChart = async (ctx: CustomChartContext) => {
                 { key: 'violinStroke', type: 'colorpicker', defaultValue: '#7A7A7A', label: 'Violin outline' },
                 { key: 'violinOpacity', type: 'number', defaultValue: 0.78, label: 'Violin opacity' },
                 { key: 'violinMaxWidth', type: 'number', defaultValue: 0.38, label: 'Violin max half-width' },
+                { key: 'violinMinWidth', type: 'number', defaultValue: 0.004, label: 'Violin minimum half-width' },
                 { key: 'dotRadius', type: 'number', defaultValue: 3.5, label: 'Dot radius' },
                 { key: 'dotOpacity', type: 'number', defaultValue: 0.9, label: 'Dot opacity' },
                 { key: 'jitterWidth', type: 'number', defaultValue: 0.24, label: 'Dot jitter width' },
+                ...categoryControls,
             ],
+            };
         },
     });
 
