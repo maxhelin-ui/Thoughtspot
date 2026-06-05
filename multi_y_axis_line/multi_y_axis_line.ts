@@ -55,8 +55,8 @@ const MAX_FORMULAS = 4;
 const CHART_MARGIN_LEFT   = 80;
 const CHART_MARGIN_RIGHT  = 40;
 const CHART_MARGIN_BOTTOM = 60;
-const CHART_MARGIN_TOP_NO_TITLE   = 25;
-const CHART_MARGIN_TOP_WITH_TITLE = 50;
+const CHART_MARGIN_TOP_NO_TITLE   = 10;
+const CHART_MARGIN_TOP_WITH_TITLE = 46;
 
 let globalChartReference: any = null;
 let globalAppConfig: any = null;
@@ -392,11 +392,13 @@ type LegendItem = { name: string; color: string; hidden: boolean; onClick: () =>
 function renderCustomLegend(items: Array<LegendItem>) {
     const host = document.getElementById('topArea');
     if (!host) return;
-    // Legend items go in a single wrapping box that takes a full row in
-    // #topArea's flex layout (flex-basis: 100%) so the box wraps to its
-    // own line below any buttons, and items inside that box are centered.
-    // Within the box the items still wrap across additional rows when
-    // there are too many to fit on one.
+    // A flex-grow spacer sits just before the legend box. It expands to
+    // fill all remaining space on the last button row, pushing the legend
+    // to the right edge on the same row when there is space. When there
+    // isn't, the spacer+legend pair wraps to the next row naturally.
+    const spacer = document.createElement('div');
+    spacer.id = 'legendSpacer';
+    host.appendChild(spacer);
     const legendBox = document.createElement('div');
     legendBox.id = 'customLegend';
     items.forEach(item => {

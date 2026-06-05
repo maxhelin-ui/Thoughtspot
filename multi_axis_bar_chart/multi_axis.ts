@@ -305,38 +305,12 @@ function renderCustomLegend(
 }
 
 function adjustButtonContainer(hasContent: boolean) {
+    // The layout is now handled entirely by CSS (display:contents on
+    // #sliceToggles + #legendSpacer flex-grow). No dynamic padding
+    // manipulation needed — just show/hide the container.
     const container = document.getElementById('buttonContainer');
-    const toggles   = document.getElementById('sliceToggles');
-    const legend    = document.getElementById('customLegend');
     if (!container) return;
     container.style.display = hasContent ? 'flex' : 'none';
-    container.style.paddingLeft  = '80px';
-    container.style.paddingRight = '40px';
-    if (!hasContent || !toggles || !legend) return;
-
-    // Progressive shrink: if the legend itself overflows or the legend and
-    // toggles have ended up on completely different rows (e.g. the legend
-    // wraps past the right edge), reduce horizontal padding.
-    // NOTE: We intentionally do NOT check isWrappedInside(toggles) here —
-    // button wrapping is now the *desired* behaviour when the tile is narrow.
-    // Firing the padding-shrink in response to button wrapping would fight
-    // the CSS flex-wrap and cause a layout oscillation.
-    const isWrappedInside = (el: HTMLElement): boolean => {
-        const items = Array.from(el.children) as HTMLElement[];
-        if (items.length < 2) return false;
-        const firstTop = items[0].offsetTop;
-        return items.some(item => Math.abs(item.offsetTop - firstTop) > 4);
-    };
-    const legendNeedsRelief = () =>
-        isWrappedInside(legend)                              // legend items ran out of space
-        || Math.abs(legend.offsetTop - toggles.getBoundingClientRect().top) > 40; // legend dropped far below
-
-    if (legendNeedsRelief()) {
-        container.style.paddingRight = '6px';
-        if (legendNeedsRelief()) {
-            container.style.paddingLeft = '6px';
-        }
-    }
 }
 
 function renderChartMessage(text: string) {
@@ -671,7 +645,7 @@ function render(ctx: CustomChartContext) {
             type: 'column',
             marginLeft:   80,
             marginRight:  40,
-            marginTop:    chartTitle ? 50 : 25,
+            marginTop:    chartTitle ? 46 : 10,
             spacingBottom: 20,
             style: { fontFamily: 'Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif' },
         },
