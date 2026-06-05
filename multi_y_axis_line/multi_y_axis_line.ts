@@ -392,13 +392,10 @@ type LegendItem = { name: string; color: string; hidden: boolean; onClick: () =>
 function renderCustomLegend(items: Array<LegendItem>) {
     const host = document.getElementById('topArea');
     if (!host) return;
-    // A flex-grow spacer sits just before the legend box. It expands to
-    // fill all remaining space on the last button row, pushing the legend
-    // to the right edge on the same row when there is space. When there
-    // isn't, the spacer+legend pair wraps to the next row naturally.
-    const spacer = document.createElement('div');
-    spacer.id = 'legendSpacer';
-    host.appendChild(spacer);
+    // Legend goes in a single box that takes its own full-width row in
+    // #topArea (flex-basis:100% in CSS), with its items centered and
+    // wrapping across additional rows when there are too many to fit on
+    // one — so it is never clipped, regardless of how narrow the tile is.
     const legendBox = document.createElement('div');
     legendBox.id = 'customLegend';
     items.forEach(item => {

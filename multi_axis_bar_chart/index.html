@@ -24,23 +24,27 @@
             /* display:contents makes #sliceToggles invisible to the flex
                layout — its button children become direct flex items of
                #buttonContainer, so buttons and the legend all live in the
-               same flex row. Combined with #legendSpacer they produce the
-               "last-row right-align" effect: spacer fills leftover space
-               on the last row of buttons, pushing the legend to the right. */
+               same wrap context. Buttons fill the width and wrap to as
+               many rows as needed. */
             #sliceToggles {
                 display: contents;
-            }
-            /* Grows to fill all remaining space on the last button row,
-               pushing #customLegend to the far right. */
-            #legendSpacer {
-                flex: 1 0 0;
             }
             #customLegend {
                 display: flex;
                 gap: 14px;
                 flex-wrap: wrap;
                 align-items: center;
-                flex-shrink: 0;
+                justify-content: flex-end;
+                /* margin-left:auto right-aligns the legend on the last
+                   button row when it fits there. */
+                margin-left: auto;
+                /* flex-shrink:1 + min-width:0 are the critical bit: when
+                   the legend can't fit, it shrinks to the available width
+                   and its items wrap to additional rows INSTEAD of being
+                   clipped. (The old flex-shrink:0 kept the box at its full
+                   one-line width, so items never wrapped and overflowed.) */
+                flex-shrink: 1;
+                min-width: 0;
             }
             .slice-toggle-btn {
                 display: inline-flex;
@@ -97,7 +101,6 @@
         <div style="width: 100vw; height: 100vh; position: relative; display: flex; flex-direction: column;">
             <div id="buttonContainer">
                 <div id="sliceToggles"></div>
-                <div id="legendSpacer"></div>
                 <div id="customLegend"></div>
             </div>
             <div id="chart" style="flex: 1; min-height: 0;"></div>
