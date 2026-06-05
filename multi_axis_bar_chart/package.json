@@ -1,6 +1,6 @@
 {
     "name": "multi-axis-bar-chart",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "Bar chart with switchable x-axis dimensions (like the waterfall's slicer buttons, but they change the x-axis instead of slicing)",
     "main": "dist/index.html",
     "scripts": {
