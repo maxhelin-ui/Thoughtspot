@@ -26,7 +26,10 @@
                 gap: 6px;
                 flex-wrap: wrap;
                 align-items: center;
-                flex-shrink: 0;
+                /* min-width: 0 lets this item shrink below its content size so
+                   flex-wrap can do its job — buttons flow to a 2nd row rather
+                   than overflowing/clipping when the tile is narrow. */
+                min-width: 0;
             }
             #customLegend {
                 display: flex;
