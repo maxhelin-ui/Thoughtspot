@@ -82,19 +82,20 @@
                 background: #6B7280;
                 color: #FFFFFF;
             }
-            /* Legend items live in a wrapping box that takes a full row of
-               #topArea (flex-basis: 100%) so the legend always lands on
-               its own line below the buttons, and items are centered
-               horizontally. Inside the box, items still wrap across more
-               rows when too many to fit on one. */
+            /* A sibling #legendSpacer (flex: 1 0 0, injected by JS just
+               before this element) grows to fill leftover space on the
+               last row of buttons, pushing the legend to the right on
+               the same row when there is space. When there isn't, it
+               wraps to its own row. */
+            #legendSpacer {
+                flex: 1 0 0;
+            }
             #customLegend {
                 display: flex;
                 flex-wrap: wrap;
-                justify-content: center;
                 align-items: center;
                 gap: 12px;
-                flex-basis: 100%;
-                min-width: 0;
+                flex-shrink: 0;
             }
             .legend-item {
                 display: inline-flex;
