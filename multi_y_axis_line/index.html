@@ -82,11 +82,18 @@
                 background: #6B7280;
                 color: #FFFFFF;
             }
-            /* A sibling #legendSpacer (flex: 1 0 0, injected by JS just
-               before this element) grows to fill leftover space on the
-               last row of buttons, pushing the legend to the right on
-               the same row when there is space. When there isn't, it
-               wraps to its own row. */
+            /* #legendWrapper (injected by JS) grows to fill remaining
+               space on the last button row. Inside it: spacer pushes
+               the legend right when wide; when the wrapper is narrower
+               than the legend's natural width the spacer collapses to
+               0 and the legend takes full wrapper width — items then
+               wrap within it rather than clipping. */
+            #legendWrapper {
+                display: flex;
+                align-items: center;
+                flex: 1 0 0;
+                min-width: 0;
+            }
             #legendSpacer {
                 flex: 1 0 0;
             }
@@ -95,7 +102,8 @@
                 flex-wrap: wrap;
                 align-items: center;
                 gap: 12px;
-                flex-shrink: 0;
+                flex-shrink: 1;
+                min-width: 0;
             }
             .legend-item {
                 display: inline-flex;

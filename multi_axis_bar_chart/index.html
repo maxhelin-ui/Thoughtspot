@@ -30,8 +30,19 @@
             #sliceToggles {
                 display: contents;
             }
-            /* Grows to fill all remaining space on the last button row,
-               pushing #customLegend to the far right. */
+            /* Grows to fill all remaining space on the last button row.
+               When all buttons fill the row, the wrapper wraps to the
+               next row and gets the full row width.
+               Inside: legendSpacer pushes the legend right when wide;
+               when narrow (wrapper < legend natural width) the spacer
+               collapses to 0 and legend takes the full wrapper width,
+               so its items wrap rather than clipping. */
+            #legendWrapper {
+                display: flex;
+                align-items: center;
+                flex: 1 0 0;
+                min-width: 0;
+            }
             #legendSpacer {
                 flex: 1 0 0;
             }
@@ -40,7 +51,8 @@
                 gap: 14px;
                 flex-wrap: wrap;
                 align-items: center;
-                flex-shrink: 0;
+                flex-shrink: 1;
+                min-width: 0;
             }
             .slice-toggle-btn {
                 display: inline-flex;
@@ -97,8 +109,10 @@
         <div style="width: 100vw; height: 100vh; position: relative; display: flex; flex-direction: column;">
             <div id="buttonContainer">
                 <div id="sliceToggles"></div>
-                <div id="legendSpacer"></div>
-                <div id="customLegend"></div>
+                <div id="legendWrapper">
+                    <div id="legendSpacer"></div>
+                    <div id="customLegend"></div>
+                </div>
             </div>
             <div id="chart" style="flex: 1; min-height: 0;"></div>
         </div>

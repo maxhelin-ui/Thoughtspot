@@ -392,13 +392,18 @@ type LegendItem = { name: string; color: string; hidden: boolean; onClick: () =>
 function renderCustomLegend(items: Array<LegendItem>) {
     const host = document.getElementById('topArea');
     if (!host) return;
-    // A flex-grow spacer sits just before the legend box. It expands to
-    // fill all remaining space on the last button row, pushing the legend
-    // to the right edge on the same row when there is space. When there
-    // isn't, the spacer+legend pair wraps to the next row naturally.
+    // #legendWrapper (flex: 1 0 0) grows to fill remaining space on the
+    // last button row. When buttons fill the whole row, the wrapper wraps
+    // to the next row and gets full width. Inside:
+    //   #legendSpacer (flex: 1 0 0) — pushes legend right when wide.
+    //   When wrapper < legend natural width, the spacer collapses to 0
+    //   and #customLegend (flex-shrink:1, min-width:0) takes full wrapper
+    //   width — items wrap inside it rather than clipping.
+    const wrapper = document.createElement('div');
+    wrapper.id = 'legendWrapper';
     const spacer = document.createElement('div');
     spacer.id = 'legendSpacer';
-    host.appendChild(spacer);
+    wrapper.appendChild(spacer);
     const legendBox = document.createElement('div');
     legendBox.id = 'customLegend';
     items.forEach(item => {
@@ -415,7 +420,8 @@ function renderCustomLegend(items: Array<LegendItem>) {
         btn.onclick = item.onClick;
         legendBox.appendChild(btn);
     });
-    host.appendChild(legendBox);
+    wrapper.appendChild(legendBox);
+    host.appendChild(wrapper);
 }
 
 // Push the button areas so their content lines up with the chart's plot
