@@ -305,12 +305,57 @@ function renderCustomLegend(
 }
 
 function adjustButtonContainer(hasContent: boolean) {
-    // The layout is now handled entirely by CSS (display:contents on
-    // #sliceToggles + #legendSpacer flex-grow). No dynamic padding
-    // manipulation needed — just show/hide the container.
     const container = document.getElementById('buttonContainer');
+    const toggles   = document.getElementById('sliceToggles');
+    const legend    = document.getElementById('customLegend');
     if (!container) return;
     container.style.display = hasContent ? 'flex' : 'none';
+    if (!hasContent || !toggles) return;
+
+    // Reset to the "aligned" state: padding lines the button/legend row up
+    // with the chart's plot area (chart marginLeft 80, marginRight 40), and
+    // the legend right-aligns on the last button row when it fits there.
+    container.style.paddingLeft  = '80px';
+    container.style.paddingRight = '40px';
+    if (legend) {
+        legend.style.marginLeft     = 'auto';
+        legend.style.flexBasis      = 'auto';
+        legend.style.justifyContent = 'flex-end';
+    }
+
+    // Flex items are the buttons (children of the display:contents
+    // #sliceToggles) plus the legend box.
+    const buttons = Array.from(toggles.children) as HTMLElement[];
+    const items: HTMLElement[] = legend ? [...buttons, legend] : buttons;
+    if (items.length < 2) return;
+
+    const rowSpread = () => {
+        const tops = items.map(el => el.offsetTop);
+        return Math.max(...tops) - Math.min(...tops);
+    };
+
+    // If everything doesn't fit on one row at the aligned padding, collapse
+    // the side padding so buttons + legend can use the FULL tile width
+    // (edge to edge, the space before/after the chart plot) — fitting more
+    // per row before wrapping further. Reading offsetTop forces the reflow
+    // so the follow-up measurement sees the new padding.
+    if (rowSpread() > 4) {
+        container.style.paddingLeft  = '8px';
+        container.style.paddingRight = '8px';
+
+        // After using full width, if the legend still ended up on its own
+        // row (no button shares its row), give it the full width and centre
+        // its items rather than letting it cluster on the right edge.
+        if (legend) {
+            const legendTop = legend.offsetTop;
+            const legendSharesRow = buttons.some(b => Math.abs(b.offsetTop - legendTop) <= 4);
+            if (!legendSharesRow) {
+                legend.style.marginLeft     = '0';
+                legend.style.flexBasis      = '100%';
+                legend.style.justifyContent = 'center';
+            }
+        }
+    }
 }
 
 function renderChartMessage(text: string) {
