@@ -443,17 +443,25 @@ function alignButtonAreasToPlot(chart: any, chartTitle: string) {
     // wrapping — gives the most horizontal room on row 1 before items
     // spill into row 2, while keeping wrapped rows visually aligned with
     // the original buttons above.
-    setStyle('topArea', {
-        paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
-        paddingRight: '0px',
-        paddingTop:    '6px',
-        paddingBottom: '6px',
-    });
-    setStyle('bottomArea', {
-        paddingLeft:  `${Math.max(0, plotLeftAbs)}px`,
-        paddingRight: '0px',
-        paddingTop:    '6px',
-        paddingBottom: '6px',
+    // Top/bottom (horizontal) button areas start aligned to the plot's left
+    // gridline. But if the buttons don't fit on a single row at that
+    // alignment, collapse the left padding so the buttons (and the centered
+    // legend) can use the FULL tile width before wrapping — same idea as the
+    // bar chart. Reading offsetTop forces the reflow so the wrap test sees
+    // the just-applied aligned padding.
+    ['topArea', 'bottomArea'].forEach(id => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.style.paddingRight  = '0px';
+        el.style.paddingTop    = '6px';
+        el.style.paddingBottom = '6px';
+        el.style.paddingLeft   = `${Math.max(0, plotLeftAbs)}px`;
+        const btns = Array.from(el.querySelectorAll('.slice-toggle-btn')) as HTMLElement[];
+        if (btns.length >= 2) {
+            const tops = btns.map(b => b.offsetTop);
+            const wrapped = Math.max(...tops) - Math.min(...tops) > 4;
+            if (wrapped) el.style.paddingLeft = '8px';
+        }
     });
     setStyle('leftArea', {
         paddingTop:    `${Math.max(0, plotTopAbs)}px`,
@@ -979,6 +987,16 @@ function render(ctx: CustomChartContext) {
         return { name: displayName, data: g.data, color };
     });
 
+    // "% starts at 0" setting: only pin the axis minimum to 0 when there are
+    // no negative values among the plotted series. If any value is negative,
+    // leave the min auto so the axis extends below 0 and the negative points
+    // stay visible (otherwise a negative % would be clipped off the bottom).
+    const plottedValues = seriesSpecs
+        .flatMap(s => s.data)
+        .filter(v => typeof v === 'number' && Number.isFinite(v));
+    const hasNegativeValue = plottedValues.some(v => v < 0);
+    const pinPercentMinToZero = yIsPercent && percentYAxisStartAtZero && !hasNegativeValue;
+
     // Legend: one item per (active slicer, distinct value). When multiple
     // slicers are active the user gets one row per *value* per slicer (not
     // one per cross-product combination), so they can click any single
@@ -1099,11 +1117,12 @@ function render(ctx: CustomChartContext) {
             title: { text: showYAxisTitle ? yAxisTitle : null, style: { fontWeight: '500', color: '#555' } },
             gridLineWidth: showGridLines ? 1 : 0,
             gridLineColor: '#EEF1F4',
-            // When the active Y is percent-formatted and the user has enabled
-            // "Percent Y-axis starts at 0", pin min to 0 so narrow ranges
-            // (e.g. 80–85%) don't get exaggerated by Highcharts auto-scaling.
-            // Otherwise (undefined) let Highcharts pick the min as usual.
-            min: yIsPercent && percentYAxisStartAtZero ? 0 : undefined,
+            // When the active Y is percent-formatted, "Percent Y-axis starts
+            // at 0" is on, AND there are no negative values, pin min to 0 so
+            // narrow ranges (e.g. 80–85%) don't get exaggerated by Highcharts
+            // auto-scaling. If any value is negative, leave min auto so the
+            // axis extends below 0 and the negatives remain visible.
+            min: pinPercentMinToZero ? 0 : undefined,
             labels: {
                 formatter: function (this: any) { return fmtAxis(this.value); },
                 style: { color: '#555', fontSize: '11px' },
@@ -1375,7 +1394,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'yAxisTitle',         type: 'text',        defaultValue: ' ',            label: 'Y-axis title (blank = measure name)' },
                     { key: 'numberFormat',       type: 'text',        defaultValue: '0,0.[0]a',     label: 'Number format' },
                     { key: 'currency',           type: 'dropdown',    defaultValue: 'None',         values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
-                    { key: 'percentYAxisStartAtZero', type: 'checkbox', defaultValue: false,        label: 'Percent Y-axis starts at 0 (avoid exaggerating narrow ranges)' },
+                    { key: 'percentYAxisStartAtZero', type: 'checkbox', defaultValue: false,        label: 'Percent Y-axis starts at 0 (unless there are negative values)' },
                     { key: 'yButtonsPosition',     type: 'dropdown', defaultValue: 'Top', values: POSITION_OPTIONS, label: 'Y-axis buttons position' },
                     { key: 'sliceButtonsPosition', type: 'dropdown', defaultValue: 'Top', values: POSITION_OPTIONS, label: 'Slicer buttons position' },
                     { key: 'showSlicingByDefault', type: 'checkbox', defaultValue: false, label: 'Activate first slicer by default' },
