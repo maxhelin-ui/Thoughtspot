@@ -314,24 +314,26 @@ function adjustButtonContainer(hasContent: boolean) {
     container.style.paddingRight = '40px';
     if (!hasContent || !toggles || !legend) return;
 
-    // Progressive shrink: if the legend has to wrap to a new row, first push
-    // the legend to the chart's right edge (drop right padding). If it still
-    // wraps, also push the slicer pills to the left edge (drop left padding).
-    // Only after both edges are flush do we accept a 2-row layout.
+    // Progressive shrink: if the legend itself overflows or the legend and
+    // toggles have ended up on completely different rows (e.g. the legend
+    // wraps past the right edge), reduce horizontal padding.
+    // NOTE: We intentionally do NOT check isWrappedInside(toggles) here —
+    // button wrapping is now the *desired* behaviour when the tile is narrow.
+    // Firing the padding-shrink in response to button wrapping would fight
+    // the CSS flex-wrap and cause a layout oscillation.
     const isWrappedInside = (el: HTMLElement): boolean => {
         const items = Array.from(el.children) as HTMLElement[];
         if (items.length < 2) return false;
         const firstTop = items[0].offsetTop;
         return items.some(item => Math.abs(item.offsetTop - firstTop) > 4);
     };
-    const isOuterWrapped = () =>
-        Math.abs(legend.offsetTop - toggles.offsetTop) > 15
-        || isWrappedInside(legend)
-        || isWrappedInside(toggles);
+    const legendNeedsRelief = () =>
+        isWrappedInside(legend)                              // legend items ran out of space
+        || Math.abs(legend.offsetTop - toggles.getBoundingClientRect().top) > 40; // legend dropped far below
 
-    if (isOuterWrapped()) {
+    if (legendNeedsRelief()) {
         container.style.paddingRight = '6px';
-        if (isOuterWrapped()) {
+        if (legendNeedsRelief()) {
             container.style.paddingLeft = '6px';
         }
     }
