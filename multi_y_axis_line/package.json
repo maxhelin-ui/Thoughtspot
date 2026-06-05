@@ -1,6 +1,6 @@
 {
     "name": "multi-y-axis-line",
-    "version": "1.0.4",
+    "version": "1.0.5",
     "description": "Line chart with switchable y-axis measure and multiple toggleable slicer columns",
     "main": "dist/index.html",
     "scripts": {
