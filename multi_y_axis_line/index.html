@@ -82,20 +82,18 @@
                 background: #6B7280;
                 color: #FFFFFF;
             }
-            /* A sibling #legendSpacer (flex: 1 0 0, injected by JS just
-               before this element) grows to fill leftover space on the
-               last row of buttons, pushing the legend to the right on
-               the same row when there is space. When there isn't, it
-               wraps to its own row. */
-            #legendSpacer {
-                flex: 1 0 0;
-            }
+            /* Legend gets its own full-width row (flex-basis:100% forces
+               it below the buttons) and its items are centered. min-width:0
+               lets the box shrink to the row width so items wrap to extra
+               rows rather than being clipped when there are many of them. */
             #customLegend {
                 display: flex;
                 flex-wrap: wrap;
+                justify-content: center;
                 align-items: center;
                 gap: 12px;
-                flex-shrink: 0;
+                flex-basis: 100%;
+                min-width: 0;
             }
             .legend-item {
                 display: inline-flex;
