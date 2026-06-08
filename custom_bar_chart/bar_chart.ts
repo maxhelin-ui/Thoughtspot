@@ -28,6 +28,7 @@ interface VisualProps {
     showGridLines?: boolean;
     showSlicing?: boolean;
     showNetChange?: boolean;
+    basePillField?: string;
     connectorColor?: string;
     connectorWidth?: number;
     connectorStyle?: string;
@@ -302,9 +303,15 @@ function render(ctx: CustomChartContext) {
     const showDataLabels      = visualProps.showDataLabels      ?? true;
     const showConnector       = visualProps.showConnector       ?? true;
     const showNetChange       = visualProps.showNetChange       ?? false;
+    const basePillField       = visualProps.basePillField       ?? 'None';
     const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
     const showStartEndPills   = visualProps.showStartEndPills   ?? true;
     const showGridLines       = visualProps.showGridLines       ?? true;
+
+    // Reserve right-margin space when either right-side difference indicator
+    // (overall net change and/or the base→end difference) is shown.
+    const showRightDiff = showNetChange || basePillField !== 'None';
+    const rightReserve  = showRightDiff ? 120 : 40;
 
     const settingsDefault     = visualProps.showSlicing ?? false;
     if (settingsDefault !== lastSeenSlicingDefault) {
@@ -345,7 +352,7 @@ function render(ctx: CustomChartContext) {
             render(ctx);
         },
     );
-    adjustButtonContainer(sliceColumns.length > 0, showNetChange ? 110 : 40);
+    adjustButtonContainer(sliceColumns.length > 0, rightReserve);
 
     if (values.length < 2) return;
 
@@ -375,6 +382,22 @@ function render(ctx: CustomChartContext) {
             color: delta >= 0 ? colorPositive : colorNegative,
         };
     });
+
+    // Resolve the optional "additional base" pill. The dropdown stores the
+    // middle field's (possibly renamed) name; match it back to a delta index.
+    // runningTotals[k+1] is the running total at the k-th middle category
+    // (category index k+1), i.e. the value that point's pill should show.
+    let baseSelected = false;
+    let baseCatIdx = -1;
+    let baseRunningTotal = 0;
+    if (basePillField && basePillField !== 'None') {
+        const di = deltaNames.indexOf(basePillField);
+        if (di >= 0) {
+            baseSelected     = true;
+            baseCatIdx       = di + 1;
+            baseRunningTotal = runningTotals[di + 1];
+        }
+    }
 
     const allValues = [...runningTotals, endValue];
     const yMin      = Math.min(...allValues);
@@ -466,7 +489,7 @@ function render(ctx: CustomChartContext) {
         chart: {
             type: 'columnrange',
             marginLeft:   80,
-            marginRight:  showNetChange ? 110 : 40,
+            marginRight:  rightReserve,
             marginBottom: dynamicMarginBottom,
         },
         title:   { text: chartTitle, style: { fontWeight: 'bold', fontSize: '14px' } },
@@ -747,31 +770,77 @@ function render(ctx: CustomChartContext) {
         drawCallout(categories.length - 1, endValue,   formatNumber(endValue,   numberFormat), colorTotal);
     }
 
-    if (showNetChange) {
-        const netChange   = endValue - startValue;
-        const isUp        = netChange >= 0;
-        const arrow       = isUp ? '▲' : '▼';
-        const deltaColor  = isUp ? colorPositive : colorNegative;
-        const startPx     = yAxisObj.toPixels(startValue, false);
-        const endPx       = yAxisObj.toPixels(endValue,   false);
-        const barX        = chart.plotLeft + chart.plotWidth + 35;
-        const barTop      = Math.min(startPx, endPx);
-        const barH        = Math.abs(startPx - endPx);
+    // Additional "base" milestone pill on a chosen middle category: a pill
+    // showing the running total at that point, plus a marker dot — drawn like
+    // the start/end pills, while the underlying delta bar stays intact.
+    if (baseSelected) {
+        drawCallout(baseCatIdx, baseRunningTotal, formatNumber(baseRunningTotal, numberFormat), colorTotal);
+        const dx = xAxisObj.toPixels(baseCatIdx, false);
+        const dy = yAxisObj.toPixels(baseRunningTotal, false);
+        chart.renderer.circle(dx, dy, 6)
+            .attr({ fill: colorTotal, zIndex: 5 })
+            .css({ pointerEvents: 'none' })
+            .add();
+    }
 
-        chart.renderer.rect(barX - 3, barTop, 6, barH)
-            .attr({ fill: deltaColor, zIndex: 5 })
-            .add();
+    // Right-side difference indicators. Each pill shows the absolute change
+    // (with up/down arrow) on the first line and the % change on the second.
+    // When both the overall (start→end) and the base→end differences are
+    // shown they stack vertically — they can point in opposite directions, so
+    // each is coloured by its own sign.
+    if (showRightDiff) {
+        const barX = chart.plotLeft + chart.plotWidth + 38;
 
-        const pillText = `${arrow}${formatNumber(Math.abs(netChange), numberFormat)}`;
-        const pillW = 80, pillH = 28, pillR = 14;
-        const pillY = barTop - pillH - 6;
-        chart.renderer.rect(barX - pillW / 2, pillY, pillW, pillH, pillR)
-            .attr({ fill: deltaColor, zIndex: 6 })
-            .add();
-        chart.renderer.text(pillText, barX, pillY + 18)
-            .attr({ align: 'center', zIndex: 7 })
-            .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
-            .add();
+        const drawDiffPill = (cx: number, topY: number, fromVal: number, toVal: number) => {
+            const change   = toVal - fromVal;
+            const isUp     = change >= 0;
+            const arrow    = isUp ? '▲' : '▼';
+            const color    = isUp ? colorPositive : colorNegative;
+            const absText  = `${arrow}${formatNumber(Math.abs(change), numberFormat)}`;
+            const pct      = (fromVal !== 0 && Number.isFinite(fromVal))
+                ? (change / Math.abs(fromVal)) * 100 : null;
+            const pctText  = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
+            const w = 92, h = 40, r = 14;
+            chart.renderer.rect(cx - w / 2, topY, w, h, r)
+                .attr({ fill: color, zIndex: 6 })
+                .add();
+            chart.renderer.text(absText, cx, topY + 16)
+                .attr({ align: 'center', zIndex: 7 })
+                .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
+                .add();
+            if (pctText) {
+                chart.renderer.text(pctText, cx, topY + 31)
+                    .attr({ align: 'center', zIndex: 7 })
+                    .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
+                    .add();
+            }
+        };
+
+        // Overall start→end vertical bar (the "line"), kept as the anchor.
+        const startPx = yAxisObj.toPixels(startValue, false);
+        const endPx   = yAxisObj.toPixels(endValue,   false);
+        if (showNetChange) {
+            const isUp = (endValue - startValue) >= 0;
+            chart.renderer.rect(barX - 3, Math.min(startPx, endPx), 6, Math.abs(startPx - endPx))
+                .attr({ fill: isUp ? colorPositive : colorNegative, zIndex: 5 })
+                .add();
+        }
+
+        // Build the stacked list of pills: overall first, then base→end.
+        const diffs: Array<[number, number]> = [];
+        if (showNetChange) diffs.push([startValue, endValue]);
+        if (baseSelected)  diffs.push([baseRunningTotal, endValue]);
+
+        const pillH = 40, gap = 6;
+        const clusterH = diffs.length * pillH + Math.max(0, diffs.length - 1) * gap;
+        // Anchor just above the overall bar's top, but clamp into the plot so
+        // a tall cluster isn't clipped off the top.
+        const anchorBottom = Math.min(startPx, endPx) - 6;
+        let topY = Math.max(chart.plotTop + 2, anchorBottom - clusterH);
+        for (const [fromV, toV] of diffs) {
+            drawDiffPill(barX, topY, fromV, toV);
+            topY += pillH + gap;
+        }
     }
 }
 
@@ -867,6 +936,15 @@ const renderChart = async (ctx: CustomChartContext) => {
             const yCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'y')?.columns ?? [];
             const sliceCols = chartModel.config?.chartConfig?.[0]?.dimensions?.find(d => d.key === 'slice')?.columns ?? [];
 
+            // Middle fields (everything between the first/start and last/end
+            // measures) are the candidates for the "additional base" pill.
+            // Use the same renamed names that render() matches against.
+            const vpForEditor = (chartModel.visualProps ?? {}) as VisualProps;
+            const middleNames = yCols.slice(1, -1).map(col => {
+                const o = vpForEditor[`label_${col.id}`];
+                return (typeof o === 'string' && o.trim()) ? o : col.name;
+            });
+
             const labelOverrides = yCols.map(col => ({
                 key:          `label_${col.id}`,
                 type:         'text' as const,
@@ -923,6 +1001,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showStartEndMarkers', type: 'checkbox',    defaultValue: true,      label: 'Show start/end markers' },
                     { key: 'showStartEndPills',   type: 'checkbox',    defaultValue: true,      label: 'Show start/end pill labels' },
                     { key: 'showNetChange',       type: 'checkbox',    defaultValue: false,     label: 'Show net change indicator (right)' },
+                    { key: 'basePillField',       type: 'dropdown',    defaultValue: 'None',    values: ['None', ...middleNames], label: 'Additional base pill (middle field) + base→end difference' },
                     { key: 'showGridLines',       type: 'checkbox',    defaultValue: true,      label: 'Show grid lines' },
                     { key: 'showSlicing',         type: 'checkbox',    defaultValue: false,     label: 'Slice middle bars by default' },
                     ...labelOverrides,

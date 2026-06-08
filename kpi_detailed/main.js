@@ -46,6 +46,8 @@ const ICON_SVG = {
     '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/></svg>',
   'chart-pie':
     '<svg viewBox="0 0 24 24"><path d="M12 3v9h9"/><path d="M21 12a9 9 0 1 1 -9 -9"/></svg>',
+  'plus-minus':
+    '<svg viewBox="0 0 24 24"><line x1="7" y1="7" x2="15" y2="7"/><line x1="11" y1="3" x2="11" y2="11"/><line x1="9" y1="18" x2="17" y2="18"/></svg>',
   'none': '',
 };
 
@@ -688,7 +690,7 @@ const renderChart = async (ctx, providedModel) => {
           type: 'dropdown',
           label: 'Header icon',
           defaultValue: 'trending-up',
-          values: ['trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie', 'none'],
+          values: ['trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie', 'plus-minus', 'none'],
         },
         { key: 'primarySuffix', type: 'text', label: 'Suffix after big number', defaultValue: 'accounts' },
         { key: 'primaryDescription', type: 'text', label: 'Description (single layout)', defaultValue: ' ' },
