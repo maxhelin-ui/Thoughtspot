@@ -491,7 +491,10 @@ function render(ctx: CustomChartContext) {
     }
     const activeXCol = xColumns.find(c => c.id === activeXColumnId)!;
 
-    const chartTitle      = visualProps.chartTitle      ?? '';
+    // Trim so a blank/space-only title (the editor default is ' ') counts as
+    // "no title" — otherwise it reserves the full title margin for nothing,
+    // adding a gap above the plot. Matches the multi_y_axis_line behaviour.
+    const chartTitle      = (visualProps.chartTitle      ?? '').trim();
     const xAxisTitleProp  = visualProps.xAxisTitle      ?? '';
     const yAxisTitle      = visualProps.yAxisTitle      ?? (yColumns.length === 1 ? yColumns[0].name : 'Value');
     const numberFormat    = visualProps.numberFormat    ?? '0,0.[0]a';
