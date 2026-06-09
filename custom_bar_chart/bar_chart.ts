@@ -585,7 +585,7 @@ function render(ctx: CustomChartContext) {
                     const cat = this.value as string;
                     const isStartEnd = this.pos === 0 || this.pos === categories.length - 1;
                     if (isStartEnd) {
-                        return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;font-size:10px;color:#888;text-transform:uppercase;font-weight:600;">${cat}</div>`;
+                        return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;font-size:10px;color:#888;font-weight:600;">${cat}</div>`;
                     }
                     return `<div style="text-align:center;width:90px;white-space:normal;word-break:break-word;font-size:11px;font-weight:600;color:#333;">${cat}</div>`;
                 },
