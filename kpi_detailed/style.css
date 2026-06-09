@@ -24,6 +24,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body {
+  height: 100%;
+}
+
 body {
   font-family: Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif;
   background-color: transparent;
@@ -40,10 +44,29 @@ body {
   border: none;
   padding: 0;
   width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
   position: relative;
+}
+
+/* Single / split / split-3: the visible layout (and its grey card) fills the
+   remaining tile height so there is no empty margin between the card and the
+   bottom of the tile. (Main+secondary is intentionally transparent/top-hugging
+   and is excluded.) */
+#singleLayout:not(.hidden),
+#splitLayout:not(.hidden),
+#split3Layout:not(.hidden) {
+  flex: 1 1 auto;
+  display: flex;
+  min-height: 0;
+}
+#singleLayout:not(.hidden) > .ts-detail-card,
+#splitLayout:not(.hidden) > .ts-detail-card,
+#split3Layout:not(.hidden) > .ts-detail-card {
+  flex: 1;
+  width: 100%;
 }
 
 /* Icon sits in the top-right corner of its detail card. Positioned
