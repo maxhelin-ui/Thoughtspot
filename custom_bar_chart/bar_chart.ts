@@ -39,6 +39,8 @@ interface VisualProps {
     showSlicing?: boolean;
     showNetChange?: boolean;
     basePillField?: string;
+    netChangeLabel?: string;
+    basePillDiffLabel?: string;
     connectorColor?: string;
     connectorWidth?: number;
     connectorStyle?: string;
@@ -314,6 +316,10 @@ function render(ctx: CustomChartContext) {
     const showConnector       = visualProps.showConnector       ?? true;
     const showNetChange       = visualProps.showNetChange       ?? false;
     const basePillField       = visualProps.basePillField       ?? 'None';
+    // Optional labels shown inside each right-side change pill. netChangeLabel
+    // labels the start→end pill; basePillDiffLabel labels the base→end pill.
+    const netChangeLabel      = (visualProps.netChangeLabel      ?? '').trim();
+    const basePillDiffLabel   = (visualProps.basePillDiffLabel   ?? '').trim();
     const showStartEndMarkers = visualProps.showStartEndMarkers ?? true;
     const showStartEndPills   = visualProps.showStartEndPills   ?? true;
     const showGridLines       = visualProps.showGridLines       ?? true;
@@ -321,7 +327,11 @@ function render(ctx: CustomChartContext) {
     // Reserve right-margin space when either right-side difference indicator
     // (overall net change and/or the base→end difference) is shown.
     const showRightDiff = showNetChange || basePillField !== 'None';
-    const rightReserve  = showRightDiff ? 116 : 40;
+    // Labels make the change pills a bit wider (value + % share line 1, label
+    // on line 2), so reserve more right margin when any label is set.
+    const anyDiffLabel  = (showNetChange && !!netChangeLabel)
+        || (basePillField !== 'None' && !!basePillDiffLabel);
+    const rightReserve  = showRightDiff ? (anyDiffLabel ? 150 : 116) : 40;
 
     const settingsDefault     = visualProps.showSlicing ?? false;
     if (settingsDefault !== lastSeenSlicingDefault) {
@@ -829,10 +839,6 @@ function render(ctx: CustomChartContext) {
     // each is coloured by its own sign.
     if (showRightDiff) {
         const endPx  = yAxisObj.toPixels(endValue, false);
-        const pillW = 96, pillH = 40, pillR = 14, lineW = 6, gap = 6;
-        // Flush the pills (and the shared connector x) to the right edge of
-        // the tile so the whole chart uses the maximum width.
-        const cx = chart.chartWidth - pillW / 2 - 6;
 
         // Each difference is drawn the same way ("mirrored"): a vertical
         // connector from the "from" value's level to the end level, plus a
@@ -840,20 +846,31 @@ function render(ctx: CustomChartContext) {
         // the start level, base→end at the base level. All connectors share
         // the same x so they line up into one continuous line. Each is
         // coloured by its own sign (green up, red down).
-        const diffs: number[] = [];                 // each entry is a "from" value
-        if (showNetChange) diffs.push(startValue);
-        if (baseSelected)  diffs.push(baseRunningTotal);
+        const diffs: Array<{ fromVal: number; label: string }> = [];
+        if (showNetChange) diffs.push({ fromVal: startValue,       label: netChangeLabel });
+        if (baseSelected)  diffs.push({ fromVal: baseRunningTotal, label: basePillDiffLabel });
+
+        // When any pill has a label, the value + % share one line (pushed to
+        // the pill's left/right edges) and the label sits underneath, so the
+        // pill grows taller/wider. Otherwise value over %, centred, compact.
+        const labeled = diffs.some(d => !!d.label);
+        const pillW = labeled ? 132 : 96;
+        const pillH = labeled ? 44 : 40;
+        const pillR = 14, lineW = 6, gap = 6;
+        // Flush the pills (and the shared connector x) to the right edge of
+        // the tile so the whole chart uses the maximum width.
+        const cx = chart.chartWidth - pillW / 2 - 6;
 
         // Place pills at their anchor height, then push later ones apart so
         // stacked pills never collide.
         let prevBottom = -Infinity;
-        const placements = diffs.map((fromVal) => {
-            const fromPx = yAxisObj.toPixels(fromVal, false);
+        const placements = diffs.map((d) => {
+            const fromPx = yAxisObj.toPixels(d.fromVal, false);
             let top = fromPx - pillH / 2;
             top = Math.max(chart.plotTop + 2, Math.min(top, chart.plotTop + chart.plotHeight - pillH - 2));
             if (top < prevBottom + 4) top = prevBottom + 4;
             prevBottom = top + pillH;
-            return { fromVal, fromPx, top };
+            return { ...d, fromPx, top };
         });
 
         for (const p of placements) {
@@ -878,24 +895,46 @@ function render(ctx: CustomChartContext) {
                     .add();
             }
 
-            // Pill: arrow + absolute change (line 1), % change under it (line 2).
             const arrow   = isUp ? '▲' : '▼';
             const absText = `${arrow}${formatNumber(Math.abs(change), numberFormat)}`;
             const pct     = (p.fromVal !== 0 && Number.isFinite(p.fromVal))
                 ? (change / Math.abs(p.fromVal)) * 100 : null;
-            const pctText = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
+            const pctRaw  = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
+
             chart.renderer.rect(cx - pillW / 2, p.top, pillW, pillH, pillR)
                 .attr({ fill: color, zIndex: 6 })
                 .add();
-            chart.renderer.text(absText, cx, p.top + 16)
-                .attr({ align: 'center', zIndex: 7 })
-                .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
-                .add();
-            if (pctText) {
-                chart.renderer.text(pctText, cx, p.top + 31)
+
+            if (p.label) {
+                // Line 1: value at the left edge, (%) at the right edge.
+                const pad = 10;
+                chart.renderer.text(absText, cx - pillW / 2 + pad, p.top + 17)
+                    .attr({ align: 'left', zIndex: 7 })
+                    .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
+                    .add();
+                if (pctRaw) {
+                    chart.renderer.text(`(${pctRaw})`, cx + pillW / 2 - pad, p.top + 17)
+                        .attr({ align: 'right', zIndex: 7 })
+                        .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
+                        .add();
+                }
+                // Line 2: the label, centred.
+                chart.renderer.text(p.label, cx, p.top + 34)
                     .attr({ align: 'center', zIndex: 7 })
                     .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
                     .add();
+            } else {
+                // No label: value over % change, centred.
+                chart.renderer.text(absText, cx, p.top + 16)
+                    .attr({ align: 'center', zIndex: 7 })
+                    .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
+                    .add();
+                if (pctRaw) {
+                    chart.renderer.text(pctRaw, cx, p.top + 31)
+                        .attr({ align: 'center', zIndex: 7 })
+                        .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
+                        .add();
+                }
             }
         }
     }
@@ -1058,7 +1097,9 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showStartEndMarkers', type: 'checkbox',    defaultValue: true,      label: 'Show start/end markers' },
                     { key: 'showStartEndPills',   type: 'checkbox',    defaultValue: true,      label: 'Show start/end pill labels' },
                     { key: 'showNetChange',       type: 'checkbox',    defaultValue: false,     label: 'Show net change indicator (right)' },
+                    { key: 'netChangeLabel',      type: 'text',        defaultValue: ' ',       label: 'Net change pill label (start→end; blank = no label)' },
                     { key: 'basePillField',       type: 'dropdown',    defaultValue: 'None',    values: ['None', ...middleNames], label: 'Additional base pill (middle field) + base→end difference' },
+                    { key: 'basePillDiffLabel',   type: 'text',        defaultValue: ' ',       label: 'Base→end change pill label (blank = no label)' },
                     { key: 'showGridLines',       type: 'checkbox',    defaultValue: true,      label: 'Show grid lines' },
                     { key: 'showSlicing',         type: 'checkbox',    defaultValue: false,     label: 'Slice middle bars by default' },
                     ...labelOverrides,
