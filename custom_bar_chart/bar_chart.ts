@@ -331,7 +331,7 @@ function render(ctx: CustomChartContext) {
     // on line 2), so reserve more right margin when any label is set.
     const anyDiffLabel  = (showNetChange && !!netChangeLabel)
         || (basePillField !== 'None' && !!basePillDiffLabel);
-    const rightReserve  = showRightDiff ? (anyDiffLabel ? 150 : 116) : 40;
+    const rightReserve  = showRightDiff ? (anyDiffLabel ? 170 : 116) : 40;
 
     const settingsDefault     = visualProps.showSlicing ?? false;
     if (settingsDefault !== lastSeenSlicingDefault) {
@@ -850,34 +850,59 @@ function render(ctx: CustomChartContext) {
         if (showNetChange) diffs.push({ fromVal: startValue,       label: netChangeLabel });
         if (baseSelected)  diffs.push({ fromVal: baseRunningTotal, label: basePillDiffLabel });
 
-        // When any pill has a label, the value + % share one line (pushed to
-        // the pill's left/right edges) and the label sits underneath, so the
-        // pill grows taller/wider. Otherwise value over %, centred, compact.
+        // When any pill has a label, the value and (%) sit together on one
+        // line (a double space between them, centred) with the label centred
+        // underneath. Otherwise value over %, centred, compact.
         const labeled = diffs.some(d => !!d.label);
-        const pillW = labeled ? 132 : 96;
         const pillH = labeled ? 44 : 40;
-        const pillR = 14, lineW = 6, gap = 6;
-        // Flush the pills (and the shared connector x) to the right edge of
-        // the tile so the whole chart uses the maximum width.
+        const pillR = 14, lineW = 6, gap = 6, padX = 14;
+
+        // Per-pill text descriptors.
+        const items = diffs.map((d) => {
+            const change = endValue - d.fromVal;
+            const isUp   = change >= 0;
+            const absText = `${isUp ? '▲' : '▼'}${formatNumber(Math.abs(change), numberFormat)}`;
+            const pct     = (d.fromVal !== 0 && Number.isFinite(d.fromVal))
+                ? (change / Math.abs(d.fromVal)) * 100 : null;
+            const pctRaw  = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
+            // Value + (%) on one line, separated by a double (en) space.
+            const line1   = (labeled && pctRaw) ? `${absText}  (${pctRaw})` : absText;
+            return { ...d, isUp, color: isUp ? colorPositive : colorNegative, absText, pctRaw, line1 };
+        });
+
+        // Pill width = minimum that fits the widest text line across all pills
+        // (shared so the pills align and the connector lines stay collinear).
+        let pillW = 96;
+        if (labeled) {
+            const measure = (str: string, fs: string, fw: string) => {
+                if (!str) return 0;
+                const t = chart.renderer.text(str, -9999, -9999).css({ fontSize: fs, fontWeight: fw }).add();
+                const w = t.getBBox().width;
+                t.destroy();
+                return w;
+            };
+            let maxW = 0;
+            for (const it of items) {
+                maxW = Math.max(maxW, measure(it.line1, '12px', '700'), measure(it.label, '11px', '600'));
+            }
+            pillW = Math.max(80, Math.min(rightReserve - 12, Math.ceil(maxW) + padX * 2));
+        }
+        // Flush to the right edge of the tile.
         const cx = chart.chartWidth - pillW / 2 - 6;
 
         // Place pills at their anchor height, then push later ones apart so
         // stacked pills never collide.
         let prevBottom = -Infinity;
-        const placements = diffs.map((d) => {
-            const fromPx = yAxisObj.toPixels(d.fromVal, false);
+        const placements = items.map((it) => {
+            const fromPx = yAxisObj.toPixels(it.fromVal, false);
             let top = fromPx - pillH / 2;
             top = Math.max(chart.plotTop + 2, Math.min(top, chart.plotTop + chart.plotHeight - pillH - 2));
             if (top < prevBottom + 4) top = prevBottom + 4;
             prevBottom = top + pillH;
-            return { ...d, fromPx, top };
+            return { ...it, fromPx, top };
         });
 
         for (const p of placements) {
-            const change = endValue - p.fromVal;
-            const isUp   = change >= 0;
-            const color  = isUp ? colorPositive : colorNegative;
-
             // Connector line from the pill edge (with a small gap) to the end
             // level — shared x across diffs so they line up.
             const pillBot = p.top + pillH;
@@ -891,46 +916,32 @@ function render(ctx: CustomChartContext) {
             }
             if (lineH > 1) {
                 chart.renderer.rect(cx - lineW / 2, lineTop!, lineW, lineH)
-                    .attr({ fill: color, zIndex: 5 })
+                    .attr({ fill: p.color, zIndex: 5 })
                     .add();
             }
 
-            const arrow   = isUp ? '▲' : '▼';
-            const absText = `${arrow}${formatNumber(Math.abs(change), numberFormat)}`;
-            const pct     = (p.fromVal !== 0 && Number.isFinite(p.fromVal))
-                ? (change / Math.abs(p.fromVal)) * 100 : null;
-            const pctRaw  = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
-
             chart.renderer.rect(cx - pillW / 2, p.top, pillW, pillH, pillR)
-                .attr({ fill: color, zIndex: 6 })
+                .attr({ fill: p.color, zIndex: 6 })
                 .add();
 
             if (p.label) {
-                // Line 1: value at the left edge, (%) at the right edge.
-                const pad = 10;
-                chart.renderer.text(absText, cx - pillW / 2 + pad, p.top + 17)
-                    .attr({ align: 'left', zIndex: 7 })
+                // Line 1: value + (%) centred together; line 2: label centred.
+                chart.renderer.text(p.line1, cx, p.top + 17)
+                    .attr({ align: 'center', zIndex: 7 })
                     .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
                     .add();
-                if (pctRaw) {
-                    chart.renderer.text(`(${pctRaw})`, cx + pillW / 2 - pad, p.top + 17)
-                        .attr({ align: 'right', zIndex: 7 })
-                        .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
-                        .add();
-                }
-                // Line 2: the label, centred.
                 chart.renderer.text(p.label, cx, p.top + 34)
                     .attr({ align: 'center', zIndex: 7 })
                     .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
                     .add();
             } else {
                 // No label: value over % change, centred.
-                chart.renderer.text(absText, cx, p.top + 16)
+                chart.renderer.text(p.absText, cx, p.top + 16)
                     .attr({ align: 'center', zIndex: 7 })
                     .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
                     .add();
-                if (pctRaw) {
-                    chart.renderer.text(pctRaw, cx, p.top + 31)
+                if (p.pctRaw) {
+                    chart.renderer.text(p.pctRaw, cx, p.top + 31)
                         .attr({ align: 'center', zIndex: 7 })
                         .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
                         .add();
