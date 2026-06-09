@@ -321,7 +321,7 @@ function render(ctx: CustomChartContext) {
     // Reserve right-margin space when either right-side difference indicator
     // (overall net change and/or the base→end difference) is shown.
     const showRightDiff = showNetChange || basePillField !== 'None';
-    const rightReserve  = showRightDiff ? 150 : 40;
+    const rightReserve  = showRightDiff ? 116 : 40;
 
     const settingsDefault     = visualProps.showSlicing ?? false;
     if (settingsDefault !== lastSeenSlicingDefault) {
@@ -829,7 +829,7 @@ function render(ctx: CustomChartContext) {
     // each is coloured by its own sign.
     if (showRightDiff) {
         const endPx  = yAxisObj.toPixels(endValue, false);
-        const pillW = 134, pillH = 30, pillR = 15, lineW = 6;
+        const pillW = 96, pillH = 40, pillR = 14, lineW = 6, gap = 6;
         // Flush the pills (and the shared connector x) to the right edge of
         // the tile so the whole chart uses the maximum width.
         const cx = chart.chartWidth - pillW / 2 - 6;
@@ -861,26 +861,42 @@ function render(ctx: CustomChartContext) {
             const isUp   = change >= 0;
             const color  = isUp ? colorPositive : colorNegative;
 
-            // Connector line from the "from" level to the end level — shared x.
-            const lineTop = Math.min(p.fromPx, endPx);
-            const lineH   = Math.max(1, Math.abs(p.fromPx - endPx));
-            chart.renderer.rect(cx - lineW / 2, lineTop, lineW, lineH)
-                .attr({ fill: color, zIndex: 5 })
-                .add();
+            // Connector line from the pill edge (with a small gap) to the end
+            // level — shared x across diffs so they line up.
+            const pillBot = p.top + pillH;
+            let lineTop: number, lineH = 0;
+            if (endPx >= pillBot) {            // end is below the pill
+                lineTop = pillBot + gap;
+                lineH   = endPx - lineTop;
+            } else if (endPx <= p.top) {        // end is above the pill
+                lineTop = endPx;
+                lineH   = (p.top - gap) - endPx;
+            }
+            if (lineH > 1) {
+                chart.renderer.rect(cx - lineW / 2, lineTop!, lineW, lineH)
+                    .attr({ fill: color, zIndex: 5 })
+                    .add();
+            }
 
-            // Pill: "▼648.8K (-2.2%)" — value with the % to its right.
+            // Pill: arrow + absolute change (line 1), % change under it (line 2).
             const arrow   = isUp ? '▲' : '▼';
+            const absText = `${arrow}${formatNumber(Math.abs(change), numberFormat)}`;
             const pct     = (p.fromVal !== 0 && Number.isFinite(p.fromVal))
                 ? (change / Math.abs(p.fromVal)) * 100 : null;
-            const pctText = pct == null ? '' : ` (${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%)`;
-            const label   = `${arrow}${formatNumber(Math.abs(change), numberFormat)}${pctText}`;
+            const pctText = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
             chart.renderer.rect(cx - pillW / 2, p.top, pillW, pillH, pillR)
                 .attr({ fill: color, zIndex: 6 })
                 .add();
-            chart.renderer.text(label, cx, p.top + 20)
+            chart.renderer.text(absText, cx, p.top + 16)
                 .attr({ align: 'center', zIndex: 7 })
                 .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
                 .add();
+            if (pctText) {
+                chart.renderer.text(pctText, cx, p.top + 31)
+                    .attr({ align: 'center', zIndex: 7 })
+                    .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
+                    .add();
+            }
         }
     }
 }
