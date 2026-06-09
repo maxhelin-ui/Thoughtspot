@@ -10,8 +10,18 @@ import {
     RenderErrorEventPayload,
 } from '@thoughtspot/ts-chart-sdk';
 import numeral from 'numeral';
+import Highcharts from 'highcharts';
+import HighchartsMore from 'highcharts/highcharts-more';
+import HighchartsCustomEvents from 'highcharts-custom-events';
 
-declare const Highcharts: any;
+// Bundle the Highcharts modules instead of loading them from a CDN. The
+// CDN <script> tags were blocked by the deployment's Content-Security-Policy
+// (default-src 'self'), leaving `Highcharts` undefined at render time.
+// Importing here lets Vite bundle everything from our own origin.
+// highcharts-more provides the `columnrange` series; highcharts-custom-events
+// provides the point `contextmenu` event used for the right-click menu.
+HighchartsMore(Highcharts);
+HighchartsCustomEvents(Highcharts);
 
 interface VisualProps {
     numberFormat?: string;

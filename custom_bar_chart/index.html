@@ -4,10 +4,9 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>TS Custom Chart</title>
-        <script src="https://code.highcharts.com/highcharts.js"></script>
-        <script src="https://code.highcharts.com/highcharts-more.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
-        <script src="https://blacklabel.github.io/custom_events/customEvents.js"></script>
+        <!-- Highcharts / numeral / custom-events are bundled via bar_chart.ts
+             imports (Vite), not loaded from a CDN, so they work under the
+             deployment's strict Content-Security-Policy. -->
         <style>
             body {
                 margin: 0;
