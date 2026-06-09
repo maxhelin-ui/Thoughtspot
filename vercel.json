@@ -3,7 +3,7 @@
     "source": "/(.*)",
     "headers": [{
       "key": "Content-security-policy",
-      "value": "default-src 'self'; frame-ancestors *; form-action 'self'"
+      "value": "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://code.highcharts.com https://cdnjs.cloudflare.com https://blacklabel.github.io; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https:; frame-ancestors *; form-action 'self'"
     }]
   }]
 }
