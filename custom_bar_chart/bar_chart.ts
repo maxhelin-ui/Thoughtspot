@@ -331,7 +331,7 @@ function render(ctx: CustomChartContext) {
     // on line 2), so reserve more right margin when any label is set.
     const anyDiffLabel  = (showNetChange && !!netChangeLabel)
         || (basePillField !== 'None' && !!basePillDiffLabel);
-    const rightReserve  = showRightDiff ? (anyDiffLabel ? 170 : 116) : 40;
+    const rightReserve  = showRightDiff ? (anyDiffLabel ? 150 : 116) : 40;
 
     const settingsDefault     = visualProps.showSlicing ?? false;
     if (settingsDefault !== lastSeenSlicingDefault) {
@@ -855,7 +855,7 @@ function render(ctx: CustomChartContext) {
         // underneath. Otherwise value over %, centred, compact.
         const labeled = diffs.some(d => !!d.label);
         const pillH = labeled ? 44 : 40;
-        const pillR = 14, lineW = 6, gap = 6, padX = 14;
+        const pillR = 14, lineW = 6, gap = 6, padX = 8;
 
         // Per-pill text descriptors.
         const items = diffs.map((d) => {
@@ -885,10 +885,11 @@ function render(ctx: CustomChartContext) {
             for (const it of items) {
                 maxW = Math.max(maxW, measure(it.line1, '12px', '700'), measure(it.label, '11px', '600'));
             }
-            pillW = Math.max(80, Math.min(rightReserve - 12, Math.ceil(maxW) + padX * 2));
+            pillW = Math.max(70, Math.min(rightReserve - 2, Math.ceil(maxW) + padX * 2));
         }
-        // Flush to the right edge of the tile.
-        const cx = chart.chartWidth - pillW / 2 - 6;
+        // Flush the pill's LEFT edge to the chart's plot right edge so there's
+        // no horizontal gap between the plot and the change pills.
+        const cx = chart.plotLeft + chart.plotWidth + pillW / 2;
 
         // Place pills at their anchor height, then push later ones apart so
         // stacked pills never collide.
