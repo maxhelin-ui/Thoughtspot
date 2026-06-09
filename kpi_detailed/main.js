@@ -48,6 +48,8 @@ const ICON_SVG = {
     '<svg viewBox="0 0 24 24"><path d="M12 3v9h9"/><path d="M21 12a9 9 0 1 1 -9 -9"/></svg>',
   'plus-minus':
     '<svg viewBox="0 0 24 24"><line x1="7" y1="7" x2="15" y2="7"/><line x1="11" y1="3" x2="11" y2="11"/><line x1="9" y1="18" x2="17" y2="18"/></svg>',
+  'dollar':
+    '<svg viewBox="0 0 24 24"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>',
   'none': '',
 };
 
@@ -795,7 +797,7 @@ const renderChart = async (ctx, providedModel) => {
           type: 'dropdown',
           label: 'Header icon',
           defaultValue: 'trending-up',
-          values: ['trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie', 'plus-minus', 'none'],
+          values: ['trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie', 'plus-minus', 'dollar', 'none'],
         },
         { key: 'primarySuffix', type: 'text', label: 'Suffix after big number', defaultValue: 'accounts' },
         { key: 'primaryDescription', type: 'text', label: 'Description (single layout)', defaultValue: ' ' },
