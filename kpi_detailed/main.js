@@ -451,9 +451,32 @@ function renderMainSecondary(vp, values, chartModel) {
 
   setHidden('msFooterLine', !footerLine);
   setText('msFooterLine', footerLine);
+
+  // Additional metric lines, stacked below the footer line in the same
+  // format ("<value> <label>"). metric1 then metric2. Each shows only when
+  // its slot is bound and a label resolves — mirroring the footer-tile rule.
+  const m1Label = labelOrColumnName(vp?.metric1Label, getColumnName(chartModel, 'metric1'));
+  const m2Label = labelOrColumnName(vp?.metric2Label, getColumnName(chartModel, 'metric2'));
+  const m1Line = (values.metric1 != null && m1Label !== '')
+    ? `${formatMetricValue(values.metric1, vp?.metric1Format ?? 'currency', vp?.numberFormat, vp?.currencySymbol)} ${m1Label}`.trim()
+    : '';
+  const m2Line = (values.metric2 != null && m2Label !== '')
+    ? `${formatMetricValue(values.metric2, vp?.metric2Format ?? 'currency', vp?.numberFormat, vp?.currencySymbol)} ${m2Label}`.trim()
+    : '';
+  setHidden('msMetric1Line', !m1Line);
+  setText('msMetric1Line', m1Line);
+  setHidden('msMetric2Line', !m2Line);
+  setText('msMetric2Line', m2Line);
 }
 
 function renderFooterMetrics(vp, values, chartModel) {
+  // In main+secondary mode the metrics render as stacked footer-style lines
+  // (see renderMainSecondary), so the separate tile block is suppressed to
+  // avoid showing them twice.
+  if ((vp?.mode ?? 'single') === 'main-secondary') {
+    setHidden('footerMetrics', true);
+    return;
+  }
   const label1 = labelOrColumnName(vp?.metric1Label, getColumnName(chartModel, 'metric1'));
   const label2 = labelOrColumnName(vp?.metric2Label, getColumnName(chartModel, 'metric2'));
   const hasMetric1 = values.metric1 != null && label1 !== '';

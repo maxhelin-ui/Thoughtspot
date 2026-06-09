@@ -200,7 +200,7 @@ body {
 /* Primary value in main+secondary mode — overrides the default
    .ts-stat-big size so the value dominates the (small) tile. */
 .ts-main-sec .ts-stat-big {
-  font-size: 32px;
+  font-size: 28px;
 }
 
 /* Title above the primary value is intentionally hidden in
@@ -215,9 +215,14 @@ body {
 .ts-main-sec-footer {
   font-size: 14px;
   color: var(--ts-text-secondary);
-  margin-top: 6px;
-  line-height: 1.25;
+  margin-top: 3px;
+  line-height: 1.2;
   overflow-wrap: anywhere;
+}
+/* Tighten the gap between stacked footer/metric lines so they read as a
+   compact group under the primary value. */
+.ts-main-sec-footer + .ts-main-sec-footer {
+  margin-top: 1px;
 }
 
 .ts-footer-metrics {
