@@ -47,26 +47,15 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: clamp(6px, 1.6cqh, 12px);
   position: relative;
-}
-
-/* Single / split / split-3: the visible layout (and its grey card) fills the
-   remaining tile height so there is no empty margin between the card and the
-   bottom of the tile. (Main+secondary is intentionally transparent/top-hugging
-   and is excluded.) */
-#singleLayout:not(.hidden),
-#splitLayout:not(.hidden),
-#split3Layout:not(.hidden) {
-  flex: 1 1 auto;
-  display: flex;
-  min-height: 0;
-}
-#singleLayout:not(.hidden) > .ts-detail-card,
-#splitLayout:not(.hidden) > .ts-detail-card,
-#split3Layout:not(.hidden) > .ts-detail-card {
-  flex: 1;
-  width: 100%;
+  /* Size container so the content (fonts/bars/tiles) can scale with the
+     tile's dimensions via cqh/cqw units below — instead of jumping between
+     fixed breakpoints. The card itself stays content-height (it is NOT
+     stretched to fill), so a tall tile just leaves whitespace below rather
+     than ballooning the grey box. */
+  container-type: size;
+  container-name: kpicard;
 }
 
 /* Icon sits in the top-right corner of its detail card. Positioned
@@ -99,7 +88,7 @@ body {
 .ts-detail-card {
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: 16px;
+  padding: clamp(10px, 3cqh, 22px);
   position: relative;
   overflow: hidden; /* belt-and-braces: icon can't escape even if offsets ever go negative */
 }
@@ -111,31 +100,31 @@ body {
 }
 
 .ts-stat-big {
-  font-size: 28px;
+  font-size: clamp(20px, 8cqh, 46px);
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
 .ts-stat-medium {
-  font-size: 24px;
+  font-size: clamp(16px, 6.5cqh, 38px);
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
 .ts-stat-suffix {
-  font-size: 14px;
+  font-size: clamp(11px, 2.6cqh, 18px);
   color: var(--ts-text-secondary);
 }
 
 .ts-stat-desc {
-  font-size: 13px;
+  font-size: clamp(11px, 2.4cqh, 16px);
   color: var(--ts-text-secondary);
 }
 
 .ts-stat-footer {
-  font-size: 12px;
+  font-size: clamp(10px, 2.3cqh, 15px);
   color: var(--ts-text-tertiary);
   margin-top: 4px;
   overflow-wrap: anywhere;
@@ -149,12 +138,12 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 10px;
+  margin-top: clamp(6px, 2cqh, 16px);
 }
 
 .ts-progress-track {
   flex: 1;
-  height: 6px;
+  height: clamp(4px, 1.4cqh, 10px);
   background: var(--ts-bg-track);
   border-radius: 99px;
   overflow: hidden;
@@ -169,7 +158,7 @@ body {
 }
 
 .ts-progress-label {
-  font-size: 14px;
+  font-size: clamp(12px, 3cqh, 18px);
   font-weight: 500;
   color: var(--ts-accent);
   min-width: 36px;
@@ -189,7 +178,7 @@ body {
 }
 
 .ts-side-label {
-  font-size: 12px;
+  font-size: clamp(11px, 2.5cqh, 16px);
   color: var(--ts-text-secondary);
   margin-bottom: 4px;
 }
@@ -225,7 +214,7 @@ body {
 /* Primary value in main+secondary mode — overrides the default
    .ts-stat-big size so the value dominates the (small) tile. */
 .ts-main-sec .ts-stat-big {
-  font-size: 28px;
+  font-size: clamp(22px, 9cqh, 52px);
 }
 
 /* Title above the primary value is intentionally hidden in
@@ -238,7 +227,7 @@ body {
    the prior 16px attempt — small enough not to compete with the
    primary value, large enough to read at a glance. */
 .ts-main-sec-footer {
-  font-size: 14px;
+  font-size: clamp(12px, 3cqh, 20px);
   color: var(--ts-text-secondary);
   margin-top: 3px;
   line-height: 1.2;
@@ -261,72 +250,22 @@ body {
   min-width: 100px;
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: 12px 14px;
+  padding: clamp(10px, 2.6cqh, 18px) clamp(12px, 3cqh, 20px);
 }
 
 .ts-metric-label {
-  font-size: 12px;
+  font-size: clamp(11px, 2.5cqh, 16px);
   color: var(--ts-text-secondary);
   margin-bottom: 4px;
 }
 
 .ts-metric-value {
-  font-size: 18px;
+  font-size: clamp(14px, 4.6cqh, 30px);
   font-weight: 500;
   color: var(--ts-text-primary);
 }
 
-/* Compact layouts when the tile is short or narrow so the grey card
-   stays within the visible area instead of getting clipped by the
-   TS iframe. Three breakpoints scale padding / font-size / gaps. */
-@media (max-height: 280px), (max-width: 360px) {
-  .ts-detail-card { padding: 12px; }
-  .ts-card { gap: 6px; }
-  .ts-progress-row { margin-top: 8px; }
-  .ts-stat-big { font-size: 24px; }
-  .ts-stat-medium { font-size: 20px; }
-  .ts-progress-track { height: 5px; }
-  .ts-stat-suffix { font-size: 12px; }
-  .ts-stat-desc { font-size: 12px; }
-  .ts-stat-footer { font-size: 11px; }
-  .ts-metric { padding: 10px 12px; }
-  .ts-metric-value { font-size: 16px; }
-}
-
-@media (max-height: 200px), (max-width: 280px) {
-  .ts-detail-card { padding: 10px; }
-  .ts-card { gap: 4px; }
-  .ts-progress-row { margin-top: 6px; }
-  .ts-stat-big { font-size: 20px; }
-  .ts-stat-medium { font-size: 16px; }
-  .ts-progress-track { height: 4px; }
-  .ts-stat-suffix { font-size: 11px; }
-  .ts-stat-desc { font-size: 11px; }
-  .ts-stat-footer { font-size: 10px; }
-  .ts-side-label { font-size: 11px; }
-  .ts-progress-label { font-size: 12px; min-width: 30px; }
-  .ts-metric { padding: 8px 10px; }
-  .ts-metric-value { font-size: 14px; }
-  .ts-metric-label { font-size: 11px; }
-  .ts-icon-corner { top: 6px; right: 6px; width: 14px; height: 14px; }
-  .ts-icon-corner svg { width: 14px; height: 14px; }
-}
-
-@media (max-height: 140px) {
-  .ts-detail-card { padding: 8px; }
-  .ts-card { gap: 3px; }
-  .ts-progress-row { margin-top: 4px; }
-  .ts-stat-big { font-size: 17px; }
-  .ts-stat-medium { font-size: 14px; }
-  .ts-progress-track { height: 3px; }
-  .ts-stat-suffix { font-size: 10px; }
-  .ts-stat-desc { font-size: 10px; }
-  .ts-stat-footer { font-size: 9px; }
-  .ts-side-label { font-size: 10px; }
-  .ts-progress-label { font-size: 11px; min-width: 26px; }
-  .ts-metric { padding: 6px 8px; }
-  .ts-metric-value { font-size: 13px; }
-  .ts-metric-label { font-size: 10px; }
-  .ts-icon-corner { top: 5px; right: 5px; width: 12px; height: 12px; }
-  .ts-icon-corner svg { width: 12px; height: 12px; }
-}
+/* Font sizes, bar heights and paddings scale fluidly with the tile via the
+   cqh-based clamp() values above, so the old fixed-size shrink breakpoints
+   are no longer needed. The clamp() minimums keep everything readable on
+   very small tiles. */
