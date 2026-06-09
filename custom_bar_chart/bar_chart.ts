@@ -434,6 +434,10 @@ function render(ctx: CustomChartContext) {
             if (catIdx === 0 || catIdx === categories.length - 1) {
                 return { x: catIdx, low: null, high: null };
             }
+            // The selected base shows only its pill — no bar (or slice bars).
+            if (baseSelected && catIdx === baseCatIdx) {
+                return { x: catIdx, low: null, high: null };
+            }
             const deltaIdx     = catIdx - 1;
             const yColIdx      = deltaIdx + 1;
             const contribs     = activeSlice.contribsByMeasure[yColIdx] ?? [];
@@ -553,10 +557,11 @@ function render(ctx: CustomChartContext) {
                 const seriesName = point.series?.name ?? '';
                 const isStartMarker = seriesName === 'start-marker';
                 const isEndMarker   = seriesName === 'end-marker';
+                const isBaseMarker  = seriesName === 'base-marker';
                 // Suppress tooltip on the invisible zero-height columnrange
-                // totals; the scatter start/end markers carry the tooltip
+                // totals; the scatter start/end/base markers carry the tooltip
                 // instead (and are mouse-tracked).
-                if (point.isTotal && !isStartMarker && !isEndMarker) return false;
+                if (point.isTotal && !isStartMarker && !isEndMarker && !isBaseMarker) return false;
 
                 const colIdx = point.x ?? 0;
                 // Tooltip extras are bound by index: extra[i] pairs with y[i].
@@ -574,7 +579,7 @@ function render(ctx: CustomChartContext) {
 
                 const rows: Array<{ label: string; value: string }> = [];
 
-                if (isStartMarker || isEndMarker) {
+                if (isStartMarker || isEndMarker || isBaseMarker) {
                     const totalValue = point.y;
                     rows.push({
                         label: `${categories[colIdx] ?? ''}:`,
@@ -676,6 +681,11 @@ function render(ctx: CustomChartContext) {
                 type:         'columnrange',
                 name:         'Movements',
                 data:         seriesData.map((d, i) => {
+                    // The selected "additional base" shows only its pill, not a
+                    // delta bar — null it out so no bar is drawn for it.
+                    if (baseSelected && i === baseCatIdx) {
+                        return { low: null, high: null, color: 'transparent', delta: d.delta, isTotal: false };
+                    }
                     // When slicing, hide middle bars (slice series draws them instead)
                     const isMiddle = i > 0 && i < seriesData.length - 1;
                     if (showSlicing && isMiddle) {
@@ -751,6 +761,28 @@ function render(ctx: CustomChartContext) {
                     enableMouseTracking: true,
                 },
             ] : []),
+            ...(baseSelected ? [
+                // Visible dot at the base milestone.
+                {
+                    type:                'scatter',
+                    name:                'base-marker-dot',
+                    data:                [{ x: baseCatIdx, y: baseRunningTotal }],
+                    marker:              { symbol: 'circle', radius: 6, fillColor: colorTotal, lineWidth: 0 },
+                    showInLegend:        false,
+                    enableMouseTracking: false,
+                },
+                // Invisible hit-zone so the base pill shares the start/end
+                // hover-tooltip behaviour.
+                {
+                    type:                'scatter',
+                    name:                'base-marker',
+                    data:                [{ x: baseCatIdx, y: baseRunningTotal }],
+                    marker:              { symbol: 'circle', radius: 26, fillColor: 'rgba(0,0,0,0.001)', lineWidth: 0 },
+                    showInLegend:        false,
+                    stickyTracking:      false,
+                    enableMouseTracking: true,
+                },
+            ] : []),
         ],
     });
 
@@ -784,13 +816,10 @@ function render(ctx: CustomChartContext) {
     // showing the running total at that point, plus a marker dot — drawn like
     // the start/end pills, while the underlying delta bar stays intact.
     if (baseSelected) {
+        // Pill only — the visible dot + hover hit-zone are scatter series
+        // (base-marker-dot / base-marker), so the base shares the start/end
+        // tooltip behaviour and shows no delta bar.
         drawCallout(baseCatIdx, baseRunningTotal, formatNumber(baseRunningTotal, numberFormat), colorTotal);
-        const dx = xAxisObj.toPixels(baseCatIdx, false);
-        const dy = yAxisObj.toPixels(baseRunningTotal, false);
-        chart.renderer.circle(dx, dy, 6)
-            .attr({ fill: colorTotal, zIndex: 5 })
-            .css({ pointerEvents: 'none' })
-            .add();
     }
 
     // Right-side difference indicators. Each pill shows the absolute change
@@ -799,57 +828,64 @@ function render(ctx: CustomChartContext) {
     // shown they stack vertically — they can point in opposite directions, so
     // each is coloured by its own sign.
     if (showRightDiff) {
-        const barX = chart.plotLeft + chart.plotWidth + 38;
+        const baseX  = chart.plotLeft + chart.plotWidth + 40;
+        const endPx  = yAxisObj.toPixels(endValue, false);
+        const pillW = 92, pillH = 40, pillR = 14, lineW = 6;
 
-        const drawDiffPill = (cx: number, topY: number, fromVal: number, toVal: number) => {
-            const change   = toVal - fromVal;
-            const isUp     = change >= 0;
-            const arrow    = isUp ? '▲' : '▼';
-            const color    = isUp ? colorPositive : colorNegative;
-            const absText  = `${arrow}${formatNumber(Math.abs(change), numberFormat)}`;
-            const pct      = (fromVal !== 0 && Number.isFinite(fromVal))
-                ? (change / Math.abs(fromVal)) * 100 : null;
-            const pctText  = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
-            const w = 92, h = 40, r = 14;
-            chart.renderer.rect(cx - w / 2, topY, w, h, r)
+        // Each difference is drawn the same way ("mirrored"): a thin vertical
+        // connector from the "from" value's level to the end level, plus a
+        // pill anchored at the "from" height — overall (start→end) anchors at
+        // the start level, base→end anchors at the base level. Each is
+        // coloured by its own sign, so an up (green) and a down (red) read
+        // clearly even when both are shown.
+        const diffs: number[] = [];                 // each entry is a "from" value
+        if (showNetChange) diffs.push(startValue);
+        if (baseSelected)  diffs.push(baseRunningTotal);
+
+        // Place pills at their anchor height, then push later ones down so
+        // stacked pills never collide.
+        let prevBottom = -Infinity;
+        const placements = diffs.map((fromVal, idx) => {
+            const fromPx = yAxisObj.toPixels(fromVal, false);
+            let top = fromPx - pillH / 2;
+            top = Math.max(chart.plotTop + 2, Math.min(top, chart.plotTop + chart.plotHeight - pillH - 2));
+            if (top < prevBottom + 4) top = prevBottom + 4;
+            prevBottom = top + pillH;
+            // Offset each connector's x slightly so two lines don't overlap.
+            return { fromVal, fromPx, top, lineX: baseX + idx * 14 };
+        });
+
+        for (const p of placements) {
+            const change = endValue - p.fromVal;
+            const isUp   = change >= 0;
+            const color  = isUp ? colorPositive : colorNegative;
+
+            // Connector line from the "from" level to the end level.
+            const lineTop = Math.min(p.fromPx, endPx);
+            const lineH   = Math.max(1, Math.abs(p.fromPx - endPx));
+            chart.renderer.rect(p.lineX - lineW / 2, lineTop, lineW, lineH)
+                .attr({ fill: color, zIndex: 5 })
+                .add();
+
+            // Pill: arrow + absolute change (line 1) and % change (line 2).
+            const arrow   = isUp ? '▲' : '▼';
+            const absText = `${arrow}${formatNumber(Math.abs(change), numberFormat)}`;
+            const pct     = (p.fromVal !== 0 && Number.isFinite(p.fromVal))
+                ? (change / Math.abs(p.fromVal)) * 100 : null;
+            const pctText = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
+            chart.renderer.rect(baseX - pillW / 2, p.top, pillW, pillH, pillR)
                 .attr({ fill: color, zIndex: 6 })
                 .add();
-            chart.renderer.text(absText, cx, topY + 16)
+            chart.renderer.text(absText, baseX, p.top + 16)
                 .attr({ align: 'center', zIndex: 7 })
                 .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
                 .add();
             if (pctText) {
-                chart.renderer.text(pctText, cx, topY + 31)
+                chart.renderer.text(pctText, baseX, p.top + 31)
                     .attr({ align: 'center', zIndex: 7 })
                     .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
                     .add();
             }
-        };
-
-        // Overall start→end vertical bar (the "line"), kept as the anchor.
-        const startPx = yAxisObj.toPixels(startValue, false);
-        const endPx   = yAxisObj.toPixels(endValue,   false);
-        if (showNetChange) {
-            const isUp = (endValue - startValue) >= 0;
-            chart.renderer.rect(barX - 3, Math.min(startPx, endPx), 6, Math.abs(startPx - endPx))
-                .attr({ fill: isUp ? colorPositive : colorNegative, zIndex: 5 })
-                .add();
-        }
-
-        // Build the stacked list of pills: overall first, then base→end.
-        const diffs: Array<[number, number]> = [];
-        if (showNetChange) diffs.push([startValue, endValue]);
-        if (baseSelected)  diffs.push([baseRunningTotal, endValue]);
-
-        const pillH = 40, gap = 6;
-        const clusterH = diffs.length * pillH + Math.max(0, diffs.length - 1) * gap;
-        // Anchor just above the overall bar's top, but clamp into the plot so
-        // a tall cluster isn't clipped off the top.
-        const anchorBottom = Math.min(startPx, endPx) - 6;
-        let topY = Math.max(chart.plotTop + 2, anchorBottom - clusterH);
-        for (const [fromV, toV] of diffs) {
-            drawDiffPill(barX, topY, fromV, toV);
-            topY += pillH + gap;
         }
     }
 }
