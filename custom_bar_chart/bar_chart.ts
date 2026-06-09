@@ -321,7 +321,7 @@ function render(ctx: CustomChartContext) {
     // Reserve right-margin space when either right-side difference indicator
     // (overall net change and/or the base→end difference) is shown.
     const showRightDiff = showNetChange || basePillField !== 'None';
-    const rightReserve  = showRightDiff ? 120 : 40;
+    const rightReserve  = showRightDiff ? 150 : 40;
 
     const settingsDefault     = visualProps.showSlicing ?? false;
     if (settingsDefault !== lastSeenSlicingDefault) {
@@ -828,31 +828,32 @@ function render(ctx: CustomChartContext) {
     // shown they stack vertically — they can point in opposite directions, so
     // each is coloured by its own sign.
     if (showRightDiff) {
-        const baseX  = chart.plotLeft + chart.plotWidth + 40;
         const endPx  = yAxisObj.toPixels(endValue, false);
-        const pillW = 92, pillH = 40, pillR = 14, lineW = 6;
+        const pillW = 134, pillH = 30, pillR = 15, lineW = 6;
+        // Flush the pills (and the shared connector x) to the right edge of
+        // the tile so the whole chart uses the maximum width.
+        const cx = chart.chartWidth - pillW / 2 - 6;
 
-        // Each difference is drawn the same way ("mirrored"): a thin vertical
+        // Each difference is drawn the same way ("mirrored"): a vertical
         // connector from the "from" value's level to the end level, plus a
         // pill anchored at the "from" height — overall (start→end) anchors at
-        // the start level, base→end anchors at the base level. Each is
-        // coloured by its own sign, so an up (green) and a down (red) read
-        // clearly even when both are shown.
+        // the start level, base→end at the base level. All connectors share
+        // the same x so they line up into one continuous line. Each is
+        // coloured by its own sign (green up, red down).
         const diffs: number[] = [];                 // each entry is a "from" value
         if (showNetChange) diffs.push(startValue);
         if (baseSelected)  diffs.push(baseRunningTotal);
 
-        // Place pills at their anchor height, then push later ones down so
+        // Place pills at their anchor height, then push later ones apart so
         // stacked pills never collide.
         let prevBottom = -Infinity;
-        const placements = diffs.map((fromVal, idx) => {
+        const placements = diffs.map((fromVal) => {
             const fromPx = yAxisObj.toPixels(fromVal, false);
             let top = fromPx - pillH / 2;
             top = Math.max(chart.plotTop + 2, Math.min(top, chart.plotTop + chart.plotHeight - pillH - 2));
             if (top < prevBottom + 4) top = prevBottom + 4;
             prevBottom = top + pillH;
-            // Offset each connector's x slightly so two lines don't overlap.
-            return { fromVal, fromPx, top, lineX: baseX + idx * 14 };
+            return { fromVal, fromPx, top };
         });
 
         for (const p of placements) {
@@ -860,32 +861,26 @@ function render(ctx: CustomChartContext) {
             const isUp   = change >= 0;
             const color  = isUp ? colorPositive : colorNegative;
 
-            // Connector line from the "from" level to the end level.
+            // Connector line from the "from" level to the end level — shared x.
             const lineTop = Math.min(p.fromPx, endPx);
             const lineH   = Math.max(1, Math.abs(p.fromPx - endPx));
-            chart.renderer.rect(p.lineX - lineW / 2, lineTop, lineW, lineH)
+            chart.renderer.rect(cx - lineW / 2, lineTop, lineW, lineH)
                 .attr({ fill: color, zIndex: 5 })
                 .add();
 
-            // Pill: arrow + absolute change (line 1) and % change (line 2).
+            // Pill: "▼648.8K (-2.2%)" — value with the % to its right.
             const arrow   = isUp ? '▲' : '▼';
-            const absText = `${arrow}${formatNumber(Math.abs(change), numberFormat)}`;
             const pct     = (p.fromVal !== 0 && Number.isFinite(p.fromVal))
                 ? (change / Math.abs(p.fromVal)) * 100 : null;
-            const pctText = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
-            chart.renderer.rect(baseX - pillW / 2, p.top, pillW, pillH, pillR)
+            const pctText = pct == null ? '' : ` (${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%)`;
+            const label   = `${arrow}${formatNumber(Math.abs(change), numberFormat)}${pctText}`;
+            chart.renderer.rect(cx - pillW / 2, p.top, pillW, pillH, pillR)
                 .attr({ fill: color, zIndex: 6 })
                 .add();
-            chart.renderer.text(absText, baseX, p.top + 16)
+            chart.renderer.text(label, cx, p.top + 20)
                 .attr({ align: 'center', zIndex: 7 })
                 .css({ color: '#fff', fontSize: '12px', fontWeight: '700' })
                 .add();
-            if (pctText) {
-                chart.renderer.text(pctText, baseX, p.top + 31)
-                    .attr({ align: 'center', zIndex: 7 })
-                    .css({ color: '#fff', fontSize: '11px', fontWeight: '600' })
-                    .add();
-            }
         }
     }
 }
