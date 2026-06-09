@@ -300,6 +300,17 @@ function getDataModel(chartModel: ChartModel) {
     return { values, names, sliceColumns, slicesByColumn, yColumns, tooltipExtraColumns, tooltipExtraValues };
 }
 
+const PILL_FONT_FAMILY = 'Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif';
+let _measureCanvas: HTMLCanvasElement | null = null;
+function measureTextWidth(text: string, font: string): number {
+    if (!text) return 0;
+    if (!_measureCanvas) _measureCanvas = document.createElement('canvas');
+    const ctx2d = _measureCanvas.getContext('2d');
+    if (!ctx2d) return text.length * 7;
+    ctx2d.font = font;
+    return ctx2d.measureText(text).width;
+}
+
 function render(ctx: CustomChartContext) {
     const chartModel   = ctx.getChartModel();
     const { values, names, sliceColumns, slicesByColumn, yColumns, tooltipExtraColumns, tooltipExtraValues } = getDataModel(chartModel);
@@ -327,11 +338,52 @@ function render(ctx: CustomChartContext) {
     // Reserve right-margin space when either right-side difference indicator
     // (overall net change and/or the base→end difference) is shown.
     const showRightDiff = showNetChange || basePillField !== 'None';
-    // Labels make the change pills a bit wider (value + % share line 1, label
-    // on line 2), so reserve more right margin when any label is set.
-    const anyDiffLabel  = (showNetChange && !!netChangeLabel)
-        || (basePillField !== 'None' && !!basePillDiffLabel);
-    const rightReserve  = showRightDiff ? (anyDiffLabel ? 150 : 116) : 40;
+    const PILL_PAD_X = 8;
+
+    // Pre-measure the change pill so the right margin can be reserved to
+    // EXACTLY the pill width. Then the pill fills the right margin: its left
+    // edge sits on the plot's right edge (gap 0) and its right edge sits on
+    // the tile's right edge. Measured here (before the chart exists) with a
+    // canvas so the margin is known up front.
+    let diffPillW = 0;
+    if (showRightDiff) {
+        const startV = values[0];
+        const endV   = values[values.length - 1];
+        // Resolve the base running total (mirror of the later baseSelected logic).
+        const deltaNamesEarly = names.slice(1, -1);
+        let baseRT: number | null = null;
+        if (basePillField !== 'None') {
+            const di = deltaNamesEarly.indexOf(basePillField);
+            if (di >= 0) {
+                let cum = startV;
+                for (let i = 0; i <= di; i++) cum += values[1 + i];
+                baseRT = cum;
+            }
+        }
+        const labeledAny = (showNetChange && !!netChangeLabel)
+            || (baseRT != null && !!basePillDiffLabel);
+        const lineWidths: number[] = [];
+        const collect = (fromV: number, label: string) => {
+            const change = endV - fromV;
+            const isUp   = change >= 0;
+            const absText = `${isUp ? '▲' : '▼'}${formatNumber(Math.abs(change), numberFormat)}`;
+            const pct     = (fromV !== 0 && Number.isFinite(fromV)) ? (change / Math.abs(fromV)) * 100 : null;
+            const pctRaw  = pct == null ? '' : `${isUp ? '+' : '-'}${formatNumber(Math.abs(pct), '0.[0]')}%`;
+            if (labeledAny) {
+                const line1 = pctRaw ? `${absText}  (${pctRaw})` : absText;
+                lineWidths.push(measureTextWidth(line1, `700 12px ${PILL_FONT_FAMILY}`));
+                if (label) lineWidths.push(measureTextWidth(label, `600 11px ${PILL_FONT_FAMILY}`));
+            } else {
+                lineWidths.push(measureTextWidth(absText, `700 12px ${PILL_FONT_FAMILY}`));
+                if (pctRaw) lineWidths.push(measureTextWidth(pctRaw, `600 11px ${PILL_FONT_FAMILY}`));
+            }
+        };
+        if (showNetChange) collect(startV, netChangeLabel);
+        if (baseRT != null) collect(baseRT, basePillDiffLabel);
+        const maxW = lineWidths.length ? Math.max(...lineWidths) : 0;
+        diffPillW = Math.max(70, Math.ceil(maxW) + PILL_PAD_X * 2);
+    }
+    const rightReserve  = showRightDiff ? diffPillW : 40;
 
     const settingsDefault     = visualProps.showSlicing ?? false;
     if (settingsDefault !== lastSeenSlicingDefault) {
@@ -855,7 +907,11 @@ function render(ctx: CustomChartContext) {
         // underneath. Otherwise value over %, centred, compact.
         const labeled = diffs.some(d => !!d.label);
         const pillH = labeled ? 44 : 40;
-        const pillR = 14, lineW = 6, gap = 6, padX = 8;
+        const pillR = 14, lineW = 6, gap = 6;
+        // Right margin was reserved to exactly the measured pill width, so the
+        // pill fills it: left edge on the plot's right edge (gap 0), right edge
+        // on the tile's right edge (flush both sides).
+        const pillW = rightReserve;
 
         // Per-pill text descriptors.
         const items = diffs.map((d) => {
@@ -870,25 +926,6 @@ function render(ctx: CustomChartContext) {
             return { ...d, isUp, color: isUp ? colorPositive : colorNegative, absText, pctRaw, line1 };
         });
 
-        // Pill width = minimum that fits the widest text line across all pills
-        // (shared so the pills align and the connector lines stay collinear).
-        let pillW = 96;
-        if (labeled) {
-            const measure = (str: string, fs: string, fw: string) => {
-                if (!str) return 0;
-                const t = chart.renderer.text(str, -9999, -9999).css({ fontSize: fs, fontWeight: fw }).add();
-                const w = t.getBBox().width;
-                t.destroy();
-                return w;
-            };
-            let maxW = 0;
-            for (const it of items) {
-                maxW = Math.max(maxW, measure(it.line1, '12px', '700'), measure(it.label, '11px', '600'));
-            }
-            pillW = Math.max(70, Math.min(rightReserve - 2, Math.ceil(maxW) + padX * 2));
-        }
-        // Flush the pill's LEFT edge to the chart's plot right edge so there's
-        // no horizontal gap between the plot and the change pills.
         const cx = chart.plotLeft + chart.plotWidth + pillW / 2;
 
         // Place pills at their anchor height, then push later ones apart so
