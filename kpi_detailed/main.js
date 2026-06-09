@@ -188,6 +188,7 @@ function applyCardStyles(vp) {
   // fallbacks for charts saved before the merge.
   const primary   = vp?.primaryColor   ?? vp?.primaryAccentColor   ?? vp?.primaryBarColor;
   const secondary = vp?.secondaryColor ?? vp?.secondaryAccentColor ?? vp?.secondaryBarColor;
+  const tertiary  = vp?.tertiaryColor;
   if (primary) {
     root.style.setProperty('--ts-accent', primary);
     root.style.setProperty('--ts-accent-bar', primary);
@@ -195,6 +196,10 @@ function applyCardStyles(vp) {
   if (secondary) {
     root.style.setProperty('--ts-secondary-accent', secondary);
     root.style.setProperty('--ts-secondary-accent-bar', secondary);
+  }
+  if (tertiary) {
+    root.style.setProperty('--ts-tertiary-accent', tertiary);
+    root.style.setProperty('--ts-tertiary-accent-bar', tertiary);
   }
 }
 
@@ -315,6 +320,7 @@ function renderSingle(vp, values, chartModel) {
 
   setHidden('singleLayout', !showLayout);
   setHidden('splitLayout', true);
+  setHidden('split3Layout', true);
   setHidden('mainSecLayout', true);
   if (!showLayout) return;
 
@@ -347,27 +353,29 @@ function renderSingle(vp, values, chartModel) {
 function renderSplit(vp, values, chartModel) {
   const hasPrimary    = isSlotBound(chartModel, 'primaryValue');
   const hasSecondary  = isSlotBound(chartModel, 'secondaryValue');
-  const hasLeftBase   = isSlotBound(chartModel, 'primaryPercent');
-  const hasRightBase  = isSlotBound(chartModel, 'secondaryPercent');
+  // Single shared base (primaryPercent) drives every bar's denominator.
+  const hasBase       = isSlotBound(chartModel, 'primaryPercent');
   const hasFootAvg    = isSlotBound(chartModel, 'footerAvg');
   const footerText    = (vp?.primaryFooter ?? '').trim();
   const showLayout    = hasPrimary || hasSecondary || hasFootAvg || !!footerText;
+  const pctMode       = vp?.primaryPercentMode ?? 'ratio';
 
   setHidden('singleLayout', true);
   setHidden('splitLayout', !showLayout);
+  setHidden('split3Layout', true);
   setHidden('mainSecLayout', true);
   if (!showLayout) return;
 
   setHidden('splitLeftSide',     !hasPrimary);
   setHidden('splitRightSide',    !hasSecondary);
   setHidden('splitDivider',      !(hasPrimary && hasSecondary));
-  setHidden('leftProgressRow',   !hasLeftBase);
-  setHidden('rightProgressRow',  !hasRightBase);
+  setHidden('leftProgressRow',   !hasBase);
+  setHidden('rightProgressRow',  !hasBase);
 
   setText('leftLabel', labelOrColumnName(vp?.leftLabel, getColumnName(chartModel, 'primaryValue')));
   setText('leftValue', formatBigValue(values.primaryValue, vp, vp?.primaryFormat ?? (vp?.primaryAsNumber ? 'number' : 'currency')));
   setText('leftSuffix', hasPrimary ? (vp?.primarySuffix ?? '') : '');
-  const leftFraction = computeBarFraction(values.primaryValue, values.primaryPercent, vp?.primaryPercentMode ?? 'ratio');
+  const leftFraction = computeBarFraction(values.primaryValue, values.primaryPercent, pctMode);
   setText('leftPercent', formatPercent(leftFraction));
   const leftFill = document.getElementById('leftBarFill');
   if (leftFill) {
@@ -380,7 +388,7 @@ function renderSplit(vp, values, chartModel) {
   setText('rightLabel', labelOrColumnName(vp?.rightLabel, getColumnName(chartModel, 'secondaryValue')));
   setText('rightValue', formatBigValue(values.secondaryValue, vp, vp?.secondaryFormat ?? 'currency'));
   setText('rightSuffix', hasSecondary ? (vp?.secondarySuffix ?? vp?.primarySuffix ?? '') : '');
-  const rightFraction = computeBarFraction(values.secondaryValue, values.secondaryPercent, vp?.secondaryPercentMode ?? 'ratio');
+  const rightFraction = computeBarFraction(values.secondaryValue, values.primaryPercent, pctMode);
   setText('rightPercent', formatPercent(rightFraction));
   const rightFill = document.getElementById('rightBarFill');
   if (rightFill) {
@@ -395,6 +403,57 @@ function renderSplit(vp, values, chartModel) {
   setText('splitFooter', footerLine);
 }
 
+// Split (3) layout: same as the 2-up split but with a third column. All
+// three bars share the single base (primaryPercent) as their denominator.
+function renderSplit3(vp, values, chartModel) {
+  const hasA = isSlotBound(chartModel, 'primaryValue');
+  const hasB = isSlotBound(chartModel, 'secondaryValue');
+  const hasC = isSlotBound(chartModel, 'tertiaryValue');
+  const hasBase = isSlotBound(chartModel, 'primaryPercent');
+  const hasFootAvg = isSlotBound(chartModel, 'footerAvg');
+  const footerText = (vp?.primaryFooter ?? '').trim();
+  const showLayout = hasA || hasB || hasC || hasFootAvg || !!footerText;
+  const pctMode = vp?.primaryPercentMode ?? 'ratio';
+
+  setHidden('singleLayout', true);
+  setHidden('splitLayout', true);
+  setHidden('split3Layout', !showLayout);
+  setHidden('mainSecLayout', true);
+  if (!showLayout) return;
+
+  const renderSide = (key, has, value, labelOverride, colSlot, format, suffix, barVar, accentVar) => {
+    setHidden(`${key}Side`, !has);
+    setHidden(`${key}ProgressRow`, !hasBase);
+    setText(`${key}Label`, labelOrColumnName(labelOverride, getColumnName(chartModel, colSlot)));
+    setText(`${key}Value`, formatBigValue(value, vp, format));
+    setText(`${key}Suffix`, has ? suffix : '');
+    const frac = computeBarFraction(value, values.primaryPercent, pctMode);
+    setText(`${key}Percent`, formatPercent(frac));
+    const fill = document.getElementById(`${key}BarFill`);
+    if (fill) { fill.style.width = clampPercentFill(frac) + '%'; fill.style.background = `var(${barVar})`; }
+    const lbl = document.getElementById(`${key}Percent`);
+    if (lbl) lbl.style.color = `var(${accentVar})`;
+  };
+
+  renderSide('s3a', hasA, values.primaryValue, vp?.leftLabel, 'primaryValue',
+    vp?.primaryFormat ?? (vp?.primaryAsNumber ? 'number' : 'currency'),
+    (vp?.primarySuffix ?? ''), '--ts-accent-bar', '--ts-accent');
+  renderSide('s3b', hasB, values.secondaryValue, vp?.rightLabel, 'secondaryValue',
+    vp?.secondaryFormat ?? 'currency',
+    (vp?.secondarySuffix ?? vp?.primarySuffix ?? ''), '--ts-secondary-accent-bar', '--ts-secondary-accent');
+  renderSide('s3c', hasC, values.tertiaryValue, vp?.tertiaryLabel, 'tertiaryValue',
+    vp?.tertiaryFormat ?? 'currency',
+    (vp?.tertiarySuffix ?? vp?.primarySuffix ?? ''), '--ts-tertiary-accent-bar', '--ts-tertiary-accent');
+
+  setHidden('split3DividerAB', !(hasA && hasB));
+  setHidden('split3DividerBC', !(hasB && hasC));
+
+  const leftFraction = computeBarFraction(values.primaryValue, values.primaryPercent, pctMode);
+  const footerLine = composeFooterLine(vp, values, chartModel, leftFraction);
+  setHidden('split3Footer', !footerLine);
+  setText('split3Footer', footerLine);
+}
+
 // Compact "main + secondary" layout: big primary value on top, then a
 // single footer line that joins the secondary value and the footerAvg
 // value with a " · " separator. Footer line uses a larger font than the
@@ -407,6 +466,7 @@ function renderMainSecondary(vp, values, chartModel) {
 
   setHidden('singleLayout', true);
   setHidden('splitLayout', true);
+  setHidden('split3Layout', true);
   setHidden('mainSecLayout', !showLayout);
   if (!showLayout) return;
 
@@ -479,18 +539,28 @@ function renderFooterMetrics(vp, values, chartModel) {
   }
   const label1 = labelOrColumnName(vp?.metric1Label, getColumnName(chartModel, 'metric1'));
   const label2 = labelOrColumnName(vp?.metric2Label, getColumnName(chartModel, 'metric2'));
+  const label3 = labelOrColumnName(vp?.metric3Label, getColumnName(chartModel, 'metric3'));
   const hasMetric1 = values.metric1 != null && label1 !== '';
   const hasMetric2 = values.metric2 != null && label2 !== '';
-  setHidden('footerMetrics', !(hasMetric1 || hasMetric2));
+  const hasMetric3 = values.metric3 != null && label3 !== '';
+  setHidden('footerMetrics', !(hasMetric1 || hasMetric2 || hasMetric3));
 
+  setHidden('metric1', !hasMetric1);
   setText('metric1Label', label1);
   setText('metric1Value', hasMetric1
     ? formatMetricValue(values.metric1, vp?.metric1Format ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
     : '');
 
+  setHidden('metric2', !hasMetric2);
   setText('metric2Label', label2);
   setText('metric2Value', hasMetric2
     ? formatMetricValue(values.metric2, vp?.metric2Format ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
+    : '');
+
+  setHidden('metric3', !hasMetric3);
+  setText('metric3Label', label3);
+  setText('metric3Value', hasMetric3
+    ? formatMetricValue(values.metric3, vp?.metric3Format ?? 'currency', vp?.numberFormat, vp?.currencySymbol)
     : '');
 }
 
@@ -505,8 +575,8 @@ let globalAppConfig = null;
 const TEXT_PROP_KEYS = new Set([
   'primarySuffix', 'primaryDescription', 'primaryFooter',
   'footerAvgLabel', 'leftLabel', 'rightLabel',
-  'metric1Label', 'metric2Label', 'numberFormat', 'currencySymbol',
-  'secondarySuffix',
+  'metric1Label', 'metric2Label', 'metric3Label', 'numberFormat', 'currencySymbol',
+  'secondarySuffix', 'tertiarySuffix', 'tertiaryLabel',
 ]);
 const TEXT_PROP_DEBOUNCE_MS = 2000;
 
@@ -553,9 +623,10 @@ function render(ctx, providedModel) {
       primaryValue: sumForKey(chartModel, 'primaryValue'),
       primaryPercent: sumForKey(chartModel, 'primaryPercent'),
       secondaryValue: sumForKey(chartModel, 'secondaryValue'),
-      secondaryPercent: sumForKey(chartModel, 'secondaryPercent'),
+      tertiaryValue: sumForKey(chartModel, 'tertiaryValue'),
       metric1: sumForKey(chartModel, 'metric1'),
       metric2: sumForKey(chartModel, 'metric2'),
+      metric3: sumForKey(chartModel, 'metric3'),
       footerAvg: sumForKey(chartModel, 'footerAvg'),
     };
 
@@ -577,6 +648,8 @@ function render(ctx, providedModel) {
     const mode = vp?.mode ?? 'single';
     if (mode === 'split') {
       renderSplit(vp, values, chartModel);
+    } else if (mode === 'split-3') {
+      renderSplit3(vp, values, chartModel);
     } else if (mode === 'main-secondary') {
       renderMainSecondary(vp, values, chartModel);
     } else {
@@ -617,9 +690,10 @@ const renderChart = async (ctx, providedModel) => {
           { key: 'primaryValue', columns: [] },
           { key: 'primaryPercent', columns: [] },
           { key: 'secondaryValue', columns: [] },
-          { key: 'secondaryPercent', columns: [] },
+          { key: 'tertiaryValue', columns: [] },
           { key: 'metric1', columns: [] },
           { key: 'metric2', columns: [] },
+          { key: 'metric3', columns: [] },
           { key: 'footerAvg', columns: [] },
         ],
       },
@@ -656,7 +730,7 @@ const renderChart = async (ctx, providedModel) => {
           },
           {
             key: 'primaryPercent',
-            label: 'Primary percent base (denominator that drives the bar)',
+            label: 'Base value (shared denominator for ALL bars: primary/secondary/tertiary)',
             allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
@@ -664,15 +738,15 @@ const renderChart = async (ctx, providedModel) => {
           },
           {
             key: 'secondaryValue',
-            label: 'Secondary value (split layout)',
+            label: 'Secondary value (split / split-3 layout)',
             allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
             maxColumnCount: 1,
           },
           {
-            key: 'secondaryPercent',
-            label: 'Secondary percent base (split layout)',
+            key: 'tertiaryValue',
+            label: 'Tertiary value (split-3 layout)',
             allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
@@ -695,6 +769,14 @@ const renderChart = async (ctx, providedModel) => {
             maxColumnCount: 1,
           },
           {
+            key: 'metric3',
+            label: 'Metric 3',
+            allowAttributeColumns: true,
+            allowMeasureColumns: true,
+            allowTimeSeriesColumns: false,
+            maxColumnCount: 1,
+          },
+          {
             key: 'footerAvg',
             label: 'Footer value (appended to footer line)',
             allowAttributeColumns: true,
@@ -707,7 +789,7 @@ const renderChart = async (ctx, providedModel) => {
     ],
     visualPropEditorDefinition: {
       elements: [
-        { key: 'mode', type: 'dropdown', label: 'Card layout', defaultValue: 'single', values: ['single', 'split', 'main-secondary'] },
+        { key: 'mode', type: 'dropdown', label: 'Card layout', defaultValue: 'single', values: ['single', 'split', 'split-3', 'main-secondary'] },
         {
           key: 'icon',
           type: 'dropdown',
@@ -730,7 +812,7 @@ const renderChart = async (ctx, providedModel) => {
         {
           key: 'primaryPercentMode',
           type: 'dropdown',
-          label: 'Primary bar calculation',
+          label: 'Bar calculation (shared base): ratio = value / base, as-is = base is already a %',
           defaultValue: 'ratio',
           values: ['ratio', 'as-is'],
         },
@@ -744,19 +826,22 @@ const renderChart = async (ctx, providedModel) => {
           values: ['currency', 'number', 'percent'],
         },
         { key: 'secondarySuffix', type: 'text', label: 'Secondary suffix (split)', defaultValue: 'accounts' },
-        { key: 'rightLabel', type: 'text', label: 'Right label (split, blank = use Secondary value column name)', defaultValue: ' ' },
-        {
-          key: 'secondaryPercentMode',
-          type: 'dropdown',
-          label: 'Secondary bar calculation',
-          defaultValue: 'ratio',
-          values: ['ratio', 'as-is'],
-        },
+        { key: 'rightLabel', type: 'text', label: 'Secondary label (split, blank = use column name)', defaultValue: ' ' },
         { key: 'secondaryColor', type: 'colorpicker', label: 'Secondary colour (percent text + bar)', defaultValue: getEffectivePalette()[1] ?? '#5F5E5A' },
         {
           key: 'secondaryFormat',
           type: 'dropdown',
           label: 'Secondary value format',
+          defaultValue: 'currency',
+          values: ['currency', 'number', 'percent'],
+        },
+        { key: 'tertiarySuffix', type: 'text', label: 'Tertiary suffix (split-3)', defaultValue: 'accounts' },
+        { key: 'tertiaryLabel', type: 'text', label: 'Tertiary label (split-3, blank = use column name)', defaultValue: ' ' },
+        { key: 'tertiaryColor', type: 'colorpicker', label: 'Tertiary colour (percent text + bar)', defaultValue: getEffectivePalette()[2] ?? '#534AB7' },
+        {
+          key: 'tertiaryFormat',
+          type: 'dropdown',
+          label: 'Tertiary value format',
           defaultValue: 'currency',
           values: ['currency', 'number', 'percent'],
         },
@@ -773,6 +858,14 @@ const renderChart = async (ctx, providedModel) => {
           key: 'metric2Format',
           type: 'dropdown',
           label: 'Metric 2 format',
+          defaultValue: 'currency',
+          values: ['currency', 'number', 'percent'],
+        },
+        { key: 'metric3Label', type: 'text', label: 'Metric 3 label (blank = use column name)', defaultValue: ' ' },
+        {
+          key: 'metric3Format',
+          type: 'dropdown',
+          label: 'Metric 3 format',
           defaultValue: 'currency',
           values: ['currency', 'number', 'percent'],
         },

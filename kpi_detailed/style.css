@@ -18,6 +18,8 @@
   --ts-accent-bar: #7F77DD;
   --ts-secondary-accent: #5F5E5A;
   --ts-secondary-accent-bar: #888780;
+  --ts-tertiary-accent: #534AB7;
+  --ts-tertiary-accent-bar: #7F77DD;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }

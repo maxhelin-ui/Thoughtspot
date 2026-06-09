@@ -64,6 +64,52 @@
       </div>
     </div>
 
+    <!-- Split (3) layout: same as split but with a third column. All three
+         bars share the single base value as denominator. -->
+    <div id="split3Layout" class="ts-split hidden">
+      <div class="ts-detail-card">
+        <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
+        <div class="ts-split-grid">
+          <div id="s3aSide" class="ts-split-side">
+            <div id="s3aLabel" class="ts-side-label"></div>
+            <div class="ts-stat-row">
+              <span id="s3aValue" class="ts-stat-medium"></span>
+              <span id="s3aSuffix" class="ts-stat-suffix"></span>
+            </div>
+            <div id="s3aProgressRow" class="ts-progress-row">
+              <div class="ts-progress-track"><div id="s3aBarFill" class="ts-progress-fill"></div></div>
+              <span id="s3aPercent" class="ts-progress-label"></span>
+            </div>
+          </div>
+          <div id="split3DividerAB" class="ts-split-divider"></div>
+          <div id="s3bSide" class="ts-split-side">
+            <div id="s3bLabel" class="ts-side-label"></div>
+            <div class="ts-stat-row">
+              <span id="s3bValue" class="ts-stat-medium"></span>
+              <span id="s3bSuffix" class="ts-stat-suffix"></span>
+            </div>
+            <div id="s3bProgressRow" class="ts-progress-row">
+              <div class="ts-progress-track"><div id="s3bBarFill" class="ts-progress-fill"></div></div>
+              <span id="s3bPercent" class="ts-progress-label"></span>
+            </div>
+          </div>
+          <div id="split3DividerBC" class="ts-split-divider"></div>
+          <div id="s3cSide" class="ts-split-side">
+            <div id="s3cLabel" class="ts-side-label"></div>
+            <div class="ts-stat-row">
+              <span id="s3cValue" class="ts-stat-medium"></span>
+              <span id="s3cSuffix" class="ts-stat-suffix"></span>
+            </div>
+            <div id="s3cProgressRow" class="ts-progress-row">
+              <div class="ts-progress-track"><div id="s3cBarFill" class="ts-progress-fill"></div></div>
+              <span id="s3cPercent" class="ts-progress-label"></span>
+            </div>
+          </div>
+        </div>
+        <div id="split3Footer" class="ts-stat-footer"></div>
+      </div>
+    </div>
+
     <!-- Main + Secondary layout (compact: big primary, footer line below
          combining secondary value · footer value) -->
     <div id="mainSecLayout" class="ts-main-sec hidden">
@@ -84,13 +130,17 @@
 
     <!-- Footer metrics (shared) -->
     <div id="footerMetrics" class="ts-footer-metrics hidden">
-      <div class="ts-metric">
+      <div id="metric1" class="ts-metric">
         <div id="metric1Label" class="ts-metric-label"></div>
         <div id="metric1Value" class="ts-metric-value"></div>
       </div>
-      <div class="ts-metric">
+      <div id="metric2" class="ts-metric">
         <div id="metric2Label" class="ts-metric-label"></div>
         <div id="metric2Value" class="ts-metric-value"></div>
+      </div>
+      <div id="metric3" class="ts-metric">
+        <div id="metric3Label" class="ts-metric-label"></div>
+        <div id="metric3Value" class="ts-metric-value"></div>
       </div>
     </div>
   </div>
