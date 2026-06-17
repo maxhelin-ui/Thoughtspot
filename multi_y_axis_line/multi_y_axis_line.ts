@@ -463,6 +463,35 @@ function alignButtonAreasToPlot(chart: any, chartTitle: string) {
             if (wrapped) el.style.paddingLeft = '8px';
         }
     });
+
+    // The legend is its own full-width row inside #topArea, so by default it
+    // starts at the gridline-aligned paddingLeft above and runs to the right
+    // edge — i.e. it first uses "the whole right side". If that still isn't
+    // enough room and it wrapped to a second row, let it reclaim the y-axis
+    // label gutter on the left so it spans the FULL tile width before any
+    // wrap. Only then (if even the full width can't fit it) does it wrap.
+    const topEl = document.getElementById('topArea');
+    const legendBox = document.getElementById('customLegend');
+    if (topEl && legendBox) {
+        // Reset any prior expansion so the wrap test reflects the current size.
+        legendBox.style.marginLeft = '';
+        legendBox.style.flexBasis  = '';
+        void legendBox.offsetTop; // force reflow before measuring
+        const lis = Array.from(legendBox.querySelectorAll('.legend-item')) as HTMLElement[];
+        const legendWrapped = lis.length >= 2 &&
+            (Math.max(...lis.map(b => b.offsetTop)) - Math.min(...lis.map(b => b.offsetTop)) > 4);
+        if (legendWrapped) {
+            // Pull the box left by the gutter (leaving an 8px edge margin) and
+            // grow its basis by the same amount so it ends at the right edge.
+            const padLeft = parseFloat(topEl.style.paddingLeft || '0') || 0;
+            const reclaim = Math.max(0, padLeft - 8);
+            if (reclaim > 0) {
+                legendBox.style.marginLeft = `${-reclaim}px`;
+                legendBox.style.flexBasis  = `calc(100% + ${reclaim}px)`;
+            }
+        }
+    }
+
     setStyle('leftArea', {
         paddingTop:    `${Math.max(0, plotTopAbs)}px`,
         // Same idea for the vertical button column — gridline-aligned start,
