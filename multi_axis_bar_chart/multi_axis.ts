@@ -691,6 +691,7 @@ function render(ctx: CustomChartContext) {
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type: 'column',
+            backgroundColor: '#FFFFFF',
             marginLeft:   80,
             marginRight:  40,
             marginTop:    chartTitle ? 46 : 10,

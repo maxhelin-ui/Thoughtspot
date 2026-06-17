@@ -389,6 +389,7 @@ function render(ctx: CustomChartContext) {
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type:     'dumbbell',
+            backgroundColor: '#FFFFFF',
             inverted: true,
             marginLeft:   180,
             marginRight:  placement.marginRight,
