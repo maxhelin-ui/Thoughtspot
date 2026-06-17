@@ -56,6 +56,9 @@ let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
+// Latest render closure + one-time observer flag for re-rendering on resize.
+let resizeReRender: (() => void) | null = null;
+let resizeObserverAttached = false;
 
 // Returns the org-configured chart colour palette if TS provided one, else
 // falls back to our hardcoded PALETTE. This is the user's "company" palette
@@ -692,6 +695,7 @@ function render(ctx: CustomChartContext) {
         chart: {
             type: 'column',
             backgroundColor: '#FFFFFF',
+            animation: false,
             marginLeft:   80,
             marginRight:  40,
             marginTop:    chartTitle ? 46 : 10,
@@ -765,6 +769,9 @@ function render(ctx: CustomChartContext) {
             },
         },
         plotOptions: {
+            series: {
+                animation: false,
+            },
             column: {
                 stickyTracking: false,
                 borderWidth: 0,
@@ -848,6 +855,30 @@ const renderChart = async (ctx: CustomChartContext) => {
     // visualProps changed (typing into the settings panel) — data changes
     // from filters/queries must apply right away, otherwise the chart would
     // appear blank while the debounce timer is pending.
+    // Re-render (debounced) on tile resize so the chart and its overlay
+    // button/legend bars re-lay-out at the new size. ResizeObserver on
+    // documentElement because ThoughtSpot resizes the iframe/container without
+    // reliably firing a window 'resize' event.
+    resizeReRender = doRender;
+    if (!resizeObserverAttached && typeof ResizeObserver !== 'undefined') {
+        resizeObserverAttached = true;
+        let lastW = 0, lastH = 0;
+        let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        const trigger = () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => resizeReRender?.(), 150);
+        };
+        const ro = new ResizeObserver(() => {
+            const w = Math.round(document.documentElement.clientWidth);
+            const h = Math.round(document.documentElement.clientHeight);
+            if (w === lastW && h === lastH) return;
+            const first = lastW === 0 && lastH === 0;
+            lastW = w; lastH = h;
+            if (!first) trigger();
+        });
+        ro.observe(document.documentElement);
+        window.addEventListener('resize', trigger);
+    }
     if (!firstRenderDone) {
         doRender();
         return;

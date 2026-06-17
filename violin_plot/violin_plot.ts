@@ -80,6 +80,9 @@ let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
+// Latest render closure + one-time observer flag for re-rendering on resize.
+let resizeReRender: (() => void) | null = null;
+let resizeObserverAttached = false;
 let activeXColumnId: string | null = null;
 
 function getEffectivePalette(): string[] {
@@ -486,6 +489,7 @@ function render(ctx: CustomChartContext) {
         chart: {
             type: 'scatter',
             backgroundColor: '#FFFFFF',
+            animation: false,
             spacing: [14, 18, 12, 12],
             style: { fontFamily: 'Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif' },
         },
@@ -578,6 +582,29 @@ const renderChart = async (ctx: CustomChartContext) => {
             } as RenderErrorEventPayload);
         }
     };
+    // Re-render (debounced) on tile resize. ResizeObserver on documentElement
+    // because ThoughtSpot resizes the iframe/container without reliably firing
+    // a window 'resize' event.
+    resizeReRender = doRender;
+    if (!resizeObserverAttached && typeof ResizeObserver !== 'undefined') {
+        resizeObserverAttached = true;
+        let lastW = 0, lastH = 0;
+        let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        const trigger = () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => resizeReRender?.(), 150);
+        };
+        const ro = new ResizeObserver(() => {
+            const w = Math.round(document.documentElement.clientWidth);
+            const h = Math.round(document.documentElement.clientHeight);
+            if (w === lastW && h === lastH) return;
+            const first = lastW === 0 && lastH === 0;
+            lastW = w; lastH = h;
+            if (!first) trigger();
+        });
+        ro.observe(document.documentElement);
+        window.addEventListener('resize', trigger);
+    }
     if (!firstRenderDone) { doRender(); return; }
     const currentData = ctx.getChartModel().data;
     if (currentData !== lastRenderedDataRef) {
