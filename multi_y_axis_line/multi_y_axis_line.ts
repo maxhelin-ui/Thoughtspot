@@ -1088,6 +1088,7 @@ function render(ctx: CustomChartContext) {
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type: smoothLines ? 'spline' : 'line',
+            backgroundColor: '#FFFFFF',
             marginLeft:   CHART_MARGIN_LEFT,
             marginRight:  CHART_MARGIN_RIGHT,
             marginTop,

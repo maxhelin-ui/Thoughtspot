@@ -485,6 +485,7 @@ function render(ctx: CustomChartContext) {
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type: 'scatter',
+            backgroundColor: '#FFFFFF',
             spacing: [14, 18, 12, 12],
             style: { fontFamily: 'Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif' },
         },
