@@ -81,6 +81,9 @@ let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
+// Latest render closure + one-time observer flag for re-rendering on resize.
+let resizeReRender: (() => void) | null = null;
+let resizeObserverAttached = false;
 
 // Returns the org-configured chart palette if TS provided one, else the
 // SLICE_PALETTE fallback.
@@ -564,6 +567,7 @@ function render(ctx: CustomChartContext) {
     globalChartReference = Highcharts.chart('chart', {
         chart: {
             type: 'columnrange',
+            animation: false,
             marginLeft:   80,
             marginRight:  rightReserve,
             marginBottom: dynamicMarginBottom,
@@ -686,6 +690,9 @@ function render(ctx: CustomChartContext) {
         },
 
         plotOptions: {
+            series: {
+                animation: false,
+            },
             columnrange: {
                 borderWidth:     0,
                 pointPadding:    0.05,
@@ -1008,6 +1015,31 @@ const renderChart = async (ctx: CustomChartContext) => {
             } as RenderErrorEventPayload);
         }
     };
+    // Re-render (debounced) when the tile is resized. A bare Highcharts reflow
+    // moves the plot but NOT the custom overlays (value pills, connectors,
+    // difference pills/lines), so we re-run the full render. We use a
+    // ResizeObserver on documentElement because ThoughtSpot resizes the chart
+    // iframe/container without reliably firing a window 'resize' event.
+    resizeReRender = doRender;
+    if (!resizeObserverAttached && typeof ResizeObserver !== 'undefined') {
+        resizeObserverAttached = true;
+        let lastW = 0, lastH = 0;
+        let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        const trigger = () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => resizeReRender?.(), 150);
+        };
+        const ro = new ResizeObserver(() => {
+            const w = Math.round(document.documentElement.clientWidth);
+            const h = Math.round(document.documentElement.clientHeight);
+            if (w === lastW && h === lastH) return;
+            const first = lastW === 0 && lastH === 0;
+            lastW = w; lastH = h;
+            if (!first) trigger();
+        });
+        ro.observe(document.documentElement);
+        window.addEventListener('resize', trigger);
+    }
     if (!firstRenderDone) { doRender(); return; }
     const currentData = ctx.getChartModel().data;
     if (currentData !== lastRenderedDataRef) {

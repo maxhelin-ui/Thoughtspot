@@ -60,6 +60,9 @@ let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
 let lastRenderedDataRef: unknown = null;
+// Latest render closure + one-time observer flag for re-rendering on resize.
+let resizeReRender: (() => void) | null = null;
+let resizeObserverAttached = false;
 
 // Pager state: which slice of (post-sort) rows the user is currently viewing.
 // Survives across renders so clicking Top/Bottom/arrows doesn't get reset on
@@ -561,6 +564,30 @@ const renderChart = async (ctx: CustomChartContext) => {
             } as RenderErrorEventPayload);
         }
     };
+    // Re-render (debounced) on tile resize so the chart, the % / change labels,
+    // the connectors and the legend re-lay-out at the new size. ResizeObserver
+    // on documentElement because ThoughtSpot resizes the iframe/container
+    // without reliably firing a window 'resize' event.
+    resizeReRender = doRender;
+    if (!resizeObserverAttached && typeof ResizeObserver !== 'undefined') {
+        resizeObserverAttached = true;
+        let lastW = 0, lastH = 0;
+        let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+        const trigger = () => {
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => resizeReRender?.(), 150);
+        };
+        const ro = new ResizeObserver(() => {
+            const w = Math.round(document.documentElement.clientWidth);
+            const h = Math.round(document.documentElement.clientHeight);
+            if (w === lastW && h === lastH) return;
+            const first = lastW === 0 && lastH === 0;
+            lastW = w; lastH = h;
+            if (!first) trigger();
+        });
+        ro.observe(document.documentElement);
+        window.addEventListener('resize', trigger);
+    }
     if (!firstRenderDone) { doRender(); return; }
     const currentData = ctx.getChartModel().data;
     if (currentData !== lastRenderedDataRef) {
