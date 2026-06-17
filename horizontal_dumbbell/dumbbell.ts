@@ -390,6 +390,12 @@ function render(ctx: CustomChartContext) {
         chart: {
             type:     'dumbbell',
             backgroundColor: '#FFFFFF',
+            // Animation off: the legend alignment below calls redraw() and the
+            // tile can reflow right as the chart mounts. With animation on,
+            // those interrupt the intro animation and strand the markers/labels
+            // at intermediate positions while the axis finishes correctly
+            // (the intermittent "scattered dots" bug). Off = atomic reposition.
+            animation: false,
             inverted: true,
             marginLeft:   180,
             marginRight:  placement.marginRight,
@@ -464,6 +470,9 @@ function render(ctx: CustomChartContext) {
             },
         },
         plotOptions: {
+            series: {
+                animation: false,
+            },
             dumbbell: {
                 connectorColor: connectorColor,
                 connectorWidth: connectorWidth,

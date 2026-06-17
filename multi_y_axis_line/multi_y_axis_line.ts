@@ -1089,6 +1089,12 @@ function render(ctx: CustomChartContext) {
         chart: {
             type: smoothLines ? 'spline' : 'line',
             backgroundColor: '#FFFFFF',
+            // Animation off: alignButtonAreasToPlot() calls chart.reflow()
+            // right after render, and the tile can reflow as it mounts. With
+            // animation on, that interrupts the intro animation and strands the
+            // markers/data labels at intermediate positions while the line path
+            // finishes (the intermittent "markers bunched at the left" bug).
+            animation: false,
             marginLeft:   CHART_MARGIN_LEFT,
             marginRight:  CHART_MARGIN_RIGHT,
             marginTop,
@@ -1159,6 +1165,7 @@ function render(ctx: CustomChartContext) {
         },
         plotOptions: {
             series: {
+                animation: false,
                 lineWidth,
                 marker: { enabled: markerEnabled, radius: markerRadius, symbol: 'circle' },
                 dataLabels: {
