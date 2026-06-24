@@ -672,11 +672,56 @@ const renderChart = async (ctx, providedModel) => {
     ctx.emitEvent(ChartToTSEvent.RenderStart);
     await render(ctx, providedModel);
     ctx.emitEvent(ChartToTSEvent.RenderComplete);
+    firstRenderDone = true;
+    lastRenderedSize = measureCardContainer();
   } catch (error) {
     console.error('KPI - Detailed render error:', error);
     ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error });
   }
 };
+
+// ---- resize re-render ------------------------------------------------------
+// The card's text scaling is container-query CSS, so most resizes need no JS.
+// Still re-run the render (debounced, only on real size changes, never before
+// the first data render) so the chart always reflects its CURRENT container
+// size — matching the other custom charts and covering headless screenshot
+// runners that resize the viewport after load.
+const RESIZE_DEBOUNCE_MS = 150;
+const RESIZE_MIN_DELTA_PX = 2;
+let firstRenderDone = false;
+let resizeRenderTimer = null;
+let lastRenderedSize = null;
+
+function measureCardContainer() {
+  const el = document.getElementById('card') ?? document.body;
+  return { width: el.clientWidth, height: el.clientHeight };
+}
+
+function cardContainerSizeChanged() {
+  if (!lastRenderedSize) return true;
+  const now = measureCardContainer();
+  return Math.abs(now.width - lastRenderedSize.width) > RESIZE_MIN_DELTA_PX
+    || Math.abs(now.height - lastRenderedSize.height) > RESIZE_MIN_DELTA_PX;
+}
+
+function setupResizeRerender(ctx) {
+  const onResize = () => {
+    if (!firstRenderDone) return;            // never render before first data render
+    if (!cardContainerSizeChanged()) return; // ignore <=2px jitter (no re-render storms)
+    if (resizeRenderTimer) clearTimeout(resizeRenderTimer);
+    resizeRenderTimer = setTimeout(() => {
+      resizeRenderTimer = null;
+      if (!firstRenderDone || !cardContainerSizeChanged()) return;
+      renderChart(ctx);
+    }, RESIZE_DEBOUNCE_MS);
+  };
+  const target = document.getElementById('card');
+  if (typeof ResizeObserver !== 'undefined' && target) {
+    new ResizeObserver(onResize).observe(target);
+  } else {
+    window.addEventListener('resize', onResize);
+  }
+}
 
 (async () => {
   let propChangeTimer = null;
@@ -907,5 +952,10 @@ const renderChart = async (ctx, providedModel) => {
     return { triggerRenderChart: false };
   });
 
+  setupResizeRerender(ctx);
   renderChart(ctx);
-})();
+})().catch((error) => {
+  // Without this, a failed SDK handshake rejects silently and the tile
+  // stays blank with no console breadcrumb.
+  console.error('KPI - Detailed: failed to initialise chart context:', error);
+});

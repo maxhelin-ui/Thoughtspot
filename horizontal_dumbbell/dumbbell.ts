@@ -10,8 +10,21 @@ import {
     RenderErrorEventPayload,
 } from '@thoughtspot/ts-chart-sdk';
 import numeral from 'numeral';
+import HighchartsNS from 'highcharts';
+import HighchartsMore from 'highcharts/highcharts-more';
+import HighchartsDumbbell from 'highcharts/modules/dumbbell';
 
-declare const Highcharts: any;
+// Bundle Highcharts instead of loading it from CDN <script> tags in
+// index.html. A slow or failed CDN fetch left `Highcharts` undefined when
+// the first render fired, so the tile failed to load (blank until reload);
+// CDN scripts are also blocked under a default-src 'self' CSP. Bundling from
+// npm (same approach as custom_bar_chart / violin_plot) removes the network
+// dependency entirely. highcharts-more + modules/dumbbell provide the
+// `dumbbell` series type. Typed `any` to match the previous
+// `declare const Highcharts: any` global.
+HighchartsMore(HighchartsNS);
+HighchartsDumbbell(HighchartsNS);
+const Highcharts: any = HighchartsNS;
 
 interface VisualProps {
     chartTitle?: string;
@@ -532,25 +545,28 @@ function render(ctx: CustomChartContext) {
     }
 }
 
+const safeRender = (ctx: CustomChartContext) => {
+    try {
+        ctx.emitEvent(ChartToTSEvent.RenderStart);
+        render(ctx);
+        ctx.emitEvent(ChartToTSEvent.RenderComplete);
+        firstRenderDone = true;
+        lastRenderedDataRef = ctx.getChartModel().data;
+        lastRenderedSize = measureChartContainer();
+    } catch (error) {
+        console.error('Error during render:', error);
+        ctx.emitEvent(ChartToTSEvent.RenderError, {
+            hasError: true,
+            error,
+        } as RenderErrorEventPayload);
+    }
+};
+
 const renderChart = async (ctx: CustomChartContext) => {
     if (!globalAppConfig) {
         try { globalAppConfig = (ctx as any).getAppConfig?.() ?? null; } catch { /* ignore */ }
     }
-    const doRender = () => {
-        try {
-            ctx.emitEvent(ChartToTSEvent.RenderStart);
-            render(ctx);
-            ctx.emitEvent(ChartToTSEvent.RenderComplete);
-            firstRenderDone = true;
-            lastRenderedDataRef = ctx.getChartModel().data;
-        } catch (error) {
-            console.error('Error during render:', error);
-            ctx.emitEvent(ChartToTSEvent.RenderError, {
-                hasError: true,
-                error,
-            } as RenderErrorEventPayload);
-        }
-    };
+    const doRender = () => safeRender(ctx);
     if (!firstRenderDone) { doRender(); return; }
     const currentData = ctx.getChartModel().data;
     if (currentData !== lastRenderedDataRef) {
@@ -561,6 +577,51 @@ const renderChart = async (ctx: CustomChartContext) => {
     if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
     renderDebounceTimer = setTimeout(doRender, 1000);
 };
+
+// ---- resize re-render ------------------------------------------------------
+// The chart only lays out correctly for the size it renders at: Highcharts
+// reflows its own plot when the tile resizes, but the change labels drawn via
+// chart.renderer.text at toPixels positions (and the pager/legend alignment)
+// go stale — which used to require a full page reload to fix. Watch the chart
+// container and re-run the full render, debounced, and only when the size
+// really changed and the first data render has happened.
+const RESIZE_DEBOUNCE_MS  = 150;
+const RESIZE_MIN_DELTA_PX = 2;
+let resizeRenderTimer: ReturnType<typeof setTimeout> | null = null;
+let lastRenderedSize: { width: number; height: number } | null = null;
+
+function measureChartContainer(): { width: number; height: number } {
+    const el = document.getElementById('chart') ?? document.body;
+    return { width: el.clientWidth, height: el.clientHeight };
+}
+
+function chartContainerSizeChanged(): boolean {
+    if (!lastRenderedSize) return true;
+    const now = measureChartContainer();
+    return Math.abs(now.width  - lastRenderedSize.width)  > RESIZE_MIN_DELTA_PX
+        || Math.abs(now.height - lastRenderedSize.height) > RESIZE_MIN_DELTA_PX;
+}
+
+function setupResizeRerender(ctx: CustomChartContext) {
+    const onResize = () => {
+        if (!firstRenderDone) return;             // never render before first data render
+        if (!chartContainerSizeChanged()) return; // ignore <=2px jitter (no re-render storms)
+        if (resizeRenderTimer) clearTimeout(resizeRenderTimer);
+        resizeRenderTimer = setTimeout(() => {
+            resizeRenderTimer = null;
+            // Re-check at fire time: a TS-triggered render may already have
+            // painted at the current size while the debounce was pending.
+            if (!firstRenderDone || !chartContainerSizeChanged()) return;
+            safeRender(ctx); // render() reads the container's CURRENT dimensions
+        }, RESIZE_DEBOUNCE_MS);
+    };
+    const target = document.getElementById('chart');
+    if (typeof ResizeObserver !== 'undefined' && target) {
+        new ResizeObserver(onResize).observe(target);
+    } else {
+        window.addEventListener('resize', onResize);
+    }
+}
 
 (async () => {
     const ctx = await getChartContext({
@@ -649,5 +710,10 @@ const renderChart = async (ctx: CustomChartContext) => {
         },
     });
 
+    setupResizeRerender(ctx);
     renderChart(ctx);
-})();
+})().catch((error) => {
+    // Without this, a failed SDK handshake rejects silently and the tile
+    // stays blank with no console breadcrumb.
+    console.error('horizontal_dumbbell: failed to initialise chart context:', error);
+});

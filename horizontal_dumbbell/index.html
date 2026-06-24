@@ -4,10 +4,11 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Horizontal Dumbbell Chart</title>
-        <script src="https://code.highcharts.com/highcharts.js"></script>
-        <script src="https://code.highcharts.com/highcharts-more.js"></script>
-        <script src="https://code.highcharts.com/modules/dumbbell.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
+        <!-- Highcharts (+ more + dumbbell module) / numeral are bundled via
+             dumbbell.ts imports (Vite), not loaded from a CDN. A slow or
+             failed CDN fetch used to leave `Highcharts` undefined at render
+             time — blank tile until reload — and CDN scripts also break under
+             a default-src 'self' CSP. -->
         <style>
             body {
                 margin: 0;

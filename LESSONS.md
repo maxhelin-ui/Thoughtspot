@@ -11,11 +11,12 @@ multi-y-axis-line charts. Read before starting a new viz.
 - `text` input `defaultValue` cannot be `''` (empty string). Use `' '` (single space). Then in render, `.trim() || fallback` to detect the placeholder. Forgetting this means `?? fallback` never fires.
 - Highcharts `columnrange` (and several other types) needs `highcharts-more.js` — easy to forget in `index.html`.
 - If the chart URL 403s in a browser tab, it's Vercel Deployment Protection — disable in the Vercel dashboard.
+- **Highcharts loaded from `code.highcharts.com` → "Cannot display the custom chart" in export/scheduled/headless, but FINE in your own browser.** `code.highcharts.com` can return 403 to server/headless contexts; the chart then hits `ReferenceError: Highcharts is not defined` → `CHART_RENDER_ERROR`. It still works for *you* because your browser cached the CDN script — so it looks fine on the liveboard but is broken for image export, scheduled refresh, and any headless renderer. **Fix: bundle Highcharts from npm (above); never depend on the CDN.** Diagnose by logging into TS in a fresh/headless browser (no cache) and watching the chart iframe console for the 403 + "Highcharts is not defined".
 
 ## SDK imports (recurring rollup/tsc trap)
 
 - Never import from `@thoughtspot/ts-chart-sdk/src/...`. Those internal paths aren't in the installed package and Vite/tsc will fail to resolve them. Only use top-level exports.
-- For Highcharts, prefer CDN via `index.html` with `declare const Highcharts: any` in your TS. npm-bundled Highcharts tripped Vite when combined with the SDK.
+- **For Highcharts, BUNDLE from npm — never load it from `code.highcharts.com` (or any CDN) via `index.html`.** `import Highcharts from 'highcharts'` (+ `import HighchartsMore from 'highcharts/highcharts-more'; HighchartsMore(Highcharts)` for module series). The earlier "npm-bundled tripped Vite" issue is resolved — bundling builds cleanly and is the only reliable option. See the CDN-403 failure below for why the CDN path is actively dangerous.
 
 ## Build / Vercel
 

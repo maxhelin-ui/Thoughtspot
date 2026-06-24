@@ -180,6 +180,22 @@ function mean(values: number[]): number {
     return values.reduce((sum, v) => sum + v, 0) / values.length;
 }
 
+// Loop-based min/max. `Math.min(...values)` passes every element as a call
+// argument and overflows the call stack once a category holds tens of
+// thousands of points (the query allows up to 100000 rows) — which crashed
+// render() and left the tile blank.
+function arrayMin(values: number[]): number {
+    let m = Infinity;
+    for (const v of values) if (v < m) m = v;
+    return m;
+}
+
+function arrayMax(values: number[]): number {
+    let m = -Infinity;
+    for (const v of values) if (v > m) m = v;
+    return m;
+}
+
 function standardDeviation(values: number[]): number {
     if (values.length < 2) return 0;
     const m = mean(values);
@@ -188,8 +204,8 @@ function standardDeviation(values: number[]): number {
 }
 
 function bandwidth(values: number[]): number {
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    const min = arrayMin(values);
+    const max = arrayMax(values);
     const range = max - min;
     const sd = standardDeviation(values);
     const silverman = 1.06 * sd * Math.pow(values.length, -0.2);
@@ -206,8 +222,8 @@ function gaussianKernel(u: number): number {
 function buildViolinPolygon(values: number[], x: number, maxHalfWidth: number, minHalfWidth: number): Array<[number, number]> {
     if (values.length === 0) return [];
     const bw = bandwidth(values);
-    const minValue = Math.min(...values);
-    const maxValue = Math.max(...values);
+    const minValue = arrayMin(values);
+    const maxValue = arrayMax(values);
     const domainMin = minValue === maxValue ? minValue - bw : minValue - bw * 1.4;
     const domainMax = minValue === maxValue ? maxValue + bw : maxValue + bw * 1.4;
     const samples: Array<{ y: number; density: number }> = [];
@@ -558,25 +574,28 @@ function render(ctx: CustomChartContext) {
     });
 }
 
+const safeRender = (ctx: CustomChartContext) => {
+    try {
+        ctx.emitEvent(ChartToTSEvent.RenderStart);
+        render(ctx);
+        ctx.emitEvent(ChartToTSEvent.RenderComplete);
+        firstRenderDone = true;
+        lastRenderedDataRef = ctx.getChartModel().data;
+        lastRenderedSize = measureChartContainer();
+    } catch (error) {
+        console.error('Violin Plot render error:', error);
+        ctx.emitEvent(ChartToTSEvent.RenderError, {
+            hasError: true,
+            error,
+        } as RenderErrorEventPayload);
+    }
+};
+
 const renderChart = async (ctx: CustomChartContext) => {
     if (!globalAppConfig) {
         try { globalAppConfig = (ctx as any).getAppConfig?.() ?? null; } catch { /* ignore */ }
     }
-    const doRender = () => {
-        try {
-            ctx.emitEvent(ChartToTSEvent.RenderStart);
-            render(ctx);
-            ctx.emitEvent(ChartToTSEvent.RenderComplete);
-            firstRenderDone = true;
-            lastRenderedDataRef = ctx.getChartModel().data;
-        } catch (error) {
-            console.error('Violin Plot render error:', error);
-            ctx.emitEvent(ChartToTSEvent.RenderError, {
-                hasError: true,
-                error,
-            } as RenderErrorEventPayload);
-        }
-    };
+    const doRender = () => safeRender(ctx);
     if (!firstRenderDone) { doRender(); return; }
     const currentData = ctx.getChartModel().data;
     if (currentData !== lastRenderedDataRef) {
@@ -587,6 +606,53 @@ const renderChart = async (ctx: CustomChartContext) => {
     if (renderDebounceTimer) clearTimeout(renderDebounceTimer);
     renderDebounceTimer = setTimeout(doRender, 1000);
 };
+
+// ---- resize re-render ------------------------------------------------------
+// The chart only lays out correctly for the size it renders at. Highcharts
+// reflows on window resize, but the tile can also settle at a new size after
+// the initial render (dashboard layout, headless screenshot runners) and the
+// jitter/label layout is only optimal for the rendered size. Watch the chart
+// container and re-run the full render, debounced, and only when the size
+// really changed and the first data render has happened.
+const RESIZE_DEBOUNCE_MS  = 150;
+const RESIZE_MIN_DELTA_PX = 2;
+let resizeRenderTimer: ReturnType<typeof setTimeout> | null = null;
+let lastRenderedSize: { width: number; height: number } | null = null;
+
+function measureChartContainer(): { width: number; height: number } {
+    // Watch the whole grid layout, not just the #chart cell: the button area
+    // can change height during render, which resizes the #chart cell.
+    const el = document.getElementById('layout') ?? document.body;
+    return { width: el.clientWidth, height: el.clientHeight };
+}
+
+function chartContainerSizeChanged(): boolean {
+    if (!lastRenderedSize) return true;
+    const now = measureChartContainer();
+    return Math.abs(now.width  - lastRenderedSize.width)  > RESIZE_MIN_DELTA_PX
+        || Math.abs(now.height - lastRenderedSize.height) > RESIZE_MIN_DELTA_PX;
+}
+
+function setupResizeRerender(ctx: CustomChartContext) {
+    const onResize = () => {
+        if (!firstRenderDone) return;             // never render before first data render
+        if (!chartContainerSizeChanged()) return; // ignore <=2px jitter (no re-render storms)
+        if (resizeRenderTimer) clearTimeout(resizeRenderTimer);
+        resizeRenderTimer = setTimeout(() => {
+            resizeRenderTimer = null;
+            // Re-check at fire time: a TS-triggered render may already have
+            // painted at the current size while the debounce was pending.
+            if (!firstRenderDone || !chartContainerSizeChanged()) return;
+            safeRender(ctx); // render() reads the container's CURRENT dimensions
+        }, RESIZE_DEBOUNCE_MS);
+    };
+    const target = document.getElementById('layout');
+    if (typeof ResizeObserver !== 'undefined' && target) {
+        new ResizeObserver(onResize).observe(target);
+    } else {
+        window.addEventListener('resize', onResize);
+    }
+}
 
 (async () => {
     const ctx = await getChartContext({
@@ -722,5 +788,10 @@ const renderChart = async (ctx: CustomChartContext) => {
         },
     });
 
+    setupResizeRerender(ctx);
     renderChart(ctx);
-})();
+})().catch((error) => {
+    // Without this, a failed SDK handshake rejects silently and the tile
+    // stays blank with no console breadcrumb.
+    console.error('violin_plot: failed to initialise chart context:', error);
+});
