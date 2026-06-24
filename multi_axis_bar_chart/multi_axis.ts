@@ -13,7 +13,13 @@ import {
 } from '@thoughtspot/ts-chart-sdk';
 import numeral from 'numeral';
 
-declare const Highcharts: any;
+// Bundle Highcharts (+ more) from npm — NEVER the code.highcharts.com CDN,
+// which 403s in headless/export contexts and leaves Highcharts undefined →
+// "Cannot display the custom chart". See LESSONS.md.
+import HighchartsNS from 'highcharts';
+import HighchartsMore from 'highcharts/highcharts-more';
+HighchartsMore(HighchartsNS);
+const Highcharts: any = HighchartsNS;
 
 interface VisualProps {
     chartTitle?: string;

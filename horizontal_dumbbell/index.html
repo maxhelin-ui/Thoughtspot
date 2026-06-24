@@ -4,10 +4,9 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Horizontal Dumbbell Chart</title>
-        <script src="https://code.highcharts.com/highcharts.js"></script>
-        <script src="https://code.highcharts.com/highcharts-more.js"></script>
-        <script src="https://code.highcharts.com/modules/dumbbell.js"></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/numeral.js/2.0.6/numeral.min.js"></script>
+        <!-- Highcharts (+ more + dumbbell) and numeral are bundled via the .ts
+             imports (Vite). NOT loaded from a CDN — code.highcharts.com 403s in
+             headless/export and broke the chart there. See LESSONS.md. -->
         <style>
             html, body {
                 margin: 0;
