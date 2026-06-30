@@ -114,6 +114,15 @@ function substituteTokens(template, baseFormatted, percentFormatted) {
     .replace(/\{percent\}/g, percentFormatted ?? '');
 }
 
+// Footer text composition. If the label contains {value}, the label
+// controls the full rendering (so the user can put the value before,
+// after, or in the middle). Otherwise we render `{label} - {value}`.
+function composeFooterText(label, formattedValue) {
+  if (!label) return formattedValue;
+  if (label.includes('{value}')) return label.replace(/\{value\}/g, formattedValue ?? '');
+  return `${label} - ${formattedValue}`;
+}
+
 // ---------- data access ----------
 
 function toNumber(v) {
@@ -257,16 +266,17 @@ function renderSplitLayout({ vp, primaryCols, metricCols, footerCols, baseValue,
       side.appendChild(progRow);
     }
 
-    // Footer for this primary position.
-    // labelOrColumnName resolves: empty → col name (or '' if no col bound);
-    // whitespace → '' (explicit no-label); text → trimmed text.
+    // Footer for this primary position. Label may contain a {value} token
+    // — if so, it controls full placement; otherwise we render
+    // `{label} - {value}` with a dash separator. Empty label falls back
+    // to the bound column name.
     const footerCol    = footerCols[i] ?? null;
     const footerFormat = vp[`footer${n}Format`] ?? defaultFormatForColumn(footerCol);
     const footerLabel  = labelOrColumnName(vp[`footer${n}Label`], footerCol);
     if (footerCol) {
       const footerValue = aggregateColumn(chartModelRef.current, footerCol);
       const formatted   = formatValue(footerValue, footerFormat, currency);
-      const text = footerLabel ? `${footerLabel} ${formatted}` : formatted;
+      const text = composeFooterText(footerLabel, formatted);
       if (text) side.appendChild(el('div', { className: 'ts-stat-footer', text }));
     } else if (footerLabel) {
       side.appendChild(el('div', { className: 'ts-stat-footer', text: footerLabel }));
@@ -342,7 +352,7 @@ function renderMainSecondariesLayout({ vp, primaryCols, metricCols, footerCols, 
       const v = aggregateColumn(chartModelRef.current, footerCol);
       const format = vp[`footer${n}Format`] ?? defaultFormatForColumn(footerCol);
       const formatted = formatValue(v, format, currency);
-      footerPart = footerLabel ? `${footerLabel} ${formatted}` : formatted;
+      footerPart = composeFooterText(footerLabel, formatted);
     } else if (footerLabel) {
       footerPart = footerLabel;
     }
@@ -457,12 +467,6 @@ const renderChart = async (ctx, providedModel) => {
   }
 };
 
-// Disabled text field used purely as a visual separator in the prop editor.
-// Stores an unused prop under the given key; users can't edit it.
-function sectionHeader(key, label) {
-  return { key, type: 'text', label, defaultValue: ' ', disabled: true };
-}
-
 // Build a flat list of per-item fields with the bound column name baked
 // into each label, e.g. `1. CXUC — Format`. We deliberately don't nest
 // sections inside the outer accordion — the TS prop-editor host drops
@@ -485,7 +489,7 @@ function buildItemSections(chartModel, kind, dimKey, max, palette) {
     } else if (kind === 'footer') {
       elements.push(
         { key: `footer${i}Format`, type: 'dropdown', label: `${tag} — Format`, values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `footer${i}Label`,  type: 'text',     label: `${tag} — Label`,  defaultValue: ' ' },
+        { key: `footer${i}Label`,  type: 'text',     label: `${tag} — Label — tokens: {value}`, defaultValue: ' ' },
       );
     } else {
       elements.push(
@@ -568,22 +572,28 @@ function buildItemSections(chartModel, kind, dimKey, max, palette) {
       },
     ],
     // Flat list — wrapping anything in `type: 'section'` makes the TS
-    // host drop child prop changes silently. Visual grouping is done via
-    // disabled "header" rows whose label reads like a divider.
-    visualPropEditorDefinition: (chartModel) => ({
-      elements: [
-        { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
-        { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
-        { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
-        { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
-        sectionHeader('hdrPrimaries', '── PRIMARY VALUES ──'),
-        ...buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette),
-        sectionHeader('hdrFooters',   '── FOOTERS ──'),
-        ...buildItemSections(chartModel, 'footer', 'footers', MAX_FOOTERS, palette),
-        sectionHeader('hdrMetrics',   '── METRICS ──'),
-        ...buildItemSections(chartModel, 'metric', 'metrics', MAX_METRICS, palette),
-      ],
-    }),
+    // host drop child prop changes silently. The first field of each
+    // group carries a `■ GROUP NAME ▸` prefix so users can still scan
+    // the list without separator rows.
+    visualPropEditorDefinition: (chartModel) => {
+      const primaries = buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette);
+      const footers   = buildItemSections(chartModel, 'footer',  'footers',   MAX_FOOTERS,   palette);
+      const metrics   = buildItemSections(chartModel, 'metric',  'metrics',   MAX_METRICS,   palette);
+      if (primaries[0]) primaries[0] = { ...primaries[0], label: `■ PRIMARY VALUES ▸ ${primaries[0].label}` };
+      if (footers[0])   footers[0]   = { ...footers[0],   label: `■ FOOTERS ▸ ${footers[0].label}` };
+      if (metrics[0])   metrics[0]   = { ...metrics[0],   label: `■ METRICS ▸ ${metrics[0].label}` };
+      return {
+        elements: [
+          { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
+          { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
+          { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
+          { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
+          ...primaries,
+          ...footers,
+          ...metrics,
+        ],
+      };
+    },
     onPropChange: (propKey) => {
       if (propChangeTimer) clearTimeout(propChangeTimer);
       if (typeof propKey === 'string' && TEXT_PROP_KEYS.has(propKey)) {
