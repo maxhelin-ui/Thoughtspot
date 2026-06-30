@@ -467,6 +467,14 @@ const renderChart = async (ctx, providedModel) => {
   }
 };
 
+// Disabled text field used as a visual section divider in the prop
+// editor. Renders as a label-on-its-own-row above the next real field,
+// with a greyed-out empty input below. Stores an unused prop under the
+// given key.
+function sectionHeader(key, label) {
+  return { key, type: 'text', label, defaultValue: ' ', disabled: true };
+}
+
 // Build a flat list of per-item fields with the bound column name baked
 // into each label, e.g. `1. CXUC — Format`. We deliberately don't nest
 // sections inside the outer accordion — the TS prop-editor host drops
@@ -571,29 +579,25 @@ function buildItemSections(chartModel, kind, dimKey, max, palette) {
         ],
       },
     ],
-    // Flat list — wrapping anything in `type: 'section'` makes the TS
-    // host drop child prop changes silently. The first field of each
-    // group carries a `■ GROUP NAME ▸` prefix so users can still scan
-    // the list without separator rows.
-    visualPropEditorDefinition: (chartModel) => {
-      const primaries = buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette);
-      const footers   = buildItemSections(chartModel, 'footer',  'footers',   MAX_FOOTERS,   palette);
-      const metrics   = buildItemSections(chartModel, 'metric',  'metrics',   MAX_METRICS,   palette);
-      if (primaries[0]) primaries[0] = { ...primaries[0], label: `■ PRIMARY VALUES ▸ ${primaries[0].label}` };
-      if (footers[0])   footers[0]   = { ...footers[0],   label: `■ FOOTERS ▸ ${footers[0].label}` };
-      if (metrics[0])   metrics[0]   = { ...metrics[0],   label: `■ METRICS ▸ ${metrics[0].label}` };
-      return {
-        elements: [
-          { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
-          { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
-          { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
-          { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
-          ...primaries,
-          ...footers,
-          ...metrics,
-        ],
-      };
-    },
+    // Flat list — `type: 'section'` makes the TS host drop child prop
+    // changes silently, so we lay everything out at the top level. Group
+    // dividers are disabled-text rows, which TS renders as a label on
+    // its own row (with a greyed empty input below). The label uses
+    // long dashes so it visually reads as a section break.
+    visualPropEditorDefinition: (chartModel) => ({
+      elements: [
+        { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
+        { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
+        { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
+        { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
+        sectionHeader('hdrPrimaries', '━━━━━━━━━━  PRIMARY VALUES  ━━━━━━━━━━'),
+        ...buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette),
+        sectionHeader('hdrFooters',   '━━━━━━━━━━  FOOTERS  ━━━━━━━━━━'),
+        ...buildItemSections(chartModel, 'footer',  'footers',   MAX_FOOTERS,   palette),
+        sectionHeader('hdrMetrics',   '━━━━━━━━━━  METRICS  ━━━━━━━━━━'),
+        ...buildItemSections(chartModel, 'metric',  'metrics',   MAX_METRICS,   palette),
+      ],
+    }),
     onPropChange: (propKey) => {
       if (propChangeTimer) clearTimeout(propChangeTimer);
       if (typeof propKey === 'string' && TEXT_PROP_KEYS.has(propKey)) {

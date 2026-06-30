@@ -98,12 +98,15 @@ The accordion contains one sub-section per slot. Each sub-section is titled with
 | Field | What it does |
 |---|---|
 | **Format** | Same options as primaries. Auto-detects percent. |
-| **Label** | Text shown **before** the value (Split layout). Blank → bound column name. Single space → no label. |
+| **Label — tokens: `{value}`** | Default rendering is `{label} - {value}`. Blank → bound column name (so default is `{column name} - {value}`). Type `{value}` anywhere in the label to control where the number lands — useful when you want it in the middle or at the end of a sentence. |
 
 Behaviour notes:
 
-- **Split layout**: footer N appears under primary N's bar as `{label} {value}`. If you only type a label and bind no column, just the label text shows under the bar (useful for footnotes / context lines).
-- **Main + Secondaries**: footer N is appended after metric N's row, separated by ` · `. Format: `… · {footer label} {footer value}`.
+- **Split layout**: footer N appears under primary N's bar.
+  - Plain label → `{label} - {value}` (e.g. `Avg - €54.3K`).
+  - Label with `{value}` token → token gets replaced with the formatted number; the rest of the label is verbatim (e.g. `we hit {value} this quarter` → `we hit 199 this quarter`).
+  - Label only (no column bound) → just the label text shows under the bar (useful for footnotes).
+- **Main + Secondaries**: footer N is appended after metric N's row, separated by ` · `. Same `{value}` token rules apply.
 
 ### Metrics (per-item, 1..4)
 
