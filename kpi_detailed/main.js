@@ -457,43 +457,38 @@ const renderChart = async (ctx, providedModel) => {
   }
 };
 
-// Build a flat element list with per-item sub-sections so each bound
-// column shows its name as a heading above its Format/Label/etc. fields.
-// `kind` controls which fields each item gets (primary/metric/footer).
+// Build a flat list of per-item fields with the bound column name baked
+// into each label, e.g. `1. CXUC — Format`. We deliberately don't nest
+// sections inside the outer accordion — the TS prop-editor host drops
+// children of inner sections silently, which made the labels/colors/
+// formats all stop persisting. `kind` controls which fields the slot
+// gets (primary/metric/footer).
 function buildItemSections(chartModel, kind, dimKey, max, palette) {
   const cols = getDimColumns(chartModel, dimKey);
-  const items = [];
+  const elements = [];
   for (let i = 1; i <= max; i++) {
     const col = cols[i - 1] ?? null;
-    const heading = col ? `${i}. ${col.name}` : `${i}. (drag a column)`;
-    let children;
+    const tag = col ? `${i}. ${col.name}` : `${i}. (drag a column)`;
     if (kind === 'primary') {
-      children = [
-        { key: `primary${i}Format`,      type: 'dropdown',    label: 'Format',                              values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `primary${i}Label`,       type: 'text',        label: 'Label (blank = column name)',         defaultValue: '' },
-        { key: `primary${i}Description`, type: 'text',        label: 'Description — tokens: {base}, {percent}', defaultValue: '' },
-        { key: `primary${i}Color`,       type: 'colorpicker', label: 'Bar colour',                          defaultValue: palette[(i - 1) % palette.length] },
-      ];
+      elements.push(
+        { key: `primary${i}Format`,      type: 'dropdown',    label: `${tag} — Format`,      values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `primary${i}Label`,       type: 'text',        label: `${tag} — Label`,       defaultValue: '' },
+        { key: `primary${i}Description`, type: 'text',        label: `${tag} — Description (tokens: {base}, {percent})`, defaultValue: '' },
+        { key: `primary${i}Color`,       type: 'colorpicker', label: `${tag} — Bar colour`,  defaultValue: palette[(i - 1) % palette.length] },
+      );
     } else if (kind === 'footer') {
-      children = [
-        { key: `footer${i}Format`, type: 'dropdown', label: 'Format',                        values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `footer${i}Label`,  type: 'text',     label: 'Label (blank = column name)',  defaultValue: '' },
-      ];
-    } else { // metric
-      children = [
-        { key: `metric${i}Format`, type: 'dropdown', label: 'Format',                        values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `metric${i}Label`,  type: 'text',     label: 'Label (blank = column name)',  defaultValue: '' },
-      ];
+      elements.push(
+        { key: `footer${i}Format`, type: 'dropdown', label: `${tag} — Format`, values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `footer${i}Label`,  type: 'text',     label: `${tag} — Label`,  defaultValue: '' },
+      );
+    } else {
+      elements.push(
+        { key: `metric${i}Format`, type: 'dropdown', label: `${tag} — Format`, values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `metric${i}Label`,  type: 'text',     label: `${tag} — Label`,  defaultValue: '' },
+      );
     }
-    items.push({
-      key: `${kind}Item${i}`,
-      type: 'section',
-      label: heading,
-      layoutType: 'none',
-      children,
-    });
   }
-  return items;
+  return elements;
 }
 
 (async () => {
