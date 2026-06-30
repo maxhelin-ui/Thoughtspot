@@ -165,10 +165,30 @@ function setHidden(id, hidden) {
   if (node) node.classList.toggle('hidden', hidden);
 }
 
+// Untouched (empty/null) → fall back to the bound column name. Typing a
+// non-empty value uses that value (trimmed). Typing whitespace-only —
+// e.g. a single space — is the explicit "no label" override: returns ''
+// so the field renders with nothing in place of the column name.
 function labelOrColumnName(userValue, column) {
-  const trimmed = (userValue ?? '').trim();
-  if (trimmed !== '') return trimmed;
-  return column?.name ?? '';
+  if (userValue == null || userValue === '') return column?.name ?? '';
+  const s = String(userValue);
+  if (s.trim() === '') return '';
+  return s.trim();
+}
+
+// Best-effort percent detection so the per-field Format default falls
+// to 'percent' when the bound column is clearly a ratio. We look at the
+// column's numeric format pattern first (most reliable — TS sets it when
+// the worksheet/measure is declared as percent) and fall back to a name
+// heuristic. Returns 'percent' or 'number'.
+function defaultFormatForColumn(column) {
+  if (!column) return 'number';
+  const pattern = (column?.format?.pattern ?? '').toString();
+  if (pattern.includes('%')) return 'percent';
+  const name = (column?.name ?? '').toLowerCase();
+  if (name.includes('%')) return 'percent';
+  if (/(\b|_)(pct|percent|percentage|rate|ratio|share|uplift)(\b|_)/.test(name)) return 'percent';
+  return 'number';
 }
 
 function renderHeaderIcons(iconKey) {
@@ -206,7 +226,7 @@ function renderSplitLayout({ vp, primaryCols, metricCols, footerCols, baseValue,
     const value = aggregateColumn(chartModelRef.current, col);
     const fraction = fractionOf(value, baseValue);
     const percentFormatted = formatPercent(fraction);
-    const format = vp[`primary${n}Format`] ?? 'currency';
+    const format = vp[`primary${n}Format`] ?? defaultFormatForColumn(col);
     const valueFormatted = formatValue(value, format, currency);
     const labelText = labelOrColumnName(vp[`primary${n}Label`], col);
     const description = substituteTokens(vp[`primary${n}Description`], baseFormatted, percentFormatted);
@@ -237,15 +257,16 @@ function renderSplitLayout({ vp, primaryCols, metricCols, footerCols, baseValue,
       side.appendChild(progRow);
     }
 
-    // Footer for this primary position
-    const footerCol     = footerCols[i] ?? null;
-    const footerLabel   = (vp[`footer${n}Label`] ?? '').trim();
-    const footerFormat  = vp[`footer${n}Format`] ?? 'currency';
+    // Footer for this primary position.
+    // labelOrColumnName resolves: empty → col name (or '' if no col bound);
+    // whitespace → '' (explicit no-label); text → trimmed text.
+    const footerCol    = footerCols[i] ?? null;
+    const footerFormat = vp[`footer${n}Format`] ?? defaultFormatForColumn(footerCol);
+    const footerLabel  = labelOrColumnName(vp[`footer${n}Label`], footerCol);
     if (footerCol) {
       const footerValue = aggregateColumn(chartModelRef.current, footerCol);
       const formatted   = formatValue(footerValue, footerFormat, currency);
-      const labelForCol = footerLabel || labelOrColumnName('', footerCol);
-      const text = labelForCol ? `${labelForCol} ${formatted}`.trim() : formatted;
+      const text = footerLabel ? `${footerLabel} ${formatted}` : formatted;
       if (text) side.appendChild(el('div', { className: 'ts-stat-footer', text }));
     } else if (footerLabel) {
       side.appendChild(el('div', { className: 'ts-stat-footer', text: footerLabel }));
@@ -260,7 +281,7 @@ function renderSplitLayout({ vp, primaryCols, metricCols, footerCols, baseValue,
   const tiles = metricCols.map((col, i) => {
     const n = i + 1;
     const value = aggregateColumn(chartModelRef.current, col);
-    const format = vp[`metric${n}Format`] ?? 'currency';
+    const format = vp[`metric${n}Format`] ?? defaultFormatForColumn(col);
     const formatted = formatValue(value, format, currency);
     const label = labelOrColumnName(vp[`metric${n}Label`], col);
     if (!formatted && !label) return null;
@@ -287,7 +308,7 @@ function renderMainSecondariesLayout({ vp, primaryCols, metricCols, footerCols, 
     const value = aggregateColumn(chartModelRef.current, primary);
     const fraction = fractionOf(value, baseValue);
     const percentFormatted = formatPercent(fraction);
-    const format = vp.primary1Format ?? 'currency';
+    const format = vp.primary1Format ?? defaultFormatForColumn(primary);
     primaryValueEl.textContent = formatValue(value, format, currency);
     primaryValueEl.style.color = greenRed ? (colourForSign(value) || '') : '';
     primaryDescEl.textContent  = substituteTokens(vp.primary1Description, baseFormatted, percentFormatted);
@@ -309,23 +330,21 @@ function renderMainSecondariesLayout({ vp, primaryCols, metricCols, footerCols, 
     let metricPart = '';
     if (metricCol) {
       const v = aggregateColumn(chartModelRef.current, metricCol);
-      const format = vp[`metric${n}Format`] ?? 'currency';
+      const format = vp[`metric${n}Format`] ?? defaultFormatForColumn(metricCol);
       const formatted = formatValue(v, format, currency);
       const label = labelOrColumnName(vp[`metric${n}Label`], metricCol);
       metricPart = label ? `${formatted} ${label}`.trim() : formatted;
     }
 
+    const footerLabel = labelOrColumnName(vp[`footer${n}Label`], footerCol);
     let footerPart = '';
     if (footerCol) {
       const v = aggregateColumn(chartModelRef.current, footerCol);
-      const format = vp[`footer${n}Format`] ?? 'currency';
+      const format = vp[`footer${n}Format`] ?? defaultFormatForColumn(footerCol);
       const formatted = formatValue(v, format, currency);
-      const userLabel = (vp[`footer${n}Label`] ?? '').trim();
-      const label = userLabel || labelOrColumnName('', footerCol);
-      footerPart = label ? `${label} ${formatted}`.trim() : formatted;
-    } else {
-      const userLabel = (vp[`footer${n}Label`] ?? '').trim();
-      if (userLabel) footerPart = userLabel;
+      footerPart = footerLabel ? `${footerLabel} ${formatted}` : formatted;
+    } else if (footerLabel) {
+      footerPart = footerLabel;
     }
 
     const text = (metricPart && footerPart) ? `${metricPart} · ${footerPart}` : (metricPart || footerPart);
@@ -450,20 +469,20 @@ function buildItemSections(chartModel, kind, dimKey, max, palette) {
     let children;
     if (kind === 'primary') {
       children = [
-        { key: `primary${i}Format`,      type: 'dropdown',    label: 'Format',                              values: FORMAT_OPTIONS, defaultValue: 'currency' },
-        { key: `primary${i}Label`,       type: 'text',        label: 'Label (blank = column name)',         defaultValue: ' ' },
-        { key: `primary${i}Description`, type: 'text',        label: 'Description — tokens: {base}, {percent}', defaultValue: ' ' },
+        { key: `primary${i}Format`,      type: 'dropdown',    label: 'Format',                              values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `primary${i}Label`,       type: 'text',        label: 'Label (blank = column name)',         defaultValue: '' },
+        { key: `primary${i}Description`, type: 'text',        label: 'Description — tokens: {base}, {percent}', defaultValue: '' },
         { key: `primary${i}Color`,       type: 'colorpicker', label: 'Bar colour',                          defaultValue: palette[(i - 1) % palette.length] },
       ];
     } else if (kind === 'footer') {
       children = [
-        { key: `footer${i}Format`, type: 'dropdown', label: 'Format',                        values: FORMAT_OPTIONS, defaultValue: 'currency' },
-        { key: `footer${i}Label`,  type: 'text',     label: 'Label (blank = column name)',  defaultValue: ' ' },
+        { key: `footer${i}Format`, type: 'dropdown', label: 'Format',                        values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `footer${i}Label`,  type: 'text',     label: 'Label (blank = column name)',  defaultValue: '' },
       ];
     } else { // metric
       children = [
-        { key: `metric${i}Format`, type: 'dropdown', label: 'Format',                        values: FORMAT_OPTIONS, defaultValue: 'currency' },
-        { key: `metric${i}Label`,  type: 'text',     label: 'Label (blank = column name)',  defaultValue: ' ' },
+        { key: `metric${i}Format`, type: 'dropdown', label: 'Format',                        values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `metric${i}Label`,  type: 'text',     label: 'Label (blank = column name)',  defaultValue: '' },
       ];
     }
     items.push({
@@ -549,10 +568,16 @@ function buildItemSections(chartModel, kind, dimKey, max, palette) {
     ],
     visualPropEditorDefinition: (chartModel) => ({
       elements: [
-        { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
-        { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
-        { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
-        { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/-',      defaultValue: false },
+        {
+          key: 'generalSection', type: 'section', label: 'General',
+          layoutType: 'none',
+          children: [
+            { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
+            { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
+            { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
+            { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
+          ],
+        },
         {
           key: 'primariesSection', type: 'section', label: 'Primary values',
           layoutType: 'accordion', isAccordianExpanded: true,
