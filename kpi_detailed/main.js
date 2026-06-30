@@ -457,6 +457,12 @@ const renderChart = async (ctx, providedModel) => {
   }
 };
 
+// Disabled text field used purely as a visual separator in the prop editor.
+// Stores an unused prop under the given key; users can't edit it.
+function sectionHeader(key, label) {
+  return { key, type: 'text', label, defaultValue: ' ', disabled: true };
+}
+
 // Build a flat list of per-item fields with the bound column name baked
 // into each label, e.g. `1. CXUC — Format`. We deliberately don't nest
 // sections inside the outer accordion — the TS prop-editor host drops
@@ -561,33 +567,21 @@ function buildItemSections(chartModel, kind, dimKey, max, palette) {
         ],
       },
     ],
+    // Flat list — wrapping anything in `type: 'section'` makes the TS
+    // host drop child prop changes silently. Visual grouping is done via
+    // disabled "header" rows whose label reads like a divider.
     visualPropEditorDefinition: (chartModel) => ({
       elements: [
-        {
-          key: 'generalSection', type: 'section', label: 'General',
-          layoutType: 'none',
-          children: [
-            { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
-            { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
-            { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
-            { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
-          ],
-        },
-        {
-          key: 'primariesSection', type: 'section', label: 'Primary values',
-          layoutType: 'accordion', isAccordianExpanded: true,
-          children: buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette),
-        },
-        {
-          key: 'footersSection', type: 'section', label: 'Footers',
-          layoutType: 'accordion', isAccordianExpanded: false,
-          children: buildItemSections(chartModel, 'footer', 'footers', MAX_FOOTERS, palette),
-        },
-        {
-          key: 'metricsSection', type: 'section', label: 'Metrics',
-          layoutType: 'accordion', isAccordianExpanded: false,
-          children: buildItemSections(chartModel, 'metric', 'metrics', MAX_METRICS, palette),
-        },
+        { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
+        { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
+        { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
+        { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
+        sectionHeader('hdrPrimaries', '── PRIMARY VALUES ──'),
+        ...buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette),
+        sectionHeader('hdrFooters',   '── FOOTERS ──'),
+        ...buildItemSections(chartModel, 'footer', 'footers', MAX_FOOTERS, palette),
+        sectionHeader('hdrMetrics',   '── METRICS ──'),
+        ...buildItemSections(chartModel, 'metric', 'metrics', MAX_METRICS, palette),
       ],
     }),
     onPropChange: (propKey) => {
