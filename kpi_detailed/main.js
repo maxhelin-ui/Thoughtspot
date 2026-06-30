@@ -31,7 +31,7 @@ const MAX_PRIMARIES = 4;
 const MAX_METRICS   = 4;
 const MAX_FOOTERS   = 4;
 
-const FORMAT_OPTIONS   = ['currency', 'number', 'percent'];
+const FORMAT_OPTIONS   = ['number', 'percent', 'currency'];
 const ICON_OPTIONS     = ['none', 'trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie'];
 const LAYOUT_OPTIONS   = ['split', 'main-secondaries'];
 const CURRENCY_OPTIONS = ['€', '$', '£', '¥', '₹', 'kr'];
@@ -174,13 +174,14 @@ function setHidden(id, hidden) {
   if (node) node.classList.toggle('hidden', hidden);
 }
 
-// Whitespace-only (including the default ' ') falls back to the bound
-// column name. Anything else uses the trimmed user-typed value.
-// Note: TS rejects empty-string defaults for text inputs, so we can't
-// distinguish "user wants no label" from "user hasn't touched it" via
-// the value alone — the previous space-as-blank attempt broke the host.
+// Empty/whitespace (including the default ' ') falls back to the bound
+// column name. Typing the literal word "none" is the explicit "no label"
+// override → returns ''. Anything else uses the trimmed typed value.
+// (We can't use empty-string as the override because TS rejects empty
+// text defaults, so a sentinel word is the reliable way.)
 function labelOrColumnName(userValue, column) {
   const trimmed = (userValue ?? '').toString().trim();
+  if (trimmed.toLowerCase() === 'none') return '';
   if (trimmed !== '') return trimmed;
   return column?.name ?? '';
 }
@@ -438,20 +439,7 @@ function getEffectivePalette() {
 // ---------- render orchestration + debounced prop changes ----------
 
 let lastModel = null;
-
-// Visual props whose editor is a free-text input. Typing fires onPropChange
-// per keystroke, so we hold renders for 2s of idle. Dropdowns / colorpickers
-// / checkboxes commit on click and render immediately.
-const TEXT_PROP_KEYS = new Set([
-  'currencySymbol',
-  'primary1Label', 'primary1Description',
-  'primary2Label', 'primary2Description',
-  'primary3Label', 'primary3Description',
-  'primary4Label', 'primary4Description',
-  'metric1Label', 'metric2Label', 'metric3Label', 'metric4Label',
-  'footer1Label', 'footer2Label', 'footer3Label', 'footer4Label',
-]);
-const TEXT_PROP_DEBOUNCE_MS = 2000;
+let renderTimer = null;
 
 const renderChart = async (ctx, providedModel) => {
   if (!globalAppConfig) {
@@ -466,6 +454,21 @@ const renderChart = async (ctx, providedModel) => {
     ctx.emitEvent(ChartToTSEvent.RenderError, { hasError: true, error });
   }
 };
+
+// Coalesce editor-driven re-renders. Both onPropChange AND the host's
+// ChartModelUpdate event fire on every keystroke in a text setting — if
+// either renders synchronously the chart re-lays-out per character and
+// lags. We funnel both through one debounce so typing is smooth and the
+// chart updates shortly after you pause. The latest scheduled model wins
+// (clearTimeout), so the final typed value is always what renders.
+const RENDER_DEBOUNCE_MS = 250;
+function scheduleRender(ctx, providedModel) {
+  if (renderTimer) clearTimeout(renderTimer);
+  renderTimer = setTimeout(() => {
+    renderTimer = null;
+    renderChart(ctx, providedModel);
+  }, RENDER_DEBOUNCE_MS);
+}
 
 // Section heading with an EMPTY children array. A section *with* a
 // children array displays fine in the TS host (an earlier accordion did);
@@ -513,7 +516,6 @@ function buildItemSections(chartModel, kind, dimKey, count, palette) {
 }
 
 (async () => {
-  let propChangeTimer = null;
   const palette = FALLBACK_PALETTE; // fallback before app config arrives
 
   const ctx = await getChartContext({
@@ -604,20 +606,12 @@ function buildItemSections(chartModel, kind, dimKey, count, palette) {
         ...buildItemSections(chartModel, 'metric',  'metrics',   MAX_METRICS,   palette),
       ],
     }),
-    onPropChange: (propKey) => {
-      if (propChangeTimer) clearTimeout(propChangeTimer);
-      if (typeof propKey === 'string' && TEXT_PROP_KEYS.has(propKey)) {
-        propChangeTimer = setTimeout(() => {
-          propChangeTimer = null;
-          renderChart(ctx);
-        }, TEXT_PROP_DEBOUNCE_MS);
-      } else {
-        propChangeTimer = null;
-        renderChart(ctx);
-      }
-    },
+    // Debounced — reads the freshest model at fire time, so the final
+    // typed value renders. Prevents per-keystroke re-layout lag.
+    onPropChange: () => scheduleRender(ctx),
   });
 
+  // Real data changes render immediately (not typing-driven).
   ctx.on(TSToChartEvent.DataUpdate, (payload) => {
     const merged = lastModel
       ? { ...lastModel, data: payload?.data ?? lastModel.data }
@@ -625,8 +619,10 @@ function buildItemSections(chartModel, kind, dimKey, count, palette) {
     renderChart(ctx, merged);
     return { triggerRenderChart: false };
   });
+  // ChartModelUpdate fires on every editor keystroke too — debounce it
+  // through the same scheduler so text edits don't thrash the chart.
   ctx.on(TSToChartEvent.ChartModelUpdate, (payload) => {
-    renderChart(ctx, payload?.chartModel);
+    scheduleRender(ctx, payload?.chartModel);
     return { triggerRenderChart: false };
   });
 

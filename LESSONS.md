@@ -245,3 +245,55 @@ The `index.html` `#buttonContainer` (or `#topArea` etc.) div is mounted above th
 3. If TS shows nothing, check Vercel build log for a failed deploy.
 4. Verify the custom viz is pointed at the correct Vercel URL in TS settings.
 5. If "deploy hasn't appeared in hours", check whether the chart's folder has any changes since the last successful build — Ignored Build Step might be skipping it.
+
+## Visual prop editor: sections (`type: 'section'`)
+
+The TS prop-editor host (BYOC SDK) is picky about `type: 'section'` elements. Hard-won rules:
+
+- **A section with a `children` array displays, but the host DROPS all child prop changes.** Fields nested inside a section render visually but never persist — dropdowns do nothing, text inputs don't save, colour pickers don't apply. So **never put real fields inside a section's `children`.** Keep every editable field at the top level of `elements`.
+- **A section with NO `children` key at all → "cannot display the custom chart" (hard crash).**
+- **A section with `children: []` (empty array) works perfectly as a heading** — bigger/bold title with natural spacing, no input box. This is the only reliable way to add section/sub-section headings. Use a helper: `{ key, type: 'section', label, layoutType: 'none', children: [] }`.
+- **Consecutive childless sections are fine** (e.g. a group header `Primary values` immediately followed by an item header `1. CXOC`). Earlier suspicion that back-to-back sections crash was WRONG — verified working.
+- **Empty-string text defaults (`defaultValue: ''`) can make the host refuse to render.** Use a single space `' '` as the default for text inputs.
+
+## Visual prop editor: dynamic element lists are unreliable
+
+`visualPropEditorDefinition` can be a function `(chartModel) => ({ elements })`, and reading bound columns to vary the element list at runtime *seems* supported — but **emitting a DIFFERENT NUMBER of elements based on bound-column counts crashed the chart** ("cannot display"). Baking the bound column NAME into a static set of element labels is fine; changing how MANY elements exist is not. Keep the element COUNT static (always emit MAX slots); only vary label text.
+
+## Filling the tile height
+
+By default the card is content-height, leaving white space at the bottom of taller tiles. To fit the tile: chain `height: 100%` from `html, body` down through the card wrapper, and `flex: 1` the visible layout + its grey detail card so it grows to fill available vertical space (bounded by the tile, so it never grows infinitely).
+
+## Editor text inputs: debounce ALL re-render triggers (typing lag / dropped edits)
+
+Symptom: typing into a visual-prop text box lags, the chart re-lays-out on every
+keystroke, and/or the final typed text sometimes doesn't show in the chart.
+
+Cause: on every keystroke the host fires BOTH `onPropChange` AND the
+`TSToChartEvent.ChartModelUpdate` event. If either calls your render
+synchronously, you re-render per character. Debouncing only `onPropChange`
+is not enough — `ChartModelUpdate` still thrashes the chart.
+
+Fix: funnel BOTH through a single debounced scheduler (~250ms). Keep
+`DataUpdate` (real data) immediate. The latest scheduled call wins, so the
+final typed value is what renders. Pattern:
+
+```js
+let renderTimer = null;
+function scheduleRender(ctx, model) {
+  if (renderTimer) clearTimeout(renderTimer);
+  renderTimer = setTimeout(() => { renderTimer = null; renderChart(ctx, model); }, 250);
+}
+// onPropChange: () => scheduleRender(ctx)
+// ChartModelUpdate: (p) => { scheduleRender(ctx, p?.chartModel); return { triggerRenderChart: false }; }
+// DataUpdate: render immediately
+```
+
+This applies to every BYOC chart with text settings — worth copying into each.
+
+## Dragging a column onto a `maxColumnCount: 1` section "jumps back"
+
+Single-column config sections (e.g. a denominator slot) have a finicky, short
+drop target — dropping directly on the outlined box often bounces the column
+back. Workaround: drop slightly BELOW the outlined box. This is a ThoughtSpot
+host DnD quirk, not something the chart code can control.

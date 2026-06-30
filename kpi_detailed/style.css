@@ -89,6 +89,8 @@ body {
   color: var(--ts-text-secondary);
   font-size: 13px;
   text-align: center;
+  overflow-wrap: anywhere;
+  white-space: normal;
 }
 
 /* Split layout — dynamic grid sized to bound primary count. */
@@ -112,16 +114,8 @@ body {
   border-right: none;
 }
 
-/* Split layout wrapper — primary card, then metric tiles below it with
-   a small gap between the two. */
-.ts-split {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
 .ts-side-label {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ts-text-secondary);
   margin-bottom: 4px;
 }
@@ -134,42 +128,42 @@ body {
 }
 
 .ts-stat-big {
-  font-size: 28px;
+  font-size: 34px;
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
 .ts-stat-medium {
-  font-size: 24px;
+  font-size: 30px;
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
 .ts-stat-desc {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ts-text-secondary);
   overflow-wrap: anywhere;
 }
 
 .ts-stat-footer {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ts-text-tertiary);
-  margin-top: 4px;
+  margin-top: 6px;
   overflow-wrap: anywhere;
 }
 
 .ts-progress-row {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 10px;
+  gap: 10px;
+  margin-top: 12px;
 }
 
 .ts-progress-track {
   flex: 1;
-  height: 6px;
+  height: 9px;
   background: var(--ts-bg-track);
   border-radius: 99px;
   overflow: hidden;
@@ -184,9 +178,9 @@ body {
 }
 
 .ts-progress-label {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 500;
-  min-width: 36px;
+  min-width: 40px;
   text-align: right;
   /* colour set inline per side */
 }
@@ -204,17 +198,17 @@ body {
   min-width: 100px;
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: 12px 14px;
+  padding: 14px 16px;
 }
 
 .ts-metric-label {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--ts-text-secondary);
   margin-bottom: 4px;
 }
 
 .ts-metric-value {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 500;
   color: var(--ts-text-primary);
 }
@@ -225,17 +219,17 @@ body {
   padding: 0;
   border-radius: 0;
 }
-.ts-main-sec .ts-stat-big { font-size: 32px; }
+.ts-main-sec .ts-stat-big { font-size: 38px; }
 .ts-main-sec #msRows {
-  margin-top: 6px;
+  margin-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 .ts-main-sec-row {
-  font-size: 14px;
+  font-size: 15px;
   color: var(--ts-text-secondary);
-  line-height: 1.25;
+  line-height: 1.3;
   overflow-wrap: anywhere;
 }
 
