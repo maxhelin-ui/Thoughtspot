@@ -8,141 +8,29 @@
 </head>
 <body>
   <div id="card" class="ts-card">
-    <!-- Single-stat layout -->
-    <div id="singleLayout" class="ts-single hidden">
-      <div class="ts-detail-card">
-        <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
-        <div id="singleStatRow" class="ts-stat-row">
-          <span id="singleValue" class="ts-stat-big"></span>
-          <span id="singleSuffix" class="ts-stat-suffix"></span>
-          <span id="singleDescription" class="ts-stat-desc"></span>
-        </div>
-        <div id="singleProgressRow" class="ts-progress-row">
-          <div class="ts-progress-track">
-            <div id="singleBarFill" class="ts-progress-fill"></div>
-          </div>
-          <span id="singlePercent" class="ts-progress-label"></span>
-        </div>
-        <div id="singleFooter" class="ts-stat-footer"></div>
-      </div>
-    </div>
-
-    <!-- Split-stat layout -->
+    <!-- Split layout: 1..N primary cards (grid), then 0..M metric tiles -->
     <div id="splitLayout" class="ts-split hidden">
       <div class="ts-detail-card">
         <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
-        <div class="ts-split-grid">
-          <div id="splitLeftSide" class="ts-split-side">
-            <div id="leftLabel" class="ts-side-label"></div>
-            <div class="ts-stat-row">
-              <span id="leftValue" class="ts-stat-medium"></span>
-              <span id="leftSuffix" class="ts-stat-suffix"></span>
-            </div>
-            <div id="leftProgressRow" class="ts-progress-row">
-              <div class="ts-progress-track">
-                <div id="leftBarFill" class="ts-progress-fill"></div>
-              </div>
-              <span id="leftPercent" class="ts-progress-label"></span>
-            </div>
-          </div>
-          <div id="splitDivider" class="ts-split-divider"></div>
-          <div id="splitRightSide" class="ts-split-side">
-            <div id="rightLabel" class="ts-side-label"></div>
-            <div class="ts-stat-row">
-              <span id="rightValue" class="ts-stat-medium"></span>
-              <span id="rightSuffix" class="ts-stat-suffix"></span>
-            </div>
-            <div id="rightProgressRow" class="ts-progress-row">
-              <div class="ts-progress-track">
-                <div id="rightBarFill" class="ts-progress-fill"></div>
-              </div>
-              <span id="rightPercent" class="ts-progress-label"></span>
-            </div>
-          </div>
-        </div>
-        <div id="splitFooter" class="ts-stat-footer"></div>
+        <div id="primariesGrid" class="ts-split-grid"></div>
       </div>
+      <div id="metricsRow" class="ts-footer-metrics hidden"></div>
     </div>
 
-    <!-- Split (3) layout: same as split but with a third column. All three
-         bars share the single base value as denominator. -->
-    <div id="split3Layout" class="ts-split hidden">
-      <div class="ts-detail-card">
-        <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
-        <div class="ts-split-grid">
-          <div id="s3aSide" class="ts-split-side">
-            <div id="s3aLabel" class="ts-side-label"></div>
-            <div class="ts-stat-row">
-              <span id="s3aValue" class="ts-stat-medium"></span>
-              <span id="s3aSuffix" class="ts-stat-suffix"></span>
-            </div>
-            <div id="s3aProgressRow" class="ts-progress-row">
-              <div class="ts-progress-track"><div id="s3aBarFill" class="ts-progress-fill"></div></div>
-              <span id="s3aPercent" class="ts-progress-label"></span>
-            </div>
-          </div>
-          <div id="split3DividerAB" class="ts-split-divider"></div>
-          <div id="s3bSide" class="ts-split-side">
-            <div id="s3bLabel" class="ts-side-label"></div>
-            <div class="ts-stat-row">
-              <span id="s3bValue" class="ts-stat-medium"></span>
-              <span id="s3bSuffix" class="ts-stat-suffix"></span>
-            </div>
-            <div id="s3bProgressRow" class="ts-progress-row">
-              <div class="ts-progress-track"><div id="s3bBarFill" class="ts-progress-fill"></div></div>
-              <span id="s3bPercent" class="ts-progress-label"></span>
-            </div>
-          </div>
-          <div id="split3DividerBC" class="ts-split-divider"></div>
-          <div id="s3cSide" class="ts-split-side">
-            <div id="s3cLabel" class="ts-side-label"></div>
-            <div class="ts-stat-row">
-              <span id="s3cValue" class="ts-stat-medium"></span>
-              <span id="s3cSuffix" class="ts-stat-suffix"></span>
-            </div>
-            <div id="s3cProgressRow" class="ts-progress-row">
-              <div class="ts-progress-track"><div id="s3cBarFill" class="ts-progress-fill"></div></div>
-              <span id="s3cPercent" class="ts-progress-label"></span>
-            </div>
-          </div>
-        </div>
-        <div id="split3Footer" class="ts-stat-footer"></div>
-      </div>
-    </div>
-
-    <!-- Main + Secondary layout (compact: big primary, footer line below
-         combining secondary value · footer value) -->
+    <!-- Main + Secondaries layout: big primary, then 0..N metric/footer rows -->
     <div id="mainSecLayout" class="ts-main-sec hidden">
       <div class="ts-detail-card">
         <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
-        <div id="msMainRow" class="ts-main-sec-row">
-          <div id="msMainLabel" class="ts-side-label"></div>
-          <div class="ts-stat-row">
-            <span id="msMainValue" class="ts-stat-big"></span>
-            <span id="msMainSuffix" class="ts-stat-suffix"></span>
-          </div>
+        <div id="msPrimary" class="ts-stat-row">
+          <span id="msPrimaryValue" class="ts-stat-big"></span>
+          <span id="msPrimaryDescription" class="ts-stat-desc"></span>
         </div>
-        <div id="msFooterLine" class="ts-main-sec-footer hidden"></div>
-        <div id="msMetric1Line" class="ts-main-sec-footer hidden"></div>
-        <div id="msMetric2Line" class="ts-main-sec-footer hidden"></div>
+        <div id="msRows"></div>
       </div>
     </div>
 
-    <!-- Footer metrics (shared) -->
-    <div id="footerMetrics" class="ts-footer-metrics hidden">
-      <div id="metric1" class="ts-metric">
-        <div id="metric1Label" class="ts-metric-label"></div>
-        <div id="metric1Value" class="ts-metric-value"></div>
-      </div>
-      <div id="metric2" class="ts-metric">
-        <div id="metric2Label" class="ts-metric-label"></div>
-        <div id="metric2Value" class="ts-metric-value"></div>
-      </div>
-      <div id="metric3" class="ts-metric">
-        <div id="metric3Label" class="ts-metric-label"></div>
-        <div id="metric3Value" class="ts-metric-value"></div>
-      </div>
-    </div>
+    <!-- Empty state -->
+    <div id="emptyState" class="ts-empty hidden"></div>
   </div>
 
   <script type="module" src="main.js" defer></script>

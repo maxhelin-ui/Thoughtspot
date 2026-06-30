@@ -1,7 +1,7 @@
 /* KPI - Detailed
-   ThoughtSpot-style detailed KPI card.
-   Color tokens follow ThoughtSpot defaults; runtime overrides come from main.js.
-   Deploy trigger: 2026-05-26 (retry 2) */
+   ThoughtSpot-style KPI card with dynamic split (1..4 primary values)
+   and a main+secondaries variant. Colour tokens follow ThoughtSpot
+   defaults; runtime overrides come from main.js. */
 
 :root {
   --ts-bg-primary: #FFFFFF;
@@ -16,17 +16,9 @@
   --ts-radius-lg: 12px;
   --ts-accent: #534AB7;
   --ts-accent-bar: #7F77DD;
-  --ts-secondary-accent: #5F5E5A;
-  --ts-secondary-accent-bar: #888780;
-  --ts-tertiary-accent: #534AB7;
-  --ts-tertiary-accent-bar: #7F77DD;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
-
-html, body {
-  height: 100%;
-}
 
 body {
   font-family: Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -37,30 +29,17 @@ body {
 
 .hidden { display: none !important; }
 
-/* No outer card chrome — the tile in TS already provides a title and
-   surface. The detail cards + footer tiles are the chart's whole UI. */
 .ts-card {
   background: transparent;
   border: none;
   padding: 0;
   width: 100%;
-  height: 100%;
   display: flex;
   flex-direction: column;
-  gap: clamp(6px, 1.6cqh, 12px);
+  gap: 8px;
   position: relative;
-  /* Size container so the content (fonts/bars/tiles) can scale with the
-     tile's dimensions via cqh/cqw units below — instead of jumping between
-     fixed breakpoints. The card itself stays content-height (it is NOT
-     stretched to fill), so a tall tile just leaves whitespace below rather
-     than ballooning the grey box. */
-  container-type: size;
-  container-name: kpicard;
 }
 
-/* Icon sits in the top-right corner of its detail card. Positioned
-   relative to .ts-detail-card so it can never escape the grey box when
-   the tile shrinks. */
 .ts-icon-corner {
   position: absolute;
   top: 8px;
@@ -74,7 +53,6 @@ body {
   justify-content: center;
   pointer-events: none;
 }
-
 .ts-icon-corner svg {
   width: 16px;
   height: 16px;
@@ -88,62 +66,89 @@ body {
 .ts-detail-card {
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: clamp(10px, 3cqh, 22px);
+  padding: 16px;
   position: relative;
-  overflow: hidden; /* belt-and-braces: icon can't escape even if offsets ever go negative */
+  overflow: hidden;
+}
+
+.ts-empty {
+  padding: 16px;
+  color: var(--ts-text-secondary);
+  font-size: 13px;
+  text-align: center;
+}
+
+/* Split layout — dynamic grid sized to bound primary count. */
+.ts-split-grid {
+  display: grid;
+  gap: 1rem;
+  align-items: stretch;
+  /* grid-template-columns set inline per render based on primary count */
+}
+
+.ts-split-side {
+  display: flex;
+  flex-direction: column;
+  min-width: 0; /* let children shrink instead of overflowing */
+  position: relative;
+  padding-right: 12px;
+  border-right: 0.5px solid var(--ts-border);
+}
+.ts-split-side:last-child {
+  padding-right: 0;
+  border-right: none;
+}
+
+.ts-side-label {
+  font-size: 12px;
+  color: var(--ts-text-secondary);
+  margin-bottom: 4px;
 }
 
 .ts-stat-row {
   display: flex;
   align-items: baseline;
   gap: 6px;
+  flex-wrap: wrap;
 }
 
 .ts-stat-big {
-  font-size: clamp(24px, 13cqh, 58px);
+  font-size: 28px;
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
 .ts-stat-medium {
-  font-size: clamp(20px, 10.5cqh, 50px);
+  font-size: 24px;
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
-.ts-stat-suffix {
-  font-size: clamp(13px, 3.8cqh, 22px);
-  color: var(--ts-text-secondary);
-}
-
 .ts-stat-desc {
-  font-size: clamp(13px, 3.2cqh, 19px);
+  font-size: 13px;
   color: var(--ts-text-secondary);
-}
-
-.ts-stat-footer {
-  font-size: clamp(12px, 3.2cqh, 18px);
-  color: var(--ts-text-tertiary);
-  margin-top: 4px;
   overflow-wrap: anywhere;
 }
 
-#splitFooter {
-  margin-top: 10px;
+.ts-stat-footer {
+  font-size: 12px;
+  color: var(--ts-text-tertiary);
+  margin-top: 4px;
+  overflow-wrap: anywhere;
 }
 
 .ts-progress-row {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: clamp(6px, 2cqh, 16px);
+  margin-top: 10px;
 }
 
 .ts-progress-track {
   flex: 1;
-  height: clamp(6px, 1.8cqh, 12px);
+  height: 6px;
   background: var(--ts-bg-track);
   border-radius: 99px;
   overflow: hidden;
@@ -152,91 +157,17 @@ body {
 .ts-progress-fill {
   height: 100%;
   width: 0%;
-  background: var(--ts-accent-bar);
   border-radius: 99px;
   transition: width 240ms ease-out;
+  /* background colour set inline per side */
 }
 
 .ts-progress-label {
-  font-size: clamp(14px, 4cqh, 22px);
+  font-size: 14px;
   font-weight: 500;
-  color: var(--ts-accent);
   min-width: 36px;
   text-align: right;
-}
-
-.ts-split-grid {
-  display: flex;
-  gap: 1rem;
-  align-items: stretch;
-}
-
-.ts-split-side {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.ts-side-label {
-  font-size: clamp(13px, 3.4cqh, 19px);
-  color: var(--ts-text-secondary);
-  margin-bottom: 4px;
-}
-
-.ts-split-divider {
-  width: 0.5px;
-  background: var(--ts-border);
-  align-self: stretch;
-}
-
-/* Main + Secondary layout — compact stack inside one grey card.
-   Tight gap between rows so it's the most space-efficient option. */
-.ts-main-sec .ts-main-sec-row {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.ts-main-sec .ts-main-sec-row + .ts-main-sec-row {
-  margin-top: 8px;
-}
-.ts-main-sec .ts-side-label {
-  margin-bottom: 0;
-}
-
-/* Main + Secondary mode: skip the grey card entirely so the first
-   value hugs the top-left of whatever space the TS tile gives us. */
-.ts-main-sec .ts-detail-card {
-  background: transparent;
-  padding: 0;
-  border-radius: 0;
-}
-
-/* Primary value in main+secondary mode — overrides the default
-   .ts-stat-big size so the value dominates the (small) tile. */
-.ts-main-sec .ts-stat-big {
-  font-size: clamp(24px, 13cqh, 62px);
-}
-
-/* Title above the primary value is intentionally hidden in
-   main+secondary — collapse the empty label so the value really
-   sits at the very top of the available space (no phantom row). */
-.ts-main-sec #msMainLabel { display: none; }
-
-/* Footer line under the big primary value, joining secondary value
-   and footerAvg with " · ". Sits between .ts-stat-footer (12px) and
-   the prior 16px attempt — small enough not to compete with the
-   primary value, large enough to read at a glance. */
-.ts-main-sec-footer {
-  font-size: clamp(14px, 4cqh, 24px);
-  color: var(--ts-text-secondary);
-  margin-top: 3px;
-  line-height: 1.2;
-  overflow-wrap: anywhere;
-}
-/* Tighten the gap between stacked footer/metric lines so they read as a
-   compact group under the primary value. */
-.ts-main-sec-footer + .ts-main-sec-footer {
-  margin-top: 1px;
+  /* colour set inline per side */
 }
 
 .ts-footer-metrics {
@@ -250,22 +181,87 @@ body {
   min-width: 100px;
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: clamp(10px, 2.6cqh, 18px) clamp(12px, 3cqh, 20px);
+  padding: 12px 14px;
 }
 
 .ts-metric-label {
-  font-size: clamp(13px, 3.4cqh, 18px);
+  font-size: 12px;
   color: var(--ts-text-secondary);
   margin-bottom: 4px;
 }
 
 .ts-metric-value {
-  font-size: clamp(17px, 6.8cqh, 34px);
+  font-size: 18px;
   font-weight: 500;
   color: var(--ts-text-primary);
 }
 
-/* Font sizes, bar heights and paddings scale fluidly with the tile via the
-   cqh-based clamp() values above, so the old fixed-size shrink breakpoints
-   are no longer needed. The clamp() minimums keep everything readable on
-   very small tiles. */
+/* Main + Secondaries layout — big primary, no card chrome, then rows. */
+.ts-main-sec .ts-detail-card {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+}
+.ts-main-sec .ts-stat-big { font-size: 32px; }
+.ts-main-sec #msRows {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ts-main-sec-row {
+  font-size: 14px;
+  color: var(--ts-text-secondary);
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+/* Compact breakpoints for small tiles. */
+@media (max-height: 280px), (max-width: 360px) {
+  .ts-detail-card { padding: 12px; }
+  .ts-card { gap: 6px; }
+  .ts-progress-row { margin-top: 8px; }
+  .ts-stat-big { font-size: 24px; }
+  .ts-stat-medium { font-size: 20px; }
+  .ts-progress-track { height: 5px; }
+  .ts-stat-desc { font-size: 12px; }
+  .ts-stat-footer { font-size: 11px; }
+  .ts-metric { padding: 10px 12px; }
+  .ts-metric-value { font-size: 16px; }
+}
+
+@media (max-height: 200px), (max-width: 280px) {
+  .ts-detail-card { padding: 10px; }
+  .ts-card { gap: 4px; }
+  .ts-progress-row { margin-top: 6px; }
+  .ts-stat-big { font-size: 20px; }
+  .ts-stat-medium { font-size: 16px; }
+  .ts-progress-track { height: 4px; }
+  .ts-stat-desc { font-size: 11px; }
+  .ts-stat-footer { font-size: 10px; }
+  .ts-side-label { font-size: 11px; }
+  .ts-progress-label { font-size: 12px; min-width: 30px; }
+  .ts-metric { padding: 8px 10px; }
+  .ts-metric-value { font-size: 14px; }
+  .ts-metric-label { font-size: 11px; }
+  .ts-icon-corner { top: 6px; right: 6px; width: 14px; height: 14px; }
+  .ts-icon-corner svg { width: 14px; height: 14px; }
+}
+
+@media (max-height: 140px) {
+  .ts-detail-card { padding: 8px; }
+  .ts-card { gap: 3px; }
+  .ts-progress-row { margin-top: 4px; }
+  .ts-stat-big { font-size: 17px; }
+  .ts-stat-medium { font-size: 14px; }
+  .ts-progress-track { height: 3px; }
+  .ts-stat-desc { font-size: 10px; }
+  .ts-stat-footer { font-size: 9px; }
+  .ts-side-label { font-size: 10px; }
+  .ts-progress-label { font-size: 11px; min-width: 26px; }
+  .ts-metric { padding: 6px 8px; }
+  .ts-metric-value { font-size: 13px; }
+  .ts-metric-label { font-size: 10px; }
+  .ts-icon-corner { top: 5px; right: 5px; width: 12px; height: 12px; }
+  .ts-icon-corner svg { width: 12px; height: 12px; }
+}
