@@ -8,13 +8,14 @@
 </head>
 <body>
   <div id="card" class="ts-card">
-    <!-- Split layout: 1..N primary cards (grid), then 0..M metric tiles -->
+    <!-- Split layout: 1..N primary cards (grid), then 0..M metric tiles
+         — all inside a single grey card. -->
     <div id="splitLayout" class="ts-split hidden">
       <div class="ts-detail-card">
         <span class="ts-icon-corner" data-icon-slot aria-hidden="true"></span>
         <div id="primariesGrid" class="ts-split-grid"></div>
+        <div id="metricsRow" class="ts-footer-metrics hidden"></div>
       </div>
-      <div id="metricsRow" class="ts-footer-metrics hidden"></div>
     </div>
 
     <!-- Main + Secondaries layout: big primary, then 0..N metric/footer rows -->

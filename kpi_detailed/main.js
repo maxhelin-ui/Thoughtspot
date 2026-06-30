@@ -31,9 +31,10 @@ const MAX_PRIMARIES = 4;
 const MAX_METRICS   = 4;
 const MAX_FOOTERS   = 4;
 
-const FORMAT_OPTIONS = ['currency', 'number', 'percent'];
-const ICON_OPTIONS   = ['none', 'trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie'];
-const LAYOUT_OPTIONS = ['split', 'main-secondaries'];
+const FORMAT_OPTIONS   = ['currency', 'number', 'percent'];
+const ICON_OPTIONS     = ['none', 'trending-up', 'arrows-up', 'calendar-repeat', 'clock', 'chart-pie'];
+const LAYOUT_OPTIONS   = ['split', 'main-secondaries'];
+const CURRENCY_OPTIONS = ['€', '$', '£', '¥', '₹', 'kr'];
 
 const SIGN_GREEN = '#038922';
 const SIGN_RED   = '#D54035';
@@ -437,34 +438,48 @@ const renderChart = async (ctx, providedModel) => {
   }
 };
 
+// Build a flat element list with per-item sub-sections so each bound
+// column shows its name as a heading above its Format/Label/etc. fields.
+// `kind` controls which fields each item gets (primary/metric/footer).
+function buildItemSections(chartModel, kind, dimKey, max, palette) {
+  const cols = getDimColumns(chartModel, dimKey);
+  const items = [];
+  for (let i = 1; i <= max; i++) {
+    const col = cols[i - 1] ?? null;
+    const heading = col ? `${i}. ${col.name}` : `${i}. (drag a column)`;
+    let children;
+    if (kind === 'primary') {
+      children = [
+        { key: `primary${i}Format`,      type: 'dropdown',    label: 'Format',                              values: FORMAT_OPTIONS, defaultValue: 'currency' },
+        { key: `primary${i}Label`,       type: 'text',        label: 'Label (blank = column name)',         defaultValue: ' ' },
+        { key: `primary${i}Description`, type: 'text',        label: 'Description — tokens: {base}, {percent}', defaultValue: ' ' },
+        { key: `primary${i}Color`,       type: 'colorpicker', label: 'Bar colour',                          defaultValue: palette[(i - 1) % palette.length] },
+      ];
+    } else if (kind === 'footer') {
+      children = [
+        { key: `footer${i}Format`, type: 'dropdown', label: 'Format',                        values: FORMAT_OPTIONS, defaultValue: 'currency' },
+        { key: `footer${i}Label`,  type: 'text',     label: 'Label (blank = column name)',  defaultValue: ' ' },
+      ];
+    } else { // metric
+      children = [
+        { key: `metric${i}Format`, type: 'dropdown', label: 'Format',                        values: FORMAT_OPTIONS, defaultValue: 'currency' },
+        { key: `metric${i}Label`,  type: 'text',     label: 'Label (blank = column name)',  defaultValue: ' ' },
+      ];
+    }
+    items.push({
+      key: `${kind}Item${i}`,
+      type: 'section',
+      label: heading,
+      layoutType: 'none',
+      children,
+    });
+  }
+  return items;
+}
+
 (async () => {
   let propChangeTimer = null;
-
-  // Build the per-primary / per-metric / per-footer visual prop elements.
-  const palette = FALLBACK_PALETTE; // editor-time fallback before app config arrives
-  const primaryElements = [];
-  for (let i = 1; i <= MAX_PRIMARIES; i++) {
-    primaryElements.push(
-      { key: `primary${i}Format`,      type: 'dropdown',    label: `${i}. Format`,                                values: FORMAT_OPTIONS, defaultValue: 'currency' },
-      { key: `primary${i}Label`,       type: 'text',        label: `${i}. Label (blank = column name)`,          defaultValue: ' ' },
-      { key: `primary${i}Description`, type: 'text',        label: `${i}. Description — tokens: {base}, {percent}`, defaultValue: ' ' },
-      { key: `primary${i}Color`,       type: 'colorpicker', label: `${i}. Bar colour`,                            defaultValue: palette[(i - 1) % palette.length] },
-    );
-  }
-  const footerElements = [];
-  for (let i = 1; i <= MAX_FOOTERS; i++) {
-    footerElements.push(
-      { key: `footer${i}Format`, type: 'dropdown', label: `${i}. Footer format`,                       values: FORMAT_OPTIONS, defaultValue: 'currency' },
-      { key: `footer${i}Label`,  type: 'text',     label: `${i}. Footer label (blank = column name)`, defaultValue: ' ' },
-    );
-  }
-  const metricElements = [];
-  for (let i = 1; i <= MAX_METRICS; i++) {
-    metricElements.push(
-      { key: `metric${i}Format`, type: 'dropdown', label: `${i}. Metric format`,                       values: FORMAT_OPTIONS, defaultValue: 'currency' },
-      { key: `metric${i}Label`,  type: 'text',     label: `${i}. Metric label (blank = column name)`, defaultValue: ' ' },
-    );
-  }
+  const palette = FALLBACK_PALETTE; // fallback before app config arrives
 
   const ctx = await getChartContext({
     getDefaultChartConfig: () => [
@@ -495,11 +510,11 @@ const renderChart = async (ctx, providedModel) => {
         key: 'column',
         label: 'Layout',
         descriptionText:
-          'Bind one Base value (shared denominator for the bars), then drag up to 4 columns each into Primary values, Metrics, and Footers. Footer N pairs with primary N (Split) or metric N (Main+Secondaries).',
+          'Bind a Denominator, then drag up to 4 columns each into Primary values, Footers, and Metrics. Footer N pairs with primary N (Split) or metric N (Main+Secondaries).',
         columnSections: [
           {
             key: 'base',
-            label: 'Base value (shared denominator for ALL primary bars)',
+            label: 'Denominator for Primary Values Bar',
             allowAttributeColumns: true,
             allowMeasureColumns: true,
             allowTimeSeriesColumns: false,
@@ -514,6 +529,14 @@ const renderChart = async (ctx, providedModel) => {
             maxColumnCount: MAX_PRIMARIES,
           },
           {
+            key: 'footers',
+            label: 'Footers',
+            allowAttributeColumns: true,
+            allowMeasureColumns: true,
+            allowTimeSeriesColumns: false,
+            maxColumnCount: MAX_FOOTERS,
+          },
+          {
             key: 'metrics',
             label: 'Metrics',
             allowAttributeColumns: true,
@@ -521,40 +544,32 @@ const renderChart = async (ctx, providedModel) => {
             allowTimeSeriesColumns: false,
             maxColumnCount: MAX_METRICS,
           },
-          {
-            key: 'footers',
-            label: 'Footers (appended after each primary/metric)',
-            allowAttributeColumns: true,
-            allowMeasureColumns: true,
-            allowTimeSeriesColumns: false,
-            maxColumnCount: MAX_FOOTERS,
-          },
         ],
       },
     ],
-    visualPropEditorDefinition: {
+    visualPropEditorDefinition: (chartModel) => ({
       elements: [
-        { key: 'layout',         type: 'dropdown',    label: 'Card layout',           values: LAYOUT_OPTIONS, defaultValue: 'split' },
-        { key: 'icon',           type: 'dropdown',    label: 'Header icon',           values: ICON_OPTIONS,   defaultValue: 'none' },
-        { key: 'currencySymbol', type: 'text',        label: 'Currency symbol prefix', defaultValue: '€' },
-        { key: 'greenRedBySign', type: 'checkbox',    label: 'Green/Red for +/-',     defaultValue: false },
+        { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
+        { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
+        { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
+        { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/-',      defaultValue: false },
         {
           key: 'primariesSection', type: 'section', label: 'Primary values',
           layoutType: 'accordion', isAccordianExpanded: true,
-          children: primaryElements,
+          children: buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette),
         },
         {
           key: 'footersSection', type: 'section', label: 'Footers',
           layoutType: 'accordion', isAccordianExpanded: false,
-          children: footerElements,
+          children: buildItemSections(chartModel, 'footer', 'footers', MAX_FOOTERS, palette),
         },
         {
           key: 'metricsSection', type: 'section', label: 'Metrics',
           layoutType: 'accordion', isAccordianExpanded: false,
-          children: metricElements,
+          children: buildItemSections(chartModel, 'metric', 'metrics', MAX_METRICS, palette),
         },
       ],
-    },
+    }),
     onPropChange: (propKey) => {
       if (propChangeTimer) clearTimeout(propChangeTimer);
       if (typeof propKey === 'string' && TEXT_PROP_KEYS.has(propKey)) {
