@@ -477,34 +477,35 @@ function sectionHeader(key, label) {
   return { key, type: 'section', label, layoutType: 'none', children: [] };
 }
 
-// Build a flat list of per-item fields with the bound column name baked
-// into each label, e.g. `1. CXUC — Format`. We deliberately don't nest
-// the fields inside a `type: 'section'` — the TS prop-editor host drops
-// child prop changes silently, which made the labels/colors/formats all
-// stop persisting. `kind` controls which fields the slot gets.
-function buildItemSections(chartModel, kind, dimKey, max, palette) {
+// Build the per-item editor blocks. Each item gets a childless
+// `type: 'section'` sub-heading carrying the bound column name (e.g.
+// "1. CXOC"), followed by that item's flat fields. Fields stay flat —
+// nesting them inside a section makes the TS host drop their prop
+// changes. `count` is how many slots to emit (dynamic — only as many as
+// the user has bound, computed by the caller).
+function buildItemSections(chartModel, kind, dimKey, count, palette) {
   const cols = getDimColumns(chartModel, dimKey);
   const elements = [];
-  for (let i = 1; i <= max; i++) {
+  for (let i = 1; i <= count; i++) {
     const col = cols[i - 1] ?? null;
-    // With a bound column: "1. CXUC — Format". Empty slot: "1. Format".
-    const tag = col ? `${i}. ${col.name} — ` : `${i}. `;
+    const itemTitle = col ? `${i}. ${col.name}` : `${i}.`;
+    elements.push(sectionHeader(`${kind}Hdr${i}`, itemTitle));
     if (kind === 'primary') {
       elements.push(
-        { key: `primary${i}Format`,      type: 'dropdown',    label: `${tag}Format`,      values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `primary${i}Label`,       type: 'text',        label: `${tag}Label`,       defaultValue: ' ' },
-        { key: `primary${i}Description`, type: 'text',        label: `${tag}Description (tokens: {base}, {percent})`, defaultValue: ' ' },
-        { key: `primary${i}Color`,       type: 'colorpicker', label: `${tag}Bar colour`,  defaultValue: palette[(i - 1) % palette.length] },
+        { key: `primary${i}Format`,      type: 'dropdown',    label: 'Format',      values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `primary${i}Label`,       type: 'text',        label: 'Label',       defaultValue: ' ' },
+        { key: `primary${i}Description`, type: 'text',        label: 'Description (tokens: {base}, {percent})', defaultValue: ' ' },
+        { key: `primary${i}Color`,       type: 'colorpicker', label: 'Bar colour',  defaultValue: palette[(i - 1) % palette.length] },
       );
     } else if (kind === 'footer') {
       elements.push(
-        { key: `footer${i}Format`, type: 'dropdown', label: `${tag}Format`, values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `footer${i}Label`,  type: 'text',     label: `${tag}Label — tokens: {value}`, defaultValue: ' ' },
+        { key: `footer${i}Format`, type: 'dropdown', label: 'Format', values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `footer${i}Label`,  type: 'text',     label: 'Label (tokens: {value})', defaultValue: ' ' },
       );
     } else {
       elements.push(
-        { key: `metric${i}Format`, type: 'dropdown', label: `${tag}Format`, values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `metric${i}Label`,  type: 'text',     label: `${tag}Label`,  defaultValue: ' ' },
+        { key: `metric${i}Format`, type: 'dropdown', label: 'Format', values: FORMAT_OPTIONS, defaultValue: 'number' },
+        { key: `metric${i}Label`,  type: 'text',     label: 'Label',  defaultValue: ' ' },
       );
     }
   }
@@ -583,23 +584,45 @@ function buildItemSections(chartModel, kind, dimKey, max, palette) {
     ],
     // Flat list — a `type: 'section'` with CHILDREN makes the TS host
     // drop those children's prop changes, so all real fields live at the
-    // top level. Group titles are CHILDLESS sections (no children = no
-    // prop changes to drop), which render as clean headings with no
-    // input box.
-    visualPropEditorDefinition: (chartModel) => ({
-      elements: [
+    // top level. Group titles + per-item titles are CHILDLESS sections
+    // (no children = no prop changes to drop), which render as clean
+    // headings with no input box. The number of item blocks is dynamic:
+    // we only emit as many as the user has bound (so unused slots don't
+    // clutter the panel).
+    visualPropEditorDefinition: (chartModel) => {
+      const nPrimaries = getDimColumns(chartModel, 'primaries').length;
+      const nMetrics   = getDimColumns(chartModel, 'metrics').length;
+      const nFooters   = getDimColumns(chartModel, 'footers').length;
+      // Footers pair positionally with primaries (Split) or metrics
+      // (Main+Secondaries), and a footer slot with no bound column can
+      // still hold a label-only footnote — so show as many footer slots
+      // as the largest of the three counts.
+      const footerSlots = Math.min(
+        MAX_FOOTERS,
+        Math.max(nFooters, nPrimaries, nMetrics),
+      );
+
+      const elements = [
+        sectionHeader('hdrGeneral', 'General'),
         { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
         { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
         { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
         { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
-        sectionHeader('hdrPrimaries', 'Primary values'),
-        ...buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette),
-        sectionHeader('hdrFooters',   'Footers'),
-        ...buildItemSections(chartModel, 'footer',  'footers',   MAX_FOOTERS,   palette),
-        sectionHeader('hdrMetrics',   'Metrics'),
-        ...buildItemSections(chartModel, 'metric',  'metrics',   MAX_METRICS,   palette),
-      ],
-    }),
+      ];
+      if (nPrimaries > 0) {
+        elements.push(sectionHeader('hdrPrimaries', 'Primary values'));
+        elements.push(...buildItemSections(chartModel, 'primary', 'primaries', nPrimaries, palette));
+      }
+      if (footerSlots > 0) {
+        elements.push(sectionHeader('hdrFooters', 'Footers'));
+        elements.push(...buildItemSections(chartModel, 'footer', 'footers', footerSlots, palette));
+      }
+      if (nMetrics > 0) {
+        elements.push(sectionHeader('hdrMetrics', 'Metrics'));
+        elements.push(...buildItemSections(chartModel, 'metric', 'metrics', nMetrics, palette));
+      }
+      return { elements };
+    },
     onPropChange: (propKey) => {
       if (propChangeTimer) clearTimeout(propChangeTimer);
       if (typeof propKey === 'string' && TEXT_PROP_KEYS.has(propKey)) {
