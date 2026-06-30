@@ -165,15 +165,15 @@ function setHidden(id, hidden) {
   if (node) node.classList.toggle('hidden', hidden);
 }
 
-// Untouched (empty/null) → fall back to the bound column name. Typing a
-// non-empty value uses that value (trimmed). Typing whitespace-only —
-// e.g. a single space — is the explicit "no label" override: returns ''
-// so the field renders with nothing in place of the column name.
+// Whitespace-only (including the default ' ') falls back to the bound
+// column name. Anything else uses the trimmed user-typed value.
+// Note: TS rejects empty-string defaults for text inputs, so we can't
+// distinguish "user wants no label" from "user hasn't touched it" via
+// the value alone — the previous space-as-blank attempt broke the host.
 function labelOrColumnName(userValue, column) {
-  if (userValue == null || userValue === '') return column?.name ?? '';
-  const s = String(userValue);
-  if (s.trim() === '') return '';
-  return s.trim();
+  const trimmed = (userValue ?? '').toString().trim();
+  if (trimmed !== '') return trimmed;
+  return column?.name ?? '';
 }
 
 // Best-effort percent detection so the per-field Format default falls
@@ -472,19 +472,19 @@ function buildItemSections(chartModel, kind, dimKey, max, palette) {
     if (kind === 'primary') {
       elements.push(
         { key: `primary${i}Format`,      type: 'dropdown',    label: `${tag} — Format`,      values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `primary${i}Label`,       type: 'text',        label: `${tag} — Label`,       defaultValue: '' },
-        { key: `primary${i}Description`, type: 'text',        label: `${tag} — Description (tokens: {base}, {percent})`, defaultValue: '' },
+        { key: `primary${i}Label`,       type: 'text',        label: `${tag} — Label`,       defaultValue: ' ' },
+        { key: `primary${i}Description`, type: 'text',        label: `${tag} — Description (tokens: {base}, {percent})`, defaultValue: ' ' },
         { key: `primary${i}Color`,       type: 'colorpicker', label: `${tag} — Bar colour`,  defaultValue: palette[(i - 1) % palette.length] },
       );
     } else if (kind === 'footer') {
       elements.push(
         { key: `footer${i}Format`, type: 'dropdown', label: `${tag} — Format`, values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `footer${i}Label`,  type: 'text',     label: `${tag} — Label`,  defaultValue: '' },
+        { key: `footer${i}Label`,  type: 'text',     label: `${tag} — Label`,  defaultValue: ' ' },
       );
     } else {
       elements.push(
         { key: `metric${i}Format`, type: 'dropdown', label: `${tag} — Format`, values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `metric${i}Label`,  type: 'text',     label: `${tag} — Label`,  defaultValue: '' },
+        { key: `metric${i}Label`,  type: 'text',     label: `${tag} — Label`,  defaultValue: ' ' },
       );
     }
   }
