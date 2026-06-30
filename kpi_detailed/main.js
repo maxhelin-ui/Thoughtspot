@@ -589,40 +589,21 @@ function buildItemSections(chartModel, kind, dimKey, count, palette) {
     // headings with no input box. The number of item blocks is dynamic:
     // we only emit as many as the user has bound (so unused slots don't
     // clutter the panel).
-    visualPropEditorDefinition: (chartModel) => {
-      const nPrimaries = getDimColumns(chartModel, 'primaries').length;
-      const nMetrics   = getDimColumns(chartModel, 'metrics').length;
-      const nFooters   = getDimColumns(chartModel, 'footers').length;
-      // Footers pair positionally with primaries (Split) or metrics
-      // (Main+Secondaries), and a footer slot with no bound column can
-      // still hold a label-only footnote — so show as many footer slots
-      // as the largest of the three counts.
-      const footerSlots = Math.min(
-        MAX_FOOTERS,
-        Math.max(nFooters, nPrimaries, nMetrics),
-      );
-
-      const elements = [
+    visualPropEditorDefinition: (chartModel) => ({
+      elements: [
         sectionHeader('hdrGeneral', 'General'),
         { key: 'layout',         type: 'dropdown', label: 'Card layout',            values: LAYOUT_OPTIONS,   defaultValue: 'split' },
         { key: 'icon',           type: 'dropdown', label: 'Header icon',            values: ICON_OPTIONS,     defaultValue: 'none' },
         { key: 'currencySymbol', type: 'dropdown', label: 'Currency symbol prefix', values: CURRENCY_OPTIONS, defaultValue: '€' },
         { key: 'greenRedBySign', type: 'checkbox', label: 'Green/Red for +/- for Primary Values', defaultValue: false },
-      ];
-      if (nPrimaries > 0) {
-        elements.push(sectionHeader('hdrPrimaries', 'Primary values'));
-        elements.push(...buildItemSections(chartModel, 'primary', 'primaries', nPrimaries, palette));
-      }
-      if (footerSlots > 0) {
-        elements.push(sectionHeader('hdrFooters', 'Footers'));
-        elements.push(...buildItemSections(chartModel, 'footer', 'footers', footerSlots, palette));
-      }
-      if (nMetrics > 0) {
-        elements.push(sectionHeader('hdrMetrics', 'Metrics'));
-        elements.push(...buildItemSections(chartModel, 'metric', 'metrics', nMetrics, palette));
-      }
-      return { elements };
-    },
+        sectionHeader('hdrPrimaries', 'Primary values'),
+        ...buildItemSections(chartModel, 'primary', 'primaries', MAX_PRIMARIES, palette),
+        sectionHeader('hdrFooters',   'Footers'),
+        ...buildItemSections(chartModel, 'footer',  'footers',   MAX_FOOTERS,   palette),
+        sectionHeader('hdrMetrics',   'Metrics'),
+        ...buildItemSections(chartModel, 'metric',  'metrics',   MAX_METRICS,   palette),
+      ],
+    }),
     onPropChange: (propKey) => {
       if (propChangeTimer) clearTimeout(propChangeTimer);
       if (typeof propKey === 'string' && TEXT_PROP_KEYS.has(propKey)) {
