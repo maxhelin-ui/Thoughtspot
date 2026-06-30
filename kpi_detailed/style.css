@@ -73,7 +73,7 @@ body {
 .ts-detail-card {
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: 20px;
+  padding: 24px;
   position: relative;
   overflow: hidden;
 }
@@ -109,9 +109,9 @@ body {
 }
 
 .ts-side-label {
-  font-size: 15px;
+  font-size: 18px;
   color: var(--ts-text-secondary);
-  margin-bottom: 5px;
+  margin-bottom: 6px;
 }
 
 .ts-stat-row {
@@ -129,35 +129,35 @@ body {
 }
 
 .ts-stat-medium {
-  font-size: 34px;
+  font-size: 41px;
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
 .ts-stat-desc {
-  font-size: 16px;
+  font-size: 19px;
   color: var(--ts-text-secondary);
   overflow-wrap: anywhere;
 }
 
 .ts-stat-footer {
-  font-size: 15px;
+  font-size: 18px;
   color: var(--ts-text-tertiary);
-  margin-top: 7px;
+  margin-top: 8px;
   overflow-wrap: anywhere;
 }
 
 .ts-progress-row {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 14px;
+  gap: 14px;
+  margin-top: 17px;
 }
 
 .ts-progress-track {
   flex: 1;
-  height: 11px;
+  height: 13px;
   background: var(--ts-bg-track);
   border-radius: 99px;
   overflow: hidden;
@@ -172,9 +172,9 @@ body {
 }
 
 .ts-progress-label {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 500;
-  min-width: 46px;
+  min-width: 55px;
   text-align: right;
   /* colour set inline per side */
 }
@@ -189,31 +189,35 @@ body {
 
 .ts-metric {
   flex: 1;
-  min-width: 110px;
+  min-width: 130px;
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: 16px 18px;
+  padding: 19px 22px;
 }
 
 .ts-metric-label {
-  font-size: 15px;
+  font-size: 18px;
   color: var(--ts-text-secondary);
-  margin-bottom: 5px;
+  margin-bottom: 6px;
 }
 
 .ts-metric-value {
-  font-size: 26px;
+  font-size: 31px;
   font-weight: 500;
   color: var(--ts-text-primary);
 }
 
-/* Main + Secondaries layout — big primary, no card chrome, then rows. */
+/* Main + Secondaries layout — big primary, no card chrome, then rows.
+   Kept at the original (smaller) sizes; only the split layout is scaled
+   up. The shared .ts-stat-desc is bigger for split, so override it back
+   to the original size here. */
 .ts-main-sec .ts-detail-card {
   background: transparent;
   padding: 0;
   border-radius: 0;
 }
 .ts-main-sec .ts-stat-big { font-size: 32px; }
+.ts-main-sec .ts-stat-desc { font-size: 13px; }
 .ts-main-sec #msRows {
   margin-top: 6px;
   display: flex;
