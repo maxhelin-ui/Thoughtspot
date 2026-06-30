@@ -538,9 +538,21 @@ const renderChart = async (ctx, providedModel) => {
         { key: 'icon',           type: 'dropdown',    label: 'Header icon',           values: ICON_OPTIONS,   defaultValue: 'none' },
         { key: 'currencySymbol', type: 'text',        label: 'Currency symbol prefix', defaultValue: '€' },
         { key: 'greenRedBySign', type: 'checkbox',    label: 'Green/Red for +/-',     defaultValue: false },
-        ...primaryElements,
-        ...footerElements,
-        ...metricElements,
+        {
+          key: 'primariesSection', type: 'section', label: 'Primary values',
+          layoutType: 'accordion', isAccordianExpanded: true,
+          children: primaryElements,
+        },
+        {
+          key: 'footersSection', type: 'section', label: 'Footers',
+          layoutType: 'accordion', isAccordianExpanded: false,
+          children: footerElements,
+        },
+        {
+          key: 'metricsSection', type: 'section', label: 'Metrics',
+          layoutType: 'accordion', isAccordianExpanded: false,
+          children: metricElements,
+        },
       ],
     },
     onPropChange: (propKey) => {
