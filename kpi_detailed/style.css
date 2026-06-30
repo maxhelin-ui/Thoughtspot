@@ -1,4 +1,4 @@
-/* KPI - Detailed
+/** KPI - Detailed
    ThoughtSpot-style KPI card with dynamic split (1..4 primary values)
    and a main+secondaries variant. Colour tokens follow ThoughtSpot
    defaults; runtime overrides come from main.js. */
