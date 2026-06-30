@@ -467,12 +467,14 @@ const renderChart = async (ctx, providedModel) => {
   }
 };
 
-// Childless `type: 'section'` used purely as a heading/divider. Because
-// it has no children, the TS host has no child prop changes to drop —
-// so it renders a clean section title with no input box, while the real
-// fields stay flat as top-level siblings (where they actually work).
+// Section heading with an EMPTY children array. A section *with* a
+// children array displays fine in the TS host (an earlier accordion did);
+// what crashed the chart was a section with no `children` key at all.
+// With `children: []` there are no child props for the host to swallow,
+// so this renders as a proper bold section heading (bigger text + the
+// panel's natural spacing above it) without breaking anything.
 function sectionHeader(key, label) {
-  return { key, type: 'section', label, layoutType: 'none' };
+  return { key, type: 'section', label, layoutType: 'none', children: [] };
 }
 
 // Build a flat list of per-item fields with the bound column name baked
