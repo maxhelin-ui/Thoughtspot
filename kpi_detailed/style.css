@@ -1,4 +1,4 @@
-/** KPI - Detailed
+/* KPI - Detailed
    ThoughtSpot-style KPI card with dynamic split (1..4 primary values)
    and a main+secondaries variant. Colour tokens follow ThoughtSpot
    defaults; runtime overrides come from main.js. */
@@ -129,7 +129,7 @@ body {
 }
 
 .ts-stat-medium {
-  font-size: 41px;
+  font-size: 49px;
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
@@ -152,7 +152,7 @@ body {
   display: flex;
   align-items: center;
   gap: 14px;
-  margin-top: 17px;
+  margin-top: 8px;
 }
 
 .ts-progress-track {
@@ -202,7 +202,7 @@ body {
 }
 
 .ts-metric-value {
-  font-size: 31px;
+  font-size: 37px;
   font-weight: 500;
   color: var(--ts-text-primary);
 }
@@ -280,5 +280,3 @@ body {
   .ts-icon-corner { top: 5px; right: 5px; width: 12px; height: 12px; }
   .ts-icon-corner svg { width: 12px; height: 12px; }
 }
-
-/* deploy: 2026-06-30T13:50 */
