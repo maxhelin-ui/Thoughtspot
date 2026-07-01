@@ -150,7 +150,7 @@ body {
 }
 
 .ts-stat-medium {
-  font-size: clamp(26px, 12cqh, 50px);
+  font-size: clamp(24px, 10.5cqh, 44px);
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
@@ -223,7 +223,7 @@ body {
 }
 
 .ts-metric-value {
-  font-size: clamp(22px, 8.2cqh, 40px);
+  font-size: clamp(19px, 7cqh, 34px);
   font-weight: 500;
   color: var(--ts-text-primary);
 }
@@ -237,7 +237,7 @@ body {
   padding: 0;
   border-radius: 0;
 }
-.ts-main-sec .ts-stat-big { font-size: 44px; }
+.ts-main-sec .ts-stat-big { font-size: 52px; }
 .ts-main-sec .ts-stat-desc { font-size: 13px; }
 .ts-main-sec #msRows {
   margin-top: 8px;
@@ -258,19 +258,19 @@ body {
    card gap, and the corner icon. */
 @media (max-height: 280px), (max-width: 360px) {
   .ts-card { gap: 6px; }
-  .ts-main-sec .ts-stat-big { font-size: 28px; }
+  .ts-main-sec .ts-stat-big { font-size: 33px; }
 }
 
 @media (max-height: 200px), (max-width: 280px) {
   .ts-card { gap: 4px; }
-  .ts-main-sec .ts-stat-big { font-size: 23px; }
+  .ts-main-sec .ts-stat-big { font-size: 27px; }
   .ts-icon-corner { top: 6px; right: 6px; width: 14px; height: 14px; }
   .ts-icon-corner svg { width: 14px; height: 14px; }
 }
 
 @media (max-height: 140px) {
   .ts-card { gap: 3px; }
-  .ts-main-sec .ts-stat-big { font-size: 20px; }
+  .ts-main-sec .ts-stat-big { font-size: 24px; }
   .ts-icon-corner { top: 5px; right: 5px; width: 12px; height: 12px; }
   .ts-icon-corner svg { width: 12px; height: 12px; }
 }
