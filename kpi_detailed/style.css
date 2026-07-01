@@ -20,6 +20,10 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+html, body {
+  height: 100%;
+}
+
 body {
   font-family: Optimo-Plain, "Helvetica Neue", Helvetica, Arial, sans-serif;
   background-color: transparent;
@@ -29,15 +33,24 @@ body {
 
 .hidden { display: none !important; }
 
+/* .ts-card fills the tile (height chained from html/body above) so it's a
+   container with a REAL, content-independent size. That's what lets the
+   cqh-based clamp()s below scale off the tile's actual height instead of
+   the whole browser viewport — shrink the tile and every font, bar and
+   grey-box padding shrinks together, in sync, so nothing overflows and
+   forces a scrollbar. */
 .ts-card {
   background: transparent;
   border: none;
   padding: 0;
   width: 100%;
+  height: 100%;
   display: flex;
   flex-direction: column;
   gap: 8px;
   position: relative;
+  container-type: size;
+  container-name: kpicard;
 }
 
 /* Split layout wrapper — primary card, then metric tiles below it. */
@@ -73,7 +86,7 @@ body {
 .ts-detail-card {
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: clamp(14px, 2.4vmin, 26px);
+  padding: clamp(14px, 5.2cqh, 26px);
   position: relative;
   overflow: hidden;
 }
@@ -109,12 +122,15 @@ body {
 }
 
 /* Split layout uses clamp(min, tile-size-based, max) so everything
-   scales smoothly as the tile resizes. vmin (not vw) so it responds to
-   BOTH width and height shrinking — a short-but-wide tile shrinks fonts
-   just like a narrow one, instead of overflowing and scrolling. Value is
-   the biggest; label and bar % are a smaller, roughly equal size. */
+   scales smoothly as the tile resizes. cqh (container query height,
+   sized off .ts-card's own height — see container-type: size above)
+   instead of vmin/vw, so sizing tracks the tile's actual rendered box
+   rather than the whole iframe viewport — shrink the tile and every
+   font, bar and grey-box padding shrinks together in sync, so nothing
+   overflows and forces a scrollbar. Value is the biggest; label and bar
+   % are a smaller, roughly equal size. */
 .ts-side-label {
-  font-size: clamp(12px, 1.7vmin, 19px);
+  font-size: clamp(12px, 4.2cqh, 19px);
   color: var(--ts-text-secondary);
   margin-bottom: 5px;
 }
@@ -134,20 +150,20 @@ body {
 }
 
 .ts-stat-medium {
-  font-size: clamp(26px, 5.2vmin, 50px);
+  font-size: clamp(26px, 12cqh, 50px);
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
 .ts-stat-desc {
-  font-size: clamp(12px, 1.6vmin, 18px);
+  font-size: clamp(12px, 3.9cqh, 18px);
   color: var(--ts-text-secondary);
   overflow-wrap: anywhere;
 }
 
 .ts-stat-footer {
-  font-size: clamp(12px, 1.5vmin, 17px);
+  font-size: clamp(12px, 3.7cqh, 17px);
   color: var(--ts-text-tertiary);
   margin-top: 4px;
   overflow-wrap: anywhere;
@@ -162,7 +178,7 @@ body {
 
 .ts-progress-track {
   flex: 1;
-  height: clamp(6px, 1.1vmin, 12px);
+  height: clamp(6px, 2.4cqh, 12px);
   background: var(--ts-bg-track);
   border-radius: 99px;
   overflow: hidden;
@@ -177,7 +193,7 @@ body {
 }
 
 .ts-progress-label {
-  font-size: clamp(13px, 1.8vmin, 20px);
+  font-size: clamp(13px, 4.5cqh, 20px);
   font-weight: 500;
   min-width: 42px;
   text-align: right;
@@ -197,17 +213,17 @@ body {
   min-width: 110px;
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: clamp(12px, 2vmin, 22px) clamp(14px, 2.2vmin, 24px);
+  padding: clamp(12px, 4.5cqh, 22px) clamp(14px, 5cqh, 24px);
 }
 
 .ts-metric-label {
-  font-size: clamp(12px, 1.6vmin, 19px);
+  font-size: clamp(12px, 3.9cqh, 19px);
   color: var(--ts-text-secondary);
   margin-bottom: 5px;
 }
 
 .ts-metric-value {
-  font-size: clamp(22px, 4vmin, 40px);
+  font-size: clamp(22px, 8.2cqh, 40px);
   font-weight: 500;
   color: var(--ts-text-primary);
 }
@@ -221,7 +237,7 @@ body {
   padding: 0;
   border-radius: 0;
 }
-.ts-main-sec .ts-stat-big { font-size: 38px; }
+.ts-main-sec .ts-stat-big { font-size: 44px; }
 .ts-main-sec .ts-stat-desc { font-size: 13px; }
 .ts-main-sec #msRows {
   margin-top: 8px;
@@ -242,19 +258,19 @@ body {
    card gap, and the corner icon. */
 @media (max-height: 280px), (max-width: 360px) {
   .ts-card { gap: 6px; }
-  .ts-main-sec .ts-stat-big { font-size: 24px; }
+  .ts-main-sec .ts-stat-big { font-size: 28px; }
 }
 
 @media (max-height: 200px), (max-width: 280px) {
   .ts-card { gap: 4px; }
-  .ts-main-sec .ts-stat-big { font-size: 20px; }
+  .ts-main-sec .ts-stat-big { font-size: 23px; }
   .ts-icon-corner { top: 6px; right: 6px; width: 14px; height: 14px; }
   .ts-icon-corner svg { width: 14px; height: 14px; }
 }
 
 @media (max-height: 140px) {
   .ts-card { gap: 3px; }
-  .ts-main-sec .ts-stat-big { font-size: 17px; }
+  .ts-main-sec .ts-stat-big { font-size: 20px; }
   .ts-icon-corner { top: 5px; right: 5px; width: 12px; height: 12px; }
   .ts-icon-corner svg { width: 12px; height: 12px; }
 }
