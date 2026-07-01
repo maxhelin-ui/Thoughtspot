@@ -57,7 +57,7 @@ body {
 .ts-split {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 7.2px;
 }
 
 .ts-icon-corner {
@@ -86,7 +86,7 @@ body {
 .ts-detail-card {
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: clamp(14px, 5.2cqh, 26px);
+  padding: clamp(12.6px, 4.7cqh, 23.4px);
   position: relative;
   overflow: hidden;
 }
@@ -132,7 +132,7 @@ body {
 .ts-side-label {
   font-size: clamp(12px, 4.2cqh, 19px);
   color: var(--ts-text-secondary);
-  margin-bottom: 5px;
+  margin-bottom: 4.5px;
 }
 
 .ts-stat-row {
@@ -165,7 +165,7 @@ body {
 .ts-stat-footer {
   font-size: clamp(12px, 3.7cqh, 17px);
   color: var(--ts-text-tertiary);
-  margin-top: 4px;
+  margin-top: 3.6px;
   overflow-wrap: anywhere;
 }
 
@@ -173,7 +173,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-top: 6px;
+  margin-top: 5.4px;
 }
 
 .ts-progress-track {
@@ -213,13 +213,13 @@ body {
   min-width: 110px;
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: clamp(12px, 4.5cqh, 22px) clamp(14px, 5cqh, 24px);
+  padding: clamp(10.8px, 4.05cqh, 19.8px) clamp(12.6px, 4.5cqh, 21.6px);
 }
 
 .ts-metric-label {
   font-size: clamp(12px, 3.9cqh, 19px);
   color: var(--ts-text-secondary);
-  margin-bottom: 5px;
+  margin-bottom: 4.5px;
 }
 
 .ts-metric-value {
