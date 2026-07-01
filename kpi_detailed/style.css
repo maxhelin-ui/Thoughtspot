@@ -73,7 +73,7 @@ body {
 .ts-detail-card {
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: 24px;
+  padding: clamp(14px, 2.4vw, 26px);
   position: relative;
   overflow: hidden;
 }
@@ -108,10 +108,14 @@ body {
   border-right: none;
 }
 
+/* Split layout uses clamp(min, tile-width-based, max) so everything
+   scales smoothly as the tile resizes (1vw = 1% of the iframe = the
+   tile width), capped at a max. Value is the biggest; label and bar %
+   are a smaller, roughly equal size. */
 .ts-side-label {
-  font-size: 18px;
+  font-size: clamp(12px, 1.7vw, 19px);
   color: var(--ts-text-secondary);
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .ts-stat-row {
@@ -129,35 +133,35 @@ body {
 }
 
 .ts-stat-medium {
-  font-size: 49px;
+  font-size: clamp(26px, 5.2vw, 50px);
   font-weight: 500;
   color: var(--ts-text-primary);
   line-height: 1.1;
 }
 
 .ts-stat-desc {
-  font-size: 19px;
+  font-size: clamp(12px, 1.6vw, 18px);
   color: var(--ts-text-secondary);
   overflow-wrap: anywhere;
 }
 
 .ts-stat-footer {
-  font-size: 18px;
+  font-size: clamp(12px, 1.5vw, 17px);
   color: var(--ts-text-tertiary);
-  margin-top: 8px;
+  margin-top: 4px;
   overflow-wrap: anywhere;
 }
 
 .ts-progress-row {
   display: flex;
   align-items: center;
-  gap: 14px;
-  margin-top: 8px;
+  gap: 12px;
+  margin-top: 6px;
 }
 
 .ts-progress-track {
   flex: 1;
-  height: 13px;
+  height: clamp(6px, 1.1vw, 12px);
   background: var(--ts-bg-track);
   border-radius: 99px;
   overflow: hidden;
@@ -172,9 +176,9 @@ body {
 }
 
 .ts-progress-label {
-  font-size: 22px;
+  font-size: clamp(13px, 1.8vw, 20px);
   font-weight: 500;
-  min-width: 55px;
+  min-width: 42px;
   text-align: right;
   /* colour set inline per side */
 }
@@ -189,20 +193,20 @@ body {
 
 .ts-metric {
   flex: 1;
-  min-width: 130px;
+  min-width: 110px;
   background: var(--ts-bg-secondary);
   border-radius: var(--ts-radius-md);
-  padding: 19px 22px;
+  padding: clamp(12px, 2vw, 22px) clamp(14px, 2.2vw, 24px);
 }
 
 .ts-metric-label {
-  font-size: 18px;
+  font-size: clamp(12px, 1.6vw, 19px);
   color: var(--ts-text-secondary);
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .ts-metric-value {
-  font-size: 37px;
+  font-size: clamp(22px, 4vw, 40px);
   font-weight: 500;
   color: var(--ts-text-primary);
 }
@@ -231,52 +235,25 @@ body {
   overflow-wrap: anywhere;
 }
 
-/* Compact breakpoints for small tiles. */
+/* Compact breakpoints for small tiles. The split layout font/padding
+   sizes are handled by clamp() (smooth), so we only adjust things clamp
+   doesn't cover here: the main+secondaries big number (fixed px), the
+   card gap, and the corner icon. */
 @media (max-height: 280px), (max-width: 360px) {
-  .ts-detail-card { padding: 12px; }
   .ts-card { gap: 6px; }
-  .ts-progress-row { margin-top: 8px; }
-  .ts-stat-big { font-size: 24px; }
-  .ts-stat-medium { font-size: 20px; }
-  .ts-progress-track { height: 5px; }
-  .ts-stat-desc { font-size: 12px; }
-  .ts-stat-footer { font-size: 11px; }
-  .ts-metric { padding: 10px 12px; }
-  .ts-metric-value { font-size: 16px; }
+  .ts-main-sec .ts-stat-big { font-size: 26px; }
 }
 
 @media (max-height: 200px), (max-width: 280px) {
-  .ts-detail-card { padding: 10px; }
   .ts-card { gap: 4px; }
-  .ts-progress-row { margin-top: 6px; }
-  .ts-stat-big { font-size: 20px; }
-  .ts-stat-medium { font-size: 16px; }
-  .ts-progress-track { height: 4px; }
-  .ts-stat-desc { font-size: 11px; }
-  .ts-stat-footer { font-size: 10px; }
-  .ts-side-label { font-size: 11px; }
-  .ts-progress-label { font-size: 12px; min-width: 30px; }
-  .ts-metric { padding: 8px 10px; }
-  .ts-metric-value { font-size: 14px; }
-  .ts-metric-label { font-size: 11px; }
+  .ts-main-sec .ts-stat-big { font-size: 22px; }
   .ts-icon-corner { top: 6px; right: 6px; width: 14px; height: 14px; }
   .ts-icon-corner svg { width: 14px; height: 14px; }
 }
 
 @media (max-height: 140px) {
-  .ts-detail-card { padding: 8px; }
   .ts-card { gap: 3px; }
-  .ts-progress-row { margin-top: 4px; }
-  .ts-stat-big { font-size: 17px; }
-  .ts-stat-medium { font-size: 14px; }
-  .ts-progress-track { height: 3px; }
-  .ts-stat-desc { font-size: 10px; }
-  .ts-stat-footer { font-size: 9px; }
-  .ts-side-label { font-size: 10px; }
-  .ts-progress-label { font-size: 11px; min-width: 26px; }
-  .ts-metric { padding: 6px 8px; }
-  .ts-metric-value { font-size: 13px; }
-  .ts-metric-label { font-size: 10px; }
+  .ts-main-sec .ts-stat-big { font-size: 18px; }
   .ts-icon-corner { top: 5px; right: 5px; width: 12px; height: 12px; }
   .ts-icon-corner svg { width: 12px; height: 12px; }
 }

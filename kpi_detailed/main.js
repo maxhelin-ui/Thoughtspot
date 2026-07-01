@@ -116,11 +116,12 @@ function substituteTokens(template, baseFormatted, percentFormatted) {
 
 // Footer text composition. If the label contains {value}, the label
 // controls the full rendering (so the user can put the value before,
-// after, or in the middle). Otherwise we render `{label} - {value}`.
+// after, or in the middle). Otherwise we render `{label} {value}`
+// (label then value separated by a single space).
 function composeFooterText(label, formattedValue) {
   if (!label) return formattedValue;
   if (label.includes('{value}')) return label.replace(/\{value\}/g, formattedValue ?? '');
-  return `${label} - ${formattedValue}`;
+  return `${label} ${formattedValue}`;
 }
 
 // ---------- data access ----------
