@@ -297,3 +297,23 @@ Single-column config sections (e.g. a denominator slot) have a finicky, short
 drop target — dropping directly on the outlined box often bounces the column
 back. Workaround: drop slightly BELOW the outlined box. This is a ThoughtSpot
 host DnD quirk, not something the chart code can control.
+
+## Editable default = column name (instead of a fake "blank" sentinel)
+
+To make a text setting show a sensible default that the user can edit or
+clear, set its `defaultValue` to the dynamic value (e.g. the bound column
+name) inside the `visualPropEditorDefinition` function. The box shows the
+name, the user can overwrite it, and clearing it means "hide". In render,
+treat `undefined` (untouched) as the default, `''` (cleared) as hidden.
+Empty-string defaults crash the host, so fall back to a single space `' '`
+for slots with no dynamic value (e.g. an unbound column). Keep any old
+sentinel (like typing `none` → hidden) for back-compat with saved charts.
+
+## Smooth resize: clamp() + vw, not media-query breakpoints
+
+Fixed px sizes jump at `@media` breakpoints as the tile resizes. For smooth
+scaling, size fonts/bars with `clamp(min, Nvw, max)`. Inside a BYOC iframe,
+`1vw` = 1% of the iframe = the tile width, so text grows/shrinks continuously
+with the tile and is capped at `max`. Drop the per-size media-query overrides
+for anything using clamp (keep breakpoints only for things clamp can't cover,
+e.g. a fixed-size sibling layout or the corner icon).

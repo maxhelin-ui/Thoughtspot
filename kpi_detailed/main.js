@@ -175,16 +175,17 @@ function setHidden(id, hidden) {
   if (node) node.classList.toggle('hidden', hidden);
 }
 
-// Empty/whitespace (including the default ' ') falls back to the bound
-// column name. Typing the literal word "none" is the explicit "no label"
-// override → returns ''. Anything else uses the trimmed typed value.
-// (We can't use empty-string as the override because TS rejects empty
-// text defaults, so a sentinel word is the reliable way.)
+// Label resolution:
+//   - untouched (undefined) → the bound column name (the box is also
+//     pre-filled with it as its defaultValue, so this matches what's shown)
+//   - cleared to empty → '' (label hidden)
+//   - "none" → '' (back-compat for users who set that before)
+//   - anything else → the trimmed typed text
 function labelOrColumnName(userValue, column) {
-  const trimmed = (userValue ?? '').toString().trim();
+  if (userValue == null) return column?.name ?? '';
+  const trimmed = userValue.toString().trim();
   if (trimmed.toLowerCase() === 'none') return '';
-  if (trimmed !== '') return trimmed;
-  return column?.name ?? '';
+  return trimmed;
 }
 
 // Best-effort percent detection so the per-field Format default falls
@@ -493,23 +494,28 @@ function buildItemSections(chartModel, kind, dimKey, count, palette) {
   for (let i = 1; i <= count; i++) {
     const col = cols[i - 1] ?? null;
     const itemTitle = col ? `${i}. ${col.name}` : `${i}.`;
+    // Label boxes are pre-filled with the bound column name so it shows by
+    // default and is directly editable; clearing the box hides the label.
+    // (Empty text defaults crash the host, so unbound slots default to a
+    // single space.)
+    const labelDefault = col ? col.name : ' ';
     elements.push(sectionHeader(`${kind}Hdr${i}`, itemTitle));
     if (kind === 'primary') {
       elements.push(
         { key: `primary${i}Format`,      type: 'dropdown',    label: 'Format',      values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `primary${i}Label`,       type: 'text',        label: 'Label',       defaultValue: ' ' },
+        { key: `primary${i}Label`,       type: 'text',        label: 'Label',       defaultValue: labelDefault },
         { key: `primary${i}Description`, type: 'text',        label: 'Description (tokens: {base}, {percent})', defaultValue: ' ' },
         { key: `primary${i}Color`,       type: 'colorpicker', label: 'Bar colour',  defaultValue: palette[(i - 1) % palette.length] },
       );
     } else if (kind === 'footer') {
       elements.push(
         { key: `footer${i}Format`, type: 'dropdown', label: 'Format', values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `footer${i}Label`,  type: 'text',     label: 'Label (tokens: {value})', defaultValue: ' ' },
+        { key: `footer${i}Label`,  type: 'text',     label: 'Label (tokens: {value})', defaultValue: labelDefault },
       );
     } else {
       elements.push(
         { key: `metric${i}Format`, type: 'dropdown', label: 'Format', values: FORMAT_OPTIONS, defaultValue: 'number' },
-        { key: `metric${i}Label`,  type: 'text',     label: 'Label',  defaultValue: ' ' },
+        { key: `metric${i}Label`,  type: 'text',     label: 'Label',  defaultValue: labelDefault },
       );
     }
   }
