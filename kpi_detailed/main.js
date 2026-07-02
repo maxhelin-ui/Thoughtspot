@@ -461,14 +461,31 @@ const renderChart = async (ctx, providedModel) => {
 // ChartModelUpdate event fire on every keystroke in a text setting — if
 // either renders synchronously the chart re-lays-out per character and
 // lags. We funnel both through one debounce so typing is smooth and the
-// chart updates shortly after you pause. The latest scheduled model wins
-// (clearTimeout), so the final typed value is always what renders.
-const RENDER_DEBOUNCE_MS = 250;
+// chart updates shortly after you pause.
+//
+// Staleness guard: when the debounce fires, ctx.getChartModel() can still
+// lag a keystroke or two behind what the user typed (the SDK's cached
+// model updates asynchronously). So onPropChange records every key/value
+// into pendingProps, and at render time we overlay pendingProps on top of
+// whatever model we have — the freshest typed values always win.
+const RENDER_DEBOUNCE_MS = 300;
+let pendingProps = {};
+
+function withPendingProps(ctx, providedModel) {
+  let base = providedModel;
+  if (!base) {
+    try { base = ctx.getChartModel(); } catch { base = lastModel; }
+  }
+  if (!base) return base;
+  if (Object.keys(pendingProps).length === 0) return base;
+  return { ...base, visualProps: { ...(base.visualProps ?? {}), ...pendingProps } };
+}
+
 function scheduleRender(ctx, providedModel) {
   if (renderTimer) clearTimeout(renderTimer);
   renderTimer = setTimeout(() => {
     renderTimer = null;
-    renderChart(ctx, providedModel);
+    renderChart(ctx, withPendingProps(ctx, providedModel));
   }, RENDER_DEBOUNCE_MS);
 }
 
@@ -613,9 +630,13 @@ function buildItemSections(chartModel, kind, dimKey, count, palette) {
         ...buildItemSections(chartModel, 'metric',  'metrics',   MAX_METRICS,   palette),
       ],
     }),
-    // Debounced — reads the freshest model at fire time, so the final
-    // typed value renders. Prevents per-keystroke re-layout lag.
-    onPropChange: () => scheduleRender(ctx),
+    // Debounced. Record the typed key/value into pendingProps so the
+    // render always sees the freshest value, even when the SDK's cached
+    // model lags behind the keystrokes.
+    onPropChange: (propKey, propValue) => {
+      if (typeof propKey === 'string' && propKey) pendingProps[propKey] = propValue;
+      scheduleRender(ctx);
+    },
   });
 
   // Real data changes render immediately (not typing-driven).
@@ -626,10 +647,34 @@ function buildItemSections(chartModel, kind, dimKey, count, palette) {
     renderChart(ctx, merged);
     return { triggerRenderChart: false };
   });
+  // Drop pending overlay values the incoming host state has caught up
+  // on; keep any that are still newer than the host's copy (events can
+  // arrive out of order relative to keystrokes).
+  const reconcilePending = (hostProps) => {
+    if (!hostProps) return;
+    for (const k of Object.keys(pendingProps)) {
+      if (hostProps[k] === pendingProps[k]) delete pendingProps[k];
+    }
+  };
+
   // ChartModelUpdate fires on every editor keystroke too — debounce it
   // through the same scheduler so text edits don't thrash the chart.
   ctx.on(TSToChartEvent.ChartModelUpdate, (payload) => {
+    reconcilePending(payload?.chartModel?.visualProps);
     scheduleRender(ctx, payload?.chartModel);
+    return { triggerRenderChart: false };
+  });
+  // Some host versions push prop edits through VisualPropsUpdate instead
+  // of ChartModelUpdate — merge them into the model and use the same
+  // debounced path.
+  ctx.on(TSToChartEvent.VisualPropsUpdate, (payload) => {
+    if (payload?.visualProps && lastModel) {
+      reconcilePending(payload.visualProps);
+      lastModel = { ...lastModel, visualProps: payload.visualProps };
+      scheduleRender(ctx, lastModel);
+    } else {
+      scheduleRender(ctx);
+    }
     return { triggerRenderChart: false };
   });
 
