@@ -390,6 +390,7 @@ function render(ctx, providedModel) {
     : Promise.resolve(ctx.getChartModel());
   return modelPromise.then((chartModel) => {
     chartModelRef.current = chartModel;
+    lastModel = chartModel;
     const vp = chartModel?.visualProps ?? {};
 
     const baseCol      = getDimColumns(chartModel, 'base')[0] ?? null;
@@ -485,11 +486,13 @@ const renderChart = async (ctx, providedModel) => {
 const RENDER_DEBOUNCE_MS = 300;
 let pendingProps = {};
 
+function resolveBaseModel(ctx, providedModel) {
+  if (providedModel) return providedModel;
+  try { return ctx.getChartModel() ?? lastModel; } catch { return lastModel; }
+}
+
 function withPendingProps(ctx, providedModel) {
-  let base = providedModel;
-  if (!base) {
-    try { base = ctx.getChartModel(); } catch { base = lastModel; }
-  }
+  const base = resolveBaseModel(ctx, providedModel);
   if (!base) return base;
   if (Object.keys(pendingProps).length === 0) return base;
   return { ...base, visualProps: { ...(base.visualProps ?? {}), ...pendingProps } };
@@ -653,11 +656,14 @@ function buildItemSections(chartModel, kind, dimKey, count, palette) {
     },
   });
 
-  // Real data changes render immediately (not typing-driven).
+  // Real data changes render immediately (not typing-driven), but still
+  // overlay pendingProps — this event can fire while the user is mid-edit
+  // in a text setting, and without the overlay it would render straight
+  // from the host's (possibly stale) model, discarding whatever was just
+  // typed until the next debounced render caught up.
   ctx.on(TSToChartEvent.DataUpdate, (payload) => {
-    const merged = lastModel
-      ? { ...lastModel, data: payload?.data ?? lastModel.data }
-      : null;
+    const base = resolveBaseModel(ctx, lastModel);
+    const merged = base ? withPendingProps(ctx, { ...base, data: payload?.data ?? base.data }) : undefined;
     renderChart(ctx, merged);
     return { triggerRenderChart: false };
   });
