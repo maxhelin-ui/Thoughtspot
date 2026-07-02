@@ -317,3 +317,17 @@ scaling, size fonts/bars with `clamp(min, Nvw, max)`. Inside a BYOC iframe,
 with the tile and is capped at `max`. Drop the per-size media-query overrides
 for anything using clamp (keep breakpoints only for things clamp can't cover,
 e.g. a fixed-size sibling layout or the corner icon).
+
+## Debounce follow-up: stale model at fire time (typed text still missing)
+
+Even with all render triggers debounced, the chart can render WITHOUT the
+last keystrokes: when the debounce fires, `ctx.getChartModel()` may still
+lag behind what the user typed (the SDK cache updates asynchronously).
+
+Fix: keep a `pendingProps` map. `onPropChange(key, value)` records every
+edit; at render time overlay `{ ...model.visualProps, ...pendingProps }`
+so the freshest typed values always win. Reconcile on host events
+(`ChartModelUpdate` / `VisualPropsUpdate`): delete a pending key only when
+the host's copy matches its value — never blanket-clear, events can arrive
+out of order vs keystrokes. Also listen to `VisualPropsUpdate`; some host
+versions push prop edits there instead of `ChartModelUpdate`.
