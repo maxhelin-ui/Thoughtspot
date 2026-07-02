@@ -183,7 +183,14 @@ function setHidden(id, hidden) {
 //   - anything else → the trimmed typed text
 function labelOrColumnName(userValue, column) {
   if (userValue == null) return column?.name ?? '';
+  // A lone space is our unbound-slot default sentinel (empty-string
+  // defaults crash the host). The host only applies defaultValue once per
+  // key, so a slot that was unbound when first rendered keeps this ' '
+  // value even after a column gets bound to it later — treat it as
+  // "never customized" and fall back to the column name, same as null.
+  if (userValue === ' ') return column?.name ?? '';
   const trimmed = userValue.toString().trim();
+  if (trimmed === '') return '';
   if (trimmed.toLowerCase() === 'none') return '';
   return trimmed;
 }
