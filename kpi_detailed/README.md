@@ -76,7 +76,8 @@ Footer behaviour:
   - Plain label → `label value` (e.g. `Avg €54.3K`).
   - Label with `{value}` → the token becomes the number, rest is verbatim (e.g. `we hit {value} this quarter` → `we hit 199 this quarter`).
   - Label only, no column → just the text shows (a footnote).
-- **Main + Secondaries:** footer N is appended after metric N's row with a `·`. Same `{value}` rule.
+  - **In Split only**, footer labels also support `{base}` and `{percent}` — the same tokens as the primary's Description, tied to that primary's own denominator/bar (e.g. `{percent} of {base} total` → `36% of 113 total`).
+- **Main + Secondaries:** footer N is appended after metric N's row with a `·`. Same `{value}` rule (no `{base}`/`{percent}` here).
 
 ### Metrics (per column)
 
