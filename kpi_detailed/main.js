@@ -276,7 +276,7 @@ function renderSplitLayout({ vp, primaryCols, metricCols, footerCols, baseValue,
     const footerFormat = vp[`footer${n}Format`] ?? defaultFormatForColumn(footerCol);
     const footerLabel  = labelOrColumnName(vp[`footer${n}Label`], footerCol);
     if (footerCol) {
-      const footerValue = aggregateColumn(chartModelRef.current, footerCol);
+      const footerValue = aggregateColumn(chartModelRef.current, footerCol) ?? 0;
       const formatted   = formatValue(footerValue, footerFormat, currency);
       const text = composeFooterText(footerLabel, formatted);
       if (text) side.appendChild(el('div', { className: 'ts-stat-footer', text }));
@@ -292,7 +292,7 @@ function renderSplitLayout({ vp, primaryCols, metricCols, footerCols, baseValue,
   clearNode(metricsRow);
   const tiles = metricCols.map((col, i) => {
     const n = i + 1;
-    const value = aggregateColumn(chartModelRef.current, col);
+    const value = aggregateColumn(chartModelRef.current, col) ?? 0;
     const format = vp[`metric${n}Format`] ?? defaultFormatForColumn(col);
     const formatted = formatValue(value, format, currency);
     const label = labelOrColumnName(vp[`metric${n}Label`], col);
@@ -341,7 +341,7 @@ function renderMainSecondariesLayout({ vp, primaryCols, metricCols, footerCols, 
 
     let metricPart = '';
     if (metricCol) {
-      const v = aggregateColumn(chartModelRef.current, metricCol);
+      const v = aggregateColumn(chartModelRef.current, metricCol) ?? 0;
       const format = vp[`metric${n}Format`] ?? defaultFormatForColumn(metricCol);
       const formatted = formatValue(v, format, currency);
       const label = labelOrColumnName(vp[`metric${n}Label`], metricCol);
@@ -351,7 +351,7 @@ function renderMainSecondariesLayout({ vp, primaryCols, metricCols, footerCols, 
     const footerLabel = labelOrColumnName(vp[`footer${n}Label`], footerCol);
     let footerPart = '';
     if (footerCol) {
-      const v = aggregateColumn(chartModelRef.current, footerCol);
+      const v = aggregateColumn(chartModelRef.current, footerCol) ?? 0;
       const format = vp[`footer${n}Format`] ?? defaultFormatForColumn(footerCol);
       const formatted = formatValue(v, format, currency);
       footerPart = composeFooterText(footerLabel, formatted);
