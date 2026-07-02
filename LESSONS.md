@@ -331,3 +331,20 @@ so the freshest typed values always win. Reconcile on host events
 the host's copy matches its value — never blanket-clear, events can arrive
 out of order vs keystrokes. Also listen to `VisualPropsUpdate`; some host
 versions push prop edits there instead of `ChartModelUpdate`.
+
+## Debounce follow-up #2: apply the pendingProps overlay EVERYWHERE, not just the debounced path
+
+The `pendingProps` overlay (above) only helps if every render entry point
+uses it. It's easy to miss one: a `DataUpdate` (or any other host event that
+can fire mid-edit, not just literal data changes) often renders immediately,
+un-debounced, straight from `ctx.getChartModel()` or a hand-built model —
+bypassing the overlay entirely. If that fires while the user is typing, it
+redraws the chart from the host's (possibly stale) model and visibly drops
+whatever was just typed, even though the debounce/overlay logic elsewhere is
+correct.
+
+Fix: route every render call — debounced or immediate — through the same
+`withPendingProps` helper. Also make sure the "last known good model"
+fallback variable is actually assigned somewhere (e.g. inside the main
+render function itself); a fallback that's declared but never written is a
+silent no-op that's easy to miss in review.
