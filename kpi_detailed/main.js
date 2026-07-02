@@ -114,14 +114,19 @@ function substituteTokens(template, baseFormatted, percentFormatted) {
     .replace(/\{percent\}/g, percentFormatted ?? '');
 }
 
-// Footer text composition. If the label contains {value}, the label
+// Footer text composition. {base} and {percent} (denominator value and
+// primary-vs-denominator percent, same as the description tokens) are
+// substituted first. If the label contains {value}, the label then
 // controls the full rendering (so the user can put the value before,
 // after, or in the middle). Otherwise we render `{label} {value}`
 // (label then value separated by a single space).
-function composeFooterText(label, formattedValue) {
-  if (!label) return formattedValue;
-  if (label.includes('{value}')) return label.replace(/\{value\}/g, formattedValue ?? '');
-  return `${label} ${formattedValue}`;
+function composeFooterText(label, formattedValue, baseFormatted, percentFormatted) {
+  if (!label) return formattedValue ?? '';
+  const text = String(label)
+    .replace(/\{base\}/g, baseFormatted ?? '')
+    .replace(/\{percent\}/g, percentFormatted ?? '');
+  if (text.includes('{value}')) return text.replace(/\{value\}/g, formattedValue ?? '');
+  return formattedValue != null ? `${text} ${formattedValue}` : text;
 }
 
 // ---------- data access ----------
@@ -276,20 +281,22 @@ function renderSplitLayout({ vp, primaryCols, metricCols, footerCols, baseValue,
       side.appendChild(progRow);
     }
 
-    // Footer for this primary position. Label may contain a {value} token
-    // — if so, it controls full placement; otherwise we render
-    // `{label} - {value}` with a dash separator. Empty label falls back
-    // to the bound column name.
+    // Footer for this primary position. Label may contain {base}/{percent}
+    // (same tokens as Description, tied to this primary's own bar) and/or
+    // a {value} token — if {value} is present, the label controls full
+    // placement; otherwise we render `{label} {value}`. Empty label falls
+    // back to the bound column name.
     const footerCol    = footerCols[i] ?? null;
     const footerFormat = vp[`footer${n}Format`] ?? defaultFormatForColumn(footerCol);
     const footerLabel  = labelOrColumnName(vp[`footer${n}Label`], footerCol);
     if (footerCol) {
       const footerValue = aggregateColumn(chartModelRef.current, footerCol);
       const formatted   = formatValue(footerValue, footerFormat, currency);
-      const text = composeFooterText(footerLabel, formatted);
+      const text = composeFooterText(footerLabel, formatted, baseFormatted, percentFormatted);
       if (text) side.appendChild(el('div', { className: 'ts-stat-footer', text }));
     } else if (footerLabel) {
-      side.appendChild(el('div', { className: 'ts-stat-footer', text: footerLabel }));
+      const text = composeFooterText(footerLabel, null, baseFormatted, percentFormatted);
+      if (text) side.appendChild(el('div', { className: 'ts-stat-footer', text }));
     }
 
     grid.appendChild(side);
