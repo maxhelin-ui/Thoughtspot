@@ -1099,7 +1099,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showStackTotals', type: 'checkbox', defaultValue: false,                    label: 'Show bar totals on top' },
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
-                    { key: 'enableStackToggle', type: 'checkbox', defaultValue: false,                  label: 'Stacked / 100% Stacked toggle buttons on chart (starts at the Stacking setting above)' },
+                    { key: 'enableStackToggle', type: 'checkbox', defaultValue: false,                  label: 'Stacked / 100% Stacked toggle on chart (starts at the Stacking setting above)' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
                     ...formulaSettings,
                     ...measurePercentToggles,
