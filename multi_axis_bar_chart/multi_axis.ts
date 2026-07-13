@@ -59,12 +59,11 @@ const STACKING_OPTIONS = ['Stacked', '100% Stacked'];
 let globalChartReference: any = null;
 let activeXColumnId: string | null = null;
 const hiddenSeriesByX = new Map<string, Set<string>>();
-// Ephemeral, viewer-facing 100%-stacked toggle (only used when the
-// "100% Stacked toggle button" setting is on). Not persisted. Tracks
-// whether the viewer has flipped AWAY from the persisted "Stacking"
-// dropdown's default — so the button starts at whatever that setting
-// says, and clicking it flips to the other mode.
-let stackToggled = false;
+// Ephemeral, viewer-facing Stacked / 100% Stacked selection (only used
+// when the "100% Stacked toggle button" setting is on). Not persisted.
+// null = no explicit selection yet, so the buttons start at whatever the
+// persisted "Stacking" dropdown says; clicking a button sets it explicitly.
+let stackToggleOverride: 'normal' | 'percent' | null = null;
 let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
@@ -281,7 +280,7 @@ function renderXButtons(
     xColumns: Array<{ id: string; name: string }>,
     activeId: string | null,
     onClick: (id: string) => void,
-    stackToggle?: { isPercent: boolean; onToggle: () => void },
+    stackToggle?: { isPercent: boolean; onSelect: (isPercent: boolean) => void },
 ) {
     const togglesEl = document.getElementById('sliceToggles');
     if (!togglesEl) return;
@@ -299,14 +298,19 @@ function renderXButtons(
             togglesEl.appendChild(button);
         });
     }
-    // 100% Stacked toggle — lives in the same row as the x-axis buttons.
+    // Stacked / 100% Stacked segmented toggle — same row as the x-axis
+    // buttons, same pill-group pattern as horizontal_dumbbell's Top/Bottom.
     if (stackToggle) {
-        const button = document.createElement('button');
-        button.className = 'slice-toggle-btn' + (stackToggle.isPercent ? ' active' : '');
-        button.type = 'button';
-        button.textContent = '100% Stacked';
-        button.onclick = () => stackToggle.onToggle();
-        togglesEl.appendChild(button);
+        const mk = (label: string, isPercent: boolean) => {
+            const button = document.createElement('button');
+            button.className = 'slice-toggle-btn' + (stackToggle.isPercent === isPercent ? ' active' : '');
+            button.type = 'button';
+            button.textContent = label;
+            button.onclick = () => stackToggle.onSelect(isPercent);
+            togglesEl.appendChild(button);
+        };
+        mk('Stacked', false);
+        mk('100% Stacked', true);
     }
 }
 
@@ -611,12 +615,13 @@ function render(ctx: CustomChartContext) {
         effectiveIsPercent[yIdx]
             ? formatPercent(v)
             : formatCurrency(v, numberFormat, currency);
-    // Once 100%-stacked, the y-axis is always 0–100% (cumulative share),
-    // regardless of the underlying measures' own units.
-    const fmtAxis = (v: number) =>
-        (allPercent || stacking === 'percent')
-            ? formatPercent(v)
-            : formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
+    // Once 100%-stacked, Highcharts' own axis ticks are already on a 0–100
+    // scale (not a 0–1 fraction like formatPercent expects for percent-typed
+    // measures) — format those directly instead of re-multiplying by 100.
+    const fmtAxis = (v: number) => {
+        if (stacking === 'percent') return `${numeral(v).format('0.[0]')}%`;
+        return allPercent ? formatPercent(v) : formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
+    };
 
     // Sort x categories per the user's choice. Default = descending by value
     // (sum of the first measure across all slices, per category).
@@ -693,11 +698,10 @@ function render(ctx: CustomChartContext) {
     // Bars are always stacked (there's no meaningful "not stacked" state once
     // there's more than one measure or a slice). The persisted stackingMode
     // setting picks the default (normal vs 100%); the optional on-chart
-    // toggle button, when enabled, starts at that same default and lets
-    // viewers flip to the other mode live (not persisted).
+    // toggle buttons, when enabled, start at that same default and let
+    // viewers pick either mode live (not persisted).
     const baseStacking: 'normal' | 'percent' = stackingMode === '100% Stacked' ? 'percent' : 'normal';
-    const flippedStacking: 'normal' | 'percent' = baseStacking === 'percent' ? 'normal' : 'percent';
-    const stacking: 'normal' | 'percent' = enableStackToggle && stackToggled ? flippedStacking : baseStacking;
+    const stacking: 'normal' | 'percent' = (enableStackToggle && stackToggleOverride) ? stackToggleOverride : baseStacking;
 
     renderXButtons(
         xColumns, activeXColumnId,
@@ -706,7 +710,7 @@ function render(ctx: CustomChartContext) {
             render(ctx);
         },
         enableStackToggle
-            ? { isPercent: stacking === 'percent', onToggle: () => { stackToggled = !stackToggled; render(ctx); } }
+            ? { isPercent: stacking === 'percent', onSelect: (isPercent) => { stackToggleOverride = isPercent ? 'percent' : 'normal'; render(ctx); } }
             : undefined,
     );
 
@@ -1095,7 +1099,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showStackTotals', type: 'checkbox', defaultValue: false,                    label: 'Show bar totals on top' },
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
-                    { key: 'enableStackToggle', type: 'checkbox', defaultValue: false,                  label: '100% Stacked toggle button (on chart, starts at the Stacking setting above)' },
+                    { key: 'enableStackToggle', type: 'checkbox', defaultValue: false,                  label: 'Stacked / 100% Stacked toggle buttons on chart (starts at the Stacking setting above)' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
                     ...formulaSettings,
                     ...measurePercentToggles,
