@@ -60,9 +60,11 @@ let globalChartReference: any = null;
 let activeXColumnId: string | null = null;
 const hiddenSeriesByX = new Map<string, Set<string>>();
 // Ephemeral, viewer-facing 100%-stacked toggle (only used when the
-// "100% Stacked toggle button" setting is on). Not persisted — always
-// starts at normal/false on load, per spec.
-let stackToggleIsPercent = false;
+// "100% Stacked toggle button" setting is on). Not persisted. Tracks
+// whether the viewer has flipped AWAY from the persisted "Stacking"
+// dropdown's default — so the button starts at whatever that setting
+// says, and clicking it flips to the other mode.
+let stackToggled = false;
 let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
@@ -690,13 +692,12 @@ function render(ctx: CustomChartContext) {
     const sliceStackingActive = !!sliceColumn && sliceNames.length > 0 && sliceNames[0] !== '';
     // Bars are always stacked (there's no meaningful "not stacked" state once
     // there's more than one measure or a slice). The persisted stackingMode
-    // setting picks the saved default (normal vs 100%); the optional on-chart
-    // toggle button, when enabled, lets viewers flip between the two live —
-    // it always starts at "normal", independent of the saved default.
+    // setting picks the default (normal vs 100%); the optional on-chart
+    // toggle button, when enabled, starts at that same default and lets
+    // viewers flip to the other mode live (not persisted).
     const baseStacking: 'normal' | 'percent' = stackingMode === '100% Stacked' ? 'percent' : 'normal';
-    const stacking: 'normal' | 'percent' = enableStackToggle
-        ? (stackToggleIsPercent ? 'percent' : 'normal')
-        : baseStacking;
+    const flippedStacking: 'normal' | 'percent' = baseStacking === 'percent' ? 'normal' : 'percent';
+    const stacking: 'normal' | 'percent' = enableStackToggle && stackToggled ? flippedStacking : baseStacking;
 
     renderXButtons(
         xColumns, activeXColumnId,
@@ -705,7 +706,7 @@ function render(ctx: CustomChartContext) {
             render(ctx);
         },
         enableStackToggle
-            ? { isPercent: stacking === 'percent', onToggle: () => { stackToggleIsPercent = !stackToggleIsPercent; render(ctx); } }
+            ? { isPercent: stacking === 'percent', onToggle: () => { stackToggled = !stackToggled; render(ctx); } }
             : undefined,
     );
 
@@ -1094,7 +1095,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'showStackTotals', type: 'checkbox', defaultValue: false,                    label: 'Show bar totals on top' },
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
-                    { key: 'enableStackToggle', type: 'checkbox', defaultValue: false,                  label: '100% Stacked toggle button (on chart, defaults to normal)' },
+                    { key: 'enableStackToggle', type: 'checkbox', defaultValue: false,                  label: '100% Stacked toggle button (on chart, starts at the Stacking setting above)' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
                     ...formulaSettings,
                     ...measurePercentToggles,
