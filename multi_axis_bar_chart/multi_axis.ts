@@ -32,6 +32,7 @@ interface VisualProps {
     showLegend?: boolean;
     showGridLines?: boolean;
     stackingMode?: string;
+    enableStackToggle?: boolean;
     sortBy?: string;
     excludeNulls?: boolean;
     [key: string]: any;
@@ -53,11 +54,15 @@ const PALETTE = [
 
 const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
 
-const STACKING_OPTIONS = ['None', 'Stacked', '100% Stacked'];
+const STACKING_OPTIONS = ['Stacked', '100% Stacked'];
 
 let globalChartReference: any = null;
 let activeXColumnId: string | null = null;
 const hiddenSeriesByX = new Map<string, Set<string>>();
+// Ephemeral, viewer-facing 100%-stacked toggle (only used when the
+// "100% Stacked toggle button" setting is on). Not persisted — always
+// starts at normal/false on load, per spec.
+let stackToggleIsPercent = false;
 let globalAppConfig: any = null;
 let renderDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 let firstRenderDone = false;
@@ -274,19 +279,33 @@ function renderXButtons(
     xColumns: Array<{ id: string; name: string }>,
     activeId: string | null,
     onClick: (id: string) => void,
+    stackToggle?: { isPercent: boolean; onToggle: () => void },
 ) {
     const togglesEl = document.getElementById('sliceToggles');
     if (!togglesEl) return;
     togglesEl.innerHTML = '';
-    xColumns.forEach(col => {
+    // With only one x-axis option there's nothing to switch, so the
+    // switcher buttons are unnecessary — hide them entirely.
+    if (xColumns.length > 1) {
+        xColumns.forEach(col => {
+            const button = document.createElement('button');
+            const isActive = col.id === activeId;
+            button.className = 'slice-toggle-btn' + (isActive ? ' active' : '');
+            button.type = 'button';
+            button.textContent = col.name;
+            button.onclick = () => onClick(col.id);
+            togglesEl.appendChild(button);
+        });
+    }
+    // 100% Stacked toggle — lives in the same row as the x-axis buttons.
+    if (stackToggle) {
         const button = document.createElement('button');
-        const isActive = col.id === activeId;
-        button.className = 'slice-toggle-btn' + (isActive ? ' active' : '');
+        button.className = 'slice-toggle-btn' + (stackToggle.isPercent ? ' active' : '');
         button.type = 'button';
-        button.textContent = col.name;
-        button.onclick = () => onClick(col.id);
+        button.textContent = '100% Stacked';
+        button.onclick = () => stackToggle.onToggle();
         togglesEl.appendChild(button);
-    });
+    }
 }
 
 function renderCustomLegend(
@@ -512,7 +531,8 @@ function render(ctx: CustomChartContext) {
     const showStackTotals = visualProps.showStackTotals ?? false;
     const showLegend      = visualProps.showLegend      ?? true;
     const showGridLines   = visualProps.showGridLines   ?? true;
-    const stackingMode    = visualProps.stackingMode    ?? 'None';
+    const stackingMode      = visualProps.stackingMode      ?? 'Stacked';
+    const enableStackToggle = visualProps.enableStackToggle ?? false;
     const sortBy          = visualProps.sortBy          ?? 'Descending by value';
     // Collect any defined formulas. Each (name, expr) pair is one computed
     // measure. The chart sums each component measure across the active group,
@@ -589,8 +609,10 @@ function render(ctx: CustomChartContext) {
         effectiveIsPercent[yIdx]
             ? formatPercent(v)
             : formatCurrency(v, numberFormat, currency);
+    // Once 100%-stacked, the y-axis is always 0–100% (cumulative share),
+    // regardless of the underlying measures' own units.
     const fmtAxis = (v: number) =>
-        allPercent
+        (allPercent || stacking === 'percent')
             ? formatPercent(v)
             : formatNumber(v, numberFormat.replace(/^[\$€£¥₹]/, ''));
 
@@ -664,19 +686,28 @@ function render(ctx: CustomChartContext) {
     // Slicing semantics (matching the waterfall): when a slice column is bound,
     // each bar splits into stacked segments per slice value. With multiple
     // measures, each measure becomes its own grouped column, and the slices
-    // stack within that group (`stack: m{yIdx}`). The user's stackingMode
-    // setting can still upgrade to percent normalization.
+    // stack within that group (`stack: m{yIdx}`).
     const sliceStackingActive = !!sliceColumn && sliceNames.length > 0 && sliceNames[0] !== '';
-    const stacking = sliceStackingActive
-        ? (stackingMode === '100% Stacked' ? 'percent' : 'normal')
-        : (stackingMode === 'Stacked' ? 'normal'
-           : stackingMode === '100% Stacked' ? 'percent'
-           : undefined);
+    // Bars are always stacked (there's no meaningful "not stacked" state once
+    // there's more than one measure or a slice). The persisted stackingMode
+    // setting picks the saved default (normal vs 100%); the optional on-chart
+    // toggle button, when enabled, lets viewers flip between the two live —
+    // it always starts at "normal", independent of the saved default.
+    const baseStacking: 'normal' | 'percent' = stackingMode === '100% Stacked' ? 'percent' : 'normal';
+    const stacking: 'normal' | 'percent' = enableStackToggle
+        ? (stackToggleIsPercent ? 'percent' : 'normal')
+        : baseStacking;
 
-    renderXButtons(xColumns, activeXColumnId, (columnId) => {
-        activeXColumnId = columnId;
-        render(ctx);
-    });
+    renderXButtons(
+        xColumns, activeXColumnId,
+        (columnId) => {
+            activeXColumnId = columnId;
+            render(ctx);
+        },
+        enableStackToggle
+            ? { isPercent: stacking === 'percent', onToggle: () => { stackToggleIsPercent = !stackToggleIsPercent; render(ctx); } }
+            : undefined,
+    );
 
     if (showLegend) {
         renderCustomLegend(
@@ -744,7 +775,7 @@ function render(ctx: CustomChartContext) {
             // and the chart is stacked. Format using the stack's measure
             // (stack name is `m{yColIdx}` — see series.stack below).
             stackLabels: {
-                enabled: showStackTotals && !!stacking,
+                enabled: showStackTotals,
                 crop: false,
                 overflow: 'allow',
                 style: { fontSize: '11px', fontWeight: '700', textOutline: 'none', color: '#1A1F2C' },
@@ -799,11 +830,12 @@ function render(ctx: CustomChartContext) {
                             return fmtForMeasure(this.y, yIdx);
                         },
                     },
-                    // (b) Total above each bar when "Show bar totals" is on AND
-                    // the chart isn't stacked (in stacked mode, yAxis.stackLabels
-                    // already covers it).
+                    // (b) Total above each bar — dead now that bars are always
+                    // stacked (yAxis.stackLabels above covers totals). Kept
+                    // disabled rather than removed in case per-bar (non-stacked)
+                    // totals come back later.
                     {
-                        enabled: showStackTotals && !stacking,
+                        enabled: false,
                         verticalAlign: 'bottom',
                         y: -4,
                         crop: false,
@@ -832,7 +864,7 @@ function render(ctx: CustomChartContext) {
         })),
     });
 
-    adjustButtonContainer(true);
+    adjustButtonContainer(xColumns.length > 1 || enableStackToggle || showLegend);
 }
 
 const renderChart = async (ctx: CustomChartContext) => {
@@ -1057,11 +1089,12 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'yAxisTitle',     type: 'text',     defaultValue: ' ',                       label: 'Y-axis title (blank = measure name)' },
                     { key: 'numberFormat',   type: 'text',     defaultValue: '0,0.[0]a',                label: 'Number format' },
                     { key: 'currency',       type: 'dropdown', defaultValue: 'None',                    values: CURRENCY_OPTIONS, label: 'Currency symbol (labels only, not axis)' },
-                    { key: 'stackingMode',   type: 'dropdown', defaultValue: 'None',                    values: STACKING_OPTIONS, label: 'Stacking' },
+                    { key: 'stackingMode',   type: 'dropdown', defaultValue: 'Stacked',                 values: STACKING_OPTIONS, label: 'Stacking' },
                     { key: 'showDataLabels', type: 'checkbox', defaultValue: false,                     label: 'Show data labels on bars' },
                     { key: 'showStackTotals', type: 'checkbox', defaultValue: false,                    label: 'Show bar totals on top' },
                     { key: 'showLegend',     type: 'checkbox', defaultValue: true,                      label: 'Show legend' },
                     { key: 'showGridLines',  type: 'checkbox', defaultValue: true,                      label: 'Show grid lines' },
+                    { key: 'enableStackToggle', type: 'checkbox', defaultValue: false,                  label: '100% Stacked toggle button (on chart, defaults to normal)' },
                     { key: 'sortBy',         type: 'dropdown', defaultValue: 'Descending by value',     values: SORT_OPTIONS, label: 'Sort x-axis by' },
                     ...formulaSettings,
                     ...measurePercentToggles,
