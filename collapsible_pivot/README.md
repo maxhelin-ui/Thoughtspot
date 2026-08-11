@@ -10,9 +10,11 @@ You bind attributes to build a column hierarchy. Every group header gets a small
 
 | Zone | Max | What it's for |
 |---|---|---|
-| **Rows** | 4 | The left-hand labels. Bind more than one for nested row labels. |
+| **Rows** | 1 | The left-hand labels — a flat list, one row per value. Rows don't group in this chart. |
 | **Column groups (outermost first)** | 4 | One nesting level per attribute. The first one you drop is the outermost group, the next nests inside it, and so on. |
 | **Measures** | 6 | The numbers in the cells. |
+
+All the grouping happens across the top. Rows stay flat.
 
 **Order matters** in Column groups — first = outermost. Leaving it empty is fine: you just get a flat table of measures.
 
@@ -66,7 +68,6 @@ Key points:
 
 - **Headers and row labels stay put** when you scroll — both the header rows and the left label columns are pinned.
 - **Percent measures are averaged, not summed** — five 70% values summing to 350% is meaningless. Everything else sums.
-- **Repeated row labels are blanked** in nested rows, the usual pivot convention, so you only see a parent label when it changes.
 - **Empty branches are dropped.** A column value that has no data under a particular parent won't render an empty column there.
 - **Row cap** is raised to 100,000 because pivots fan out across the row × column cross-product. If totals still look low, you're hitting ThoughtSpot's truncation — reduce the number of bound attributes.
 - **Debugging?** Open DevTools and search `[Collapsible Pivot]` to see the bindings, row count, visible column count, and which groups are collapsed.
@@ -75,6 +76,6 @@ Key points:
 
 ## Limits
 
-- 4 row attributes, 4 column-group levels, 6 measures.
+- 1 row attribute (flat), 4 column-group levels, 6 measures.
 - Collapse state isn't persisted into the saved chart (only the "start collapsed" default is).
 - Cells are plain values — no conditional formatting or heatmap shading.

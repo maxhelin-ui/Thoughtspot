@@ -500,22 +500,17 @@ function render(ctx: CustomChartContext) {
 
     // ---- body ----
     const tbody = document.createElement('tbody');
-    let prevLabels: string[] = [];
     for (const rKey of rowKeys) {
         const tr = document.createElement('tr');
+        // Rows are a flat list — the grouping/outline in this chart is on the
+        // columns only, so every row prints its own label.
         const labels = rowLabelsByKey.get(rKey) ?? [];
-
-        // Blank out repeated parent labels (standard pivot readability), but
-        // only while every ancestor above also matched.
-        let stillSame = true;
-        labels.forEach((lab, i) => {
+        labels.forEach(lab => {
             const td = document.createElement('td');
             td.className = 'row-label';
-            stillSame = stillSame && prevLabels[i] === lab;
-            td.textContent = (i < labels.length - 1 && stillSame) ? '' : lab;
+            td.textContent = lab;
             tr.appendChild(td);
         });
-        prevLabels = labels;
 
         for (const leaf of leaves) {
             const mc = leafMeasure(leaf);
@@ -685,7 +680,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                 key: 'column',
                 label: 'Layout',
                 descriptionText:
-                    'Rows = the left-hand labels. Column groups = one nesting level per attribute (first = outermost); each group header can be collapsed, and a collapsed group keeps its first column visible. Measures fill the cells.',
+                    'Rows = the left-hand labels (one attribute, flat — grouping in this chart is on columns only). Column groups = one nesting level per attribute (first = outermost); each group header can be collapsed, and a collapsed group keeps its first column visible. Measures fill the cells.',
                 columnSections: [
                     {
                         key: 'rows',
@@ -693,7 +688,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                         allowAttributeColumns: true,
                         allowMeasureColumns: false,
                         allowTimeSeriesColumns: true,
-                        maxColumnCount: 4,
+                        maxColumnCount: 1,
                     },
                     {
                         key: 'columns',
