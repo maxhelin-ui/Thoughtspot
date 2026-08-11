@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Collapsible Pivot</title>
+        <!-- No Highcharts here: this chart renders a plain HTML table, so
+             there's nothing to bundle beyond the SDK + numeral (via the .ts
+             imports). No CDN scripts — see LESSONS.md. -->
+        <style>
+            html, body {
+                margin: 0;
+                padding: 0;
+                background: #FFFFFF;
+                font-family: 'Optimo-Plain', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+                color: #1A1F2C;
+            }
+            #layout {
+                width: 100vw;
+                height: 100vh;
+                display: flex;
+                flex-direction: column;
+                overflow: hidden;
+                box-sizing: border-box;
+            }
+            #chartTitle {
+                flex: 0 0 auto;
+                font-size: 14px;
+                font-weight: 700;
+                color: #1A1F2C;
+                padding: 10px 12px 6px 12px;
+            }
+            #chartTitle.hidden { display: none; }
+            /* The scroll container. Sticky header rows and the sticky row-label
+               columns are positioned against this box. */
+            #tableWrap {
+                flex: 1 1 auto;
+                min-height: 0;
+                overflow: auto;
+                padding: 0 12px 12px 12px;
+                box-sizing: border-box;
+            }
+            table.pivot {
+                border-collapse: separate;
+                border-spacing: 0;
+                font-size: 12px;
+                white-space: nowrap;
+            }
+            table.pivot th, table.pivot td {
+                padding: 6px 10px;
+                border-bottom: 1px solid #EEF1F4;
+                border-right: 1px solid #EEF1F4;
+                text-align: right;
+                font-weight: 400;
+                background: #FFFFFF;
+                box-sizing: border-box;
+            }
+            /* Header cells */
+            table.pivot thead th {
+                position: sticky;
+                background: #F7F8FA;
+                font-weight: 600;
+                color: #1A1F2C;
+                text-align: left;
+                z-index: 2;
+                border-bottom: 1px solid #E4E6EA;
+            }
+            /* Measure/leaf header row values line up with their numeric cells. */
+            table.pivot thead th.leaf-head { text-align: right; }
+            /* Row-label header + body cells: sticky to the left edge. */
+            table.pivot th.row-head,
+            table.pivot td.row-label {
+                position: sticky;
+                text-align: left;
+                background: #FFFFFF;
+                z-index: 1;
+            }
+            table.pivot thead th.row-head {
+                background: #F7F8FA;
+                z-index: 3;
+            }
+            /* The corner + left columns need an opaque background so body
+               cells scrolling underneath them don't show through. */
+            table.pivot td.row-label { font-weight: 500; }
+            table.pivot tbody tr:hover td { background: #F7F8FA; }
+            table.pivot tbody tr:hover td.row-label { background: #F1F2F4; }
+            table.pivot.striped tbody tr:nth-child(even) td { background: #FCFCFD; }
+            table.pivot.striped tbody tr:nth-child(even) td.row-label { background: #FAFAFB; }
+            table.pivot.no-grid th, table.pivot.no-grid td {
+                border-right: none;
+            }
+            /* Totals */
+            table.pivot td.total-cell, table.pivot th.total-head {
+                font-weight: 700;
+                background: #F7F8FA;
+            }
+            table.pivot tbody tr.grand-total td {
+                font-weight: 700;
+                background: #F1F2F4;
+                border-top: 1px solid #D8DBE0;
+            }
+            /* Collapse / expand affordance in group headers */
+            .grp {
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                max-width: 100%;
+            }
+            button.chev {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                width: 16px;
+                height: 16px;
+                flex: 0 0 auto;
+                padding: 0;
+                border: none;
+                border-radius: 4px;
+                background: #E4E6EA;
+                color: #1A1F2C;
+                cursor: pointer;
+                font-size: 10px;
+                line-height: 1;
+                font-family: inherit;
+                transition: background 0.15s ease;
+            }
+            button.chev:hover { background: #D3D6DC; }
+            .grp-label {
+                overflow: hidden;
+                text-overflow: ellipsis;
+            }
+            /* Marks a header whose group is collapsed — the visible column is
+               standing in for the whole group. */
+            .grp.collapsed .grp-label::after {
+                content: ' …';
+                color: #6B7280;
+            }
+            #message {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 100%;
+                color: #6B7280;
+                font-size: 14px;
+                text-align: center;
+                padding: 20px;
+                box-sizing: border-box;
+            }
+            #message.hidden { display: none; }
+        </style>
+    </head>
+    <body>
+        <div id="layout">
+            <div id="chartTitle" class="hidden"></div>
+            <div id="tableWrap"></div>
+            <div id="message" class="hidden"></div>
+        </div>
+        <script type="module" src="pivot.ts"></script>
+    </body>
+</html>

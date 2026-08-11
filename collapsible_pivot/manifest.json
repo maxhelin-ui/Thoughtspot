@@ -1,0 +1,13 @@
+{
+    "defaultLocale": "en_US",
+    "name": "Collapsible Pivot",
+    "description": "Pivot table with collapsible column groups — nest attributes into multiple column levels and collapse any group down to its first column.",
+    "author": {
+        "name": "Your Name",
+        "email": "your.email@example.com",
+        "org": "Your Organization"
+    },
+    "sourceUrl": "TBD",
+    "iconUrl": "https://cdn-icons-png.flaticon.com/512/1828/1828817.png",
+    "manifestVersion": "v0.1"
+}

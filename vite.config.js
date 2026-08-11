@@ -14,6 +14,7 @@ export default defineConfig({
         horizontal_dumbbell: resolve(__dirname, 'horizontal_dumbbell/index.html'),
         multi_axis_bar_chart: resolve(__dirname, 'multi_axis_bar_chart/index.html'),
         multi_y_axis_line: resolve(__dirname, 'multi_y_axis_line/index.html'),
+        collapsible_pivot: resolve(__dirname, 'collapsible_pivot/index.html'),
         violin_plot: resolve(__dirname, 'violin_plot/index.html'),
         main: resolve(__dirname, 'index.html'),
       },
