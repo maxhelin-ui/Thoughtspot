@@ -71,6 +71,7 @@
             table.pivot th.row-head,
             table.pivot td.row-label {
                 position: sticky;
+                left: 0;
                 text-align: left;
                 background: #FFFFFF;
                 z-index: 1;
@@ -135,6 +136,14 @@
                 content: ' …';
                 color: #6B7280;
             }
+            /* "Freeze row label columns" off — labels scroll with the rest. */
+            table.pivot.no-freeze th.row-head,
+            table.pivot.no-freeze td.row-label { position: static; }
+            /* Link cells */
+            table.pivot td.row-label a { color: #2A67C8; text-decoration: none; }
+            table.pivot td.row-label a:hover { text-decoration: underline; }
+            /* Group headers sit above their measure columns */
+            table.pivot thead th.grp-head { text-align: left; background: #EEF1F6; }
             #message {
                 display: flex;
                 align-items: center;

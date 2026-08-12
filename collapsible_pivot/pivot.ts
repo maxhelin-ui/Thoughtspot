@@ -52,6 +52,10 @@ const MAX_MEASURES = 60;
 // "only one row attribute".)
 const MAX_ROWS = 4;
 
+// How many named measure-groups the settings panel offers. Must be a fixed
+// number — the visual-prop element COUNT has to stay static (LESSONS.md).
+const MAX_GROUPS = 8;
+
 // Separator for composite lookup keys. NUL can't appear in real cell
 // values, so joining/splitting on it is unambiguous (a space would not be).
 const SEP = '\u0000';
@@ -127,9 +131,26 @@ function formatEpochByBucket(raw: string, bucket?: ColumnTimeBucket): string {
     }
 }
 
+// ThoughtSpot link/attachment columns arrive as
+//   {caption}Display Text{/caption}https://actual/url
+// Rendering that raw dumps the whole URL into the cell. Split it so the cell
+// can show just the caption, hyperlinked.
+const CAPTION_RE = /^\{caption\}([\s\S]*?)\{\/caption\}([\s\S]*)$/;
+
+function parseLinkValue(raw: string): { text: string; href: string | null } {
+    const m = CAPTION_RE.exec(String(raw ?? ''));
+    if (!m) return { text: String(raw ?? ''), href: null };
+    const text = m[1].trim();
+    const url  = m[2].trim();
+    // Only ever emit http(s) — never javascript:/data: from cell data.
+    const safe = /^https?:\/\//i.test(url) ? url : null;
+    return { text: text || url, href: safe };
+}
+
 function labelForValue(raw: string, col?: Col): string {
     if (raw === '' || raw == null) return '(blank)';
-    return isDateLikeCol(col) ? formatEpochByBucket(raw, col?.timeBucket) : String(raw);
+    if (isDateLikeCol(col)) return formatEpochByBucket(raw, col?.timeBucket);
+    return parseLinkValue(String(raw)).text;
 }
 
 // ---------- data model ----------
@@ -243,6 +264,7 @@ function render(ctx: CustomChartContext) {
     const showGrandTotalRow = visualProps.showGrandTotalRow ?? false;
     const stripedRows       = visualProps.stripedRows       ?? true;
     const showGridLines     = visualProps.showGridLines     ?? true;
+    const freezeRowLabels   = visualProps.freezeRowLabels   ?? true;
 
     const measureLabel = (c: Col) => {
         const raw = (visualProps[`measureLabel_${c.id}`] ?? '').toString().trim();
@@ -362,31 +384,72 @@ function render(ctx: CustomChartContext) {
         return arr;
     });
 
-    const multiMeasure = measureColumns.length > 1;
-    // Depth: one level per bound column attribute, plus a measure level when
-    // more than one measure is bound (with a single measure the deepest
-    // attribute level is already the leaf).
-    const attrLevels = colColumns.length;
-    const totalLevels = attrLevels + (multiMeasure || attrLevels === 0 ? 1 : 0);
+    // ---- measure groups ----
+    // The main way to group here: carve the bound measures into named runs.
+    // Group 1 takes the first N measures, group 2 the next M, and so on, in
+    // the order they sit in the Measures slot. Anything past the last defined
+    // group stays ungrouped. This is Excel-style column grouping — "these 20
+    // columns are one group, the next 30 are another" — rather than grouping
+    // by an attribute's values.
+    type MGroup = { name: string; measures: Col[] };
+    const measureGroups: MGroup[] = [];
+    let ungrouped: Col[] = measureColumns;
+    {
+        let cursor = 0;
+        for (let i = 1; i <= MAX_GROUPS; i++) {
+            const name = (visualProps[`group${i}Name`] ?? '').toString().trim();
+            const size = Math.max(0, Math.floor(Number(visualProps[`group${i}Size`] ?? 0) || 0));
+            if (!name || size <= 0) continue;
+            const slice = measureColumns.slice(cursor, cursor + size);
+            if (slice.length === 0) break;
+            measureGroups.push({ name, measures: slice });
+            cursor += slice.length;
+        }
+        ungrouped = measureColumns.slice(cursor);
+    }
+    const hasMeasureGroups = measureGroups.length > 0;
 
-    const measureLeaves = (parentPath: string[], level: number): ColNode[] =>
-        measureColumns.map(mc => ({
-            key: [...parentPath, `m:${mc.id}`].join(SEP),
-            label: measureLabel(mc),
+    const multiMeasure = measureColumns.length > 1;
+    const attrLevels = colColumns.length;
+    // Depth: one level per bound column attribute, then a measure-group level
+    // (only when groups are defined), then the measure level. With a single
+    // measure, no groups and at least one attribute level, the deepest
+    // attribute level is already the leaf.
+    const measureLevels = hasMeasureGroups ? 2 : ((multiMeasure || attrLevels === 0) ? 1 : 0);
+    const totalLevels = attrLevels + measureLevels;
+
+    const leafFor = (mc: Col, parentPath: string[], level: number): ColNode => ({
+        key: [...parentPath, `m:${mc.id}`].join(SEP),
+        label: measureLabel(mc),
+        level,
+        children: [],
+        pathKey: parentPath.join(SEP),
+        measureId: mc.id,
+    });
+
+    // Everything below the attribute hierarchy: either grouped measures
+    // (group nodes with measure children) or a flat run of measures.
+    const measureNodes = (parentPath: string[], level: number): ColNode[] => {
+        if (!hasMeasureGroups) return measureColumns.map(mc => leafFor(mc, parentPath, level));
+        const out: ColNode[] = measureGroups.map(g => ({
+            key: [...parentPath, `g:${g.name}`].join(SEP),
+            label: g.name,
             level,
-            children: [],
+            children: g.measures.map(mc => leafFor(mc, parentPath, level + 1)),
             pathKey: parentPath.join(SEP),
-            measureId: mc.id,
         }));
+        // Leftover measures sit at the group level so they stay visible
+        // alongside the groups instead of vanishing.
+        for (const mc of ungrouped) out.push(leafFor(mc, parentPath, level));
+        return out;
+    };
 
     const buildLevel = (level: number, parentPath: string[]): ColNode[] => {
         if (level >= attrLevels) {
-            // Past the attribute hierarchy: either a measure level, or (single
-            // measure) nothing — the caller already made the leaf.
-            return multiMeasure || attrLevels === 0 ? measureLeaves(parentPath, level) : [];
+            return measureLevels > 0 ? measureNodes(parentPath, level) : [];
         }
         const nodes: ColNode[] = [];
-        const isLeafLevel = level === attrLevels - 1 && !multiMeasure;
+        const isLeafLevel = level === attrLevels - 1 && measureLevels === 0;
         for (const val of sortedLevelValues[level]) {
             const path = [...parentPath, val];
             const prefix = path.join(SEP);
@@ -408,7 +471,7 @@ function render(ctx: CustomChartContext) {
     };
 
     const roots = attrLevels === 0
-        ? measureLeaves([], 0)
+        ? measureNodes([], 0)
         : buildLevel(0, []);
 
     if (roots.length === 0) {
@@ -433,7 +496,8 @@ function render(ctx: CustomChartContext) {
     const table = document.createElement('table');
     table.className = 'pivot'
         + (stripedRows ? ' striped' : '')
-        + (showGridLines ? '' : ' no-grid');
+        + (showGridLines ? '' : ' no-grid')
+        + (freezeRowLabels ? '' : ' no-freeze');
 
     // ---- header ----
     const thead = document.createElement('thead');
@@ -461,6 +525,13 @@ function render(ctx: CustomChartContext) {
             th.colSpan = span;
             const isLeafRow = node.children.length === 0;
             if (isLeafRow) th.className = 'leaf-head';
+            // A leaf that sits above the deepest header level (e.g. a measure
+            // left ungrouped while its neighbours are in groups) must span the
+            // remaining header rows — otherwise those rows come up short and
+            // every cell after it shifts left.
+            if (isLeafRow && node.level < totalLevels - 1) {
+                th.rowSpan = totalLevels - node.level;
+            }
 
             const wrapEl = document.createElement('span');
             wrapEl.className = 'grp';
@@ -517,10 +588,23 @@ function render(ctx: CustomChartContext) {
         // Rows are a flat list — the grouping/outline in this chart is on the
         // columns only, so every row prints its own label.
         const labels = rowLabelsByKey.get(rKey) ?? [];
-        labels.forEach(lab => {
+        const raws   = rowSortByKey.get(rKey) ?? [];
+        labels.forEach((lab, i) => {
             const td = document.createElement('td');
             td.className = 'row-label';
-            td.textContent = lab;
+            // Link columns render as the caption text hyperlinked, not the
+            // raw {caption}…{/caption}https://… blob.
+            const link = isDateLikeCol(rowColumns[i]) ? { href: null } : parseLinkValue(raws[i] ?? '');
+            if (link.href) {
+                const a = document.createElement('a');
+                a.href = link.href;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.textContent = lab;
+                td.appendChild(a);
+            } else {
+                td.textContent = lab;
+            }
             tr.appendChild(td);
         });
 
@@ -588,7 +672,7 @@ function render(ctx: CustomChartContext) {
     wrap.innerHTML = '';
     wrap.appendChild(table);
 
-    applyStickyOffsets(table, rowColumns.length, totalLevels);
+    applyStickyOffsets(table, freezeRowLabels ? rowColumns.length : 0, totalLevels);
 
     console.log('[Collapsible Pivot]', {
         rows: rowColumns.map(c => c.name),
@@ -768,18 +852,32 @@ const renderChart = async (ctx: CustomChartContext) => {
         // TEXT may vary. With up to 60 measures allowed, per-measure settings
         // would make the count swing wildly, so there are none: percent
         // measures are detected from the column name instead.
-        visualPropEditorDefinition: () => ({
-            elements: [
-                { key: 'chartTitle',        type: 'text',     defaultValue: ' ',        label: 'Title' },
-                { key: 'numberFormat',      type: 'text',     defaultValue: '0,0.[0]a', label: 'Number format' },
-                { key: 'currency',          type: 'dropdown', defaultValue: 'None',     values: CURRENCY_OPTIONS, label: 'Currency symbol' },
-                { key: 'defaultCollapsed',  type: 'checkbox', defaultValue: false,      label: 'Start with column groups collapsed' },
-                { key: 'showRowTotals',     type: 'checkbox', defaultValue: false,      label: 'Show total column' },
-                { key: 'showGrandTotalRow', type: 'checkbox', defaultValue: false,      label: 'Show grand total row' },
-                { key: 'stripedRows',       type: 'checkbox', defaultValue: true,       label: 'Striped rows' },
-                { key: 'showGridLines',     type: 'checkbox', defaultValue: true,       label: 'Show column dividers' },
-            ],
-        }),
+        visualPropEditorDefinition: () => {
+            // Fixed MAX_GROUPS slots — always the same count, so the element
+            // list stays static. Each slot names a group and says how many of
+            // the bound measures it swallows, consumed left to right.
+            const groupSlots: any[] = [];
+            for (let i = 1; i <= MAX_GROUPS; i++) {
+                groupSlots.push(
+                    { key: `group${i}Name`, type: 'text',   defaultValue: ' ', label: `Group ${i} name` },
+                    { key: `group${i}Size`, type: 'number', defaultValue: 0,   label: `Group ${i} — how many measures` },
+                );
+            }
+            return {
+                elements: [
+                    { key: 'chartTitle',        type: 'text',     defaultValue: ' ',        label: 'Title' },
+                    { key: 'numberFormat',      type: 'text',     defaultValue: '0,0.[0]a', label: 'Number format' },
+                    { key: 'currency',          type: 'dropdown', defaultValue: 'None',     values: CURRENCY_OPTIONS, label: 'Currency symbol' },
+                    { key: 'defaultCollapsed',  type: 'checkbox', defaultValue: false,      label: 'Start with groups collapsed' },
+                    { key: 'freezeRowLabels',   type: 'checkbox', defaultValue: true,       label: 'Freeze row label columns when scrolling' },
+                    { key: 'showRowTotals',     type: 'checkbox', defaultValue: false,      label: 'Show total column' },
+                    { key: 'showGrandTotalRow', type: 'checkbox', defaultValue: false,      label: 'Show grand total row' },
+                    { key: 'stripedRows',       type: 'checkbox', defaultValue: true,       label: 'Striped rows' },
+                    { key: 'showGridLines',     type: 'checkbox', defaultValue: true,       label: 'Show column dividers' },
+                    ...groupSlots,
+                ],
+            };
+        },
     });
 
     renderChart(ctx);

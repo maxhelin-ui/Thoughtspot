@@ -388,3 +388,52 @@ You don't need the TS host to rule out half the causes. Against the chart's
 (`<project>-<hash>-<org>.vercel.app`) are SSO-protected by default even when
 the production domain (`<project>.vercel.app`) is wide open — testing the wrong
 one sends you chasing a Deployment Protection problem that doesn't exist.
+
+## Build a fake-host harness instead of guessing at "Cannot display" / error codes
+
+ThoughtSpot's chart errors (55003 etc.) are opaque: no code mapping in the SDK,
+nothing public, and your own `console.error` never fires because the failure is
+in the host's validation of what your chart returned. Guessing burns days.
+
+The whole host side is just `postMessage` + `MessageChannel`, so you can fake
+it locally in ~80 lines. A page that iframes the chart and sends
+`Initialize` → `GetDataQuery` → `InitializeComplete` → `ChartModelUpdate` →
+`TriggerRenderChart`, logging every `source:'ts-chart-sdk'` message coming back,
+reproduces the real handshake and shows you the actual response objects.
+
+Harness gotchas:
+- **`hostUrl` must be a real origin.** The SDK passes it straight to
+  `postMessage(msg, targetOrigin)`, so `hostUrl:'harness'` makes every
+  `emitEvent` throw — you'll see `InitStart` (hardcoded `'*'`) and then silence,
+  which looks exactly like "the chart never renders".
+- Reply on `event.ports[0]` — the SDK awaits that port for every event.
+- Serve the harness from the SAME origin as the built chart if you want to
+  inspect/click inside the iframe; cross-origin blocks `contentDocument`.
+- Drive it with a realistic model (right column COUNT and right
+  `ColumnType`s) — bugs here are shape-dependent.
+
+Assert on invariants, not just "did it render": for a table, check on every
+header row that Σcolspan (accounting for rowSpan carry-down) equals the body
+cell count. That caught a real misalignment a screenshot did not.
+
+## Chart works in the harness but not in ThoughtSpot? Suspect the SAVED config
+
+`validateConfig` defaults to `() => ({ isValid: true })`. If you don't define
+it, **any** previously-saved chart config is reported valid forever — including
+one written by an earlier, buggy build of your chart. Fixing
+`getDefaultChartConfig` only helps NEW charts; existing visualizations keep
+handing back the broken config and keep failing.
+
+Always implement `validateConfig` to check the saved config against your own
+section rules (right column types in each slot, required slots non-empty,
+counts within `maxColumnCount`). Return `isValid:false` and the SDK falls back
+to `getDefaultChartConfig`, so bad saved state self-heals instead of wedging.
+
+## ThoughtSpot link columns arrive as `{caption}…{/caption}URL`
+
+Link/attachment columns don't come through as plain text — the raw value is
+`{caption}Display Name{/caption}https://real/url`. Render it verbatim and the
+cell shows the whole URL blob. Parse with
+`/^\{caption\}([\s\S]*?)\{\/caption\}([\s\S]*)$/`, show group 1 as the text,
+and only use group 2 as an `href` when it matches `^https?://` (never emit
+`javascript:`/`data:` from cell data).

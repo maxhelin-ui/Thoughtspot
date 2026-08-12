@@ -2,7 +2,12 @@
 
 A pivot table where the **columns** collapse — the outline/grouping you get on rows in Excel, but applied across the top instead.
 
-You bind attributes to build a column hierarchy. Every group header gets a small ▾ button. Click it and the group folds down to **its first column**, which stands in for the whole group. Groups nest, so you can have several layers collapsed underneath each other.
+Every group header gets a small ▾ button. Click it and the group folds down to **its first column**, which stands in for the whole group. Groups nest, so you can have several layers collapsed underneath each other.
+
+There are **two independent ways to group columns**, and you can use either or both:
+
+1. **Measure groups (settings)** — hand-pick runs of your own measures into named groups: "these 20 columns are *Assets*, the next 30 are *Usage*". Nothing to do with attributes.
+2. **Column groups (layout)** — group by an attribute's *values*, the classic pivot behaviour.
 
 ---
 
@@ -18,7 +23,9 @@ All the grouping happens across the top. Rows stay flat.
 
 **What you see when you first pick this chart:** every attribute from your search goes into Rows and every measure into Measures — so it starts as a plain wide table of your query, with nothing grouped. To start grouping, drag an attribute out of **Rows** and into **Column groups**; its values become collapsible column headers.
 
-**Order matters** in Column groups — first = outermost. Leaving it empty is fine: you just get a flat table of measures.
+**Order matters** in Column groups — first = outermost. Leaving it empty is fine, and is the common case: most grouping here is done with **measure groups** in the settings instead.
+
+Note **Column groups only accepts attributes.** To group measures together, don't drag them here (the chip will bounce back) — use the measure-group settings below.
 
 ---
 
@@ -49,6 +56,20 @@ Key points:
 
 ---
 
+## Grouping your measures
+
+In settings you get 8 group slots. Each has a **name** and a **how many measures** count. Groups eat the bound measures **in order**, left to right:
+
+| Setting | Value |
+|---|---|
+| Group 1 name / size | `Assets` / `20` |
+| Group 2 name / size | `Usage` / `30` |
+| Group 3 name / size | `Engagement` / `5` |
+
+With 60 measures bound that gives you *Assets* over the first 20, *Usage* over the next 30, *Engagement* over the next 5, and the remaining 5 left ungrouped at the end. Reorder the measures in the **Measures** slot to change which ones land in which group. Leave a name blank or its size at 0 to skip a slot.
+
+---
+
 ## Settings
 
 | Setting | What it does |
@@ -56,7 +77,9 @@ Key points:
 | **Title** | Optional heading above the table. Leave blank for none. |
 | **Number format** | Numeral.js pattern, default `0,0.[0]a` (so `1.2M`). |
 | **Currency symbol** | Prefix for non-percent measures. |
-| **Start with column groups collapsed** | Everything starts folded. Per-group clicks still override it. |
+| **Start with groups collapsed** | Everything starts folded. Per-group clicks still override it. |
+| **Freeze row label columns when scrolling** | Keeps the left label columns pinned while you scroll sideways. On by default — turn off if you'd rather everything scroll together. |
+| **Group N name / Group N — how many measures** | Defines a measure group; see above. |
 | **Show total column** | Adds a Total column on the right, one per measure. Totals cover **all** column groups, including collapsed/hidden ones. |
 | **Show grand total row** | Adds a totals row at the bottom. |
 | **Striped rows** | Alternating row shading. |
@@ -66,7 +89,8 @@ Key points:
 
 ## Good to know
 
-- **Headers and row labels stay put** when you scroll — both the header rows and the left label columns are pinned.
+- **Headers and row labels stay put** when you scroll — both the header rows and the left label columns are pinned. That pinning is deliberate, not a rendering glitch; switch off **Freeze row label columns** if you don't want it.
+- **Link columns render as links.** ThoughtSpot sends these as `{caption}Name{/caption}https://…`; the cell shows just the name, hyperlinked (http/https only).
 - **Percent measures are detected from the column name** (`%`, rate, ratio, share…) and are **averaged, not summed** — five 70% values summing to 350% is meaningless. Everything else sums.
 - **Empty branches are dropped.** A column value that has no data under a particular parent won't render an empty column there.
 - **Row limits** are whatever ThoughtSpot's default batch is. Pivots fan out across the row × column cross-product, so if totals look low you're hitting truncation — reduce the number of bound attributes.

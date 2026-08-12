@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>BYOC host harness</title>
+<style>
+ body{font:12px/1.45 ui-monospace,Menlo,monospace;margin:0;display:flex;height:100vh}
+ #log{width:52%;overflow:auto;padding:10px;background:#0d1117;color:#c9d1d9;white-space:pre-wrap}
+ #frame{flex:1;border:0;border-left:2px solid #333}
+ .ok{color:#3fb950}.err{color:#f85149}.ev{color:#58a6ff}.warn{color:#d29922}
+</style></head>
+<body>
+<div id="log"></div>
+<iframe id="frame" src="http://localhost:8898/"></iframe>
+<script>
+const L = document.getElementById('log');
+const log = (cls, ...a) => { const d=document.createElement('div'); d.className=cls;
+  d.textContent = a.map(x=>typeof x==='string'?x:JSON.stringify(x,null,1)).join(' '); L.appendChild(d); L.scrollTop=1e9; };
+window.onerror = (m,s,l,c,e)=>log('err','HOST ERROR', m);
+
+// ---- build a realistic chartModel: 116 columns, 1 attribute + 115 measures ----
+// ColumnType: UNKNOWN=0, MEASURE=1, ATTRIBUTE=2
+const columns = [];
+const NATTR = Number(new URLSearchParams(location.search).get('attrs') || 1);
+const ATTRS=['Account Name Link','Region','Segment','Industry','Tier','Owner'];
+for (let a=0;a<NATTR;a++) columns.push({ id:`attr_${a}`, name:ATTRS[a%ATTRS.length], type:2, dataType:2, timeBucket:0 });
+const MEAS = ['Total Assets','Monthly Engaged Assets','# of Contracted Users','Total Active Users','TB Storage',
+ 'User Groups','Collections Created','Collections Shared','Metaproperty Fields','Usage Themes','Content Creations',
+ 'Workflow Jobs','Asset Uploads Monthly Avg Last 3 Months','Logins Monthly Avg Last 3 Months','Adoption Rate %'];
+for (let i=0;i<115-(NATTR-1);i++){ const n = MEAS[i%MEAS.length] + (i>=MEAS.length?` ${i}`:'');
+  columns.push({ id:`meas_${i}`, name:n, type:1, dataType:1, timeBucket:0 }); }
+log('warn', `harness: chartModel has ${columns.length} columns (${NATTR} attributes, ${columns.length-NATTR} measures)`);
+
+// ?scenario=stale reproduces what the buggy ColumnType build SAVED onto the
+// user's visualization: a MEASURE parked in the attribute-only "rows" slot,
+// and an ATTRIBUTE in the measure-only "measures" slot.
+const scenario = new URLSearchParams(location.search).get('scenario') || 'fresh';
+const staleConfig = [{ key:'column', dimensions:[
+  { key:'rows',     columns:[ columns[NATTR] ] },   // a measure -> attribute-only slot
+  { key:'columns',  columns:[] },
+  { key:'measures', columns:[ columns[0] ] },   // attribute -> measure-only slot
+]}];
+log('warn', `scenario = ${scenario}`);
+const groupsOn = new URLSearchParams(location.search).get('groups')==='1';
+const vprops = groupsOn ? { group1Name:'Assets', group1Size:20, group2Name:'Usage', group2Size:30, group3Name:'Engagement', group3Size:5 } : {};
+if (groupsOn) log('warn','visualProps groups: Assets=20, Usage=30, Engagement=5');
+const chartModel = { columns, data: [], visualProps: vprops,
+  config: { chartConfig: scenario==='stale' ? staleConfig : [] } };
+
+const frame = document.getElementById('frame');
+let componentId = 'harness-1';
+
+function send(eventType, payload){
+  return new Promise((resolve,reject)=>{
+    const ch = new MessageChannel();
+    const t = setTimeout(()=>reject(new Error('timeout '+eventType)), 10000);
+    ch.port1.onmessage = e => { clearTimeout(t); resolve(e.data); };
+    frame.contentWindow.postMessage({ componentId, eventType, payload, source:'ts-host-harness' }, '*', [ch.port2]);
+  });
+}
+
+// listen for chart->host events (InitStart, RenderStart, RenderComplete, RenderError)
+window.addEventListener('message', e => {
+  if (e.source !== frame.contentWindow) return;
+  const d = e.data; if (!d || d.source!=='ts-chart-sdk') return;
+  const cls = /Error/i.test(d.eventType) ? 'err' : 'ev';
+  log(cls, '<- chart:', d.eventType, d.payload && Object.keys(d.payload).length ? d.payload : '');
+  const p = e.ports && e.ports[0]; if (p) p.postMessage({});
+});
+
+frame.onload = async () => {
+  log('warn','iframe loaded, starting handshake in 400ms...');
+  await new Promise(r=>setTimeout(r,400));
+  try {
+    log('ev','-> Initialize');
+    const init = await send('Initialize', {
+      chartModel, appConfig:{ styleConfig:{}, appOptions:{}, localeOptions:{} },
+      // hostUrl is passed straight to postMessage(msg, targetOrigin) by the
+      // SDK — it MUST be a real origin or every emitEvent throws.
+      componentId, hostUrl: window.location.origin, containerElSelector:null });
+    log('ok','<- Initialize response:');
+    log('ok','   isConfigValid = '+init.isConfigValid);
+    log('ok','   defaultChartConfig = ', init.defaultChartConfig);
+    log('ok','   chartConfigEditorDefinition = ', init.chartConfigEditorDefinition);
+    const vp = init.visualPropEditorDefinition;
+    log('ok','   visualPropEditorDefinition elements = '+(vp&&vp.elements?vp.elements.length:'(none)'));
+    log('ok','   ', vp);
+
+    // Validate the default config against our own columnSections rules,
+    // the way the host would.
+    const secs = (init.chartConfigEditorDefinition&&init.chartConfigEditorDefinition[0]||{}).columnSections||[];
+    const byId = Object.fromEntries(columns.map(c=>[c.id,c]));
+    for (const cfg of (init.defaultChartConfig||[])) {
+      for (const dim of (cfg.dimensions||[])) {
+        const sec = secs.find(s=>s.key===dim.key);
+        if(!sec){ log('err',`  !! dimension "${dim.key}" has NO matching columnSection`); continue; }
+        for (const col of (dim.columns||[])) {
+          const full = byId[col.id]||col;
+          const isAttr = full.type===2, isMeas = full.type===1;
+          if (isMeas && sec.allowMeasureColumns===false) log('err',`  !! MEASURE "${full.name}" placed in section "${sec.key}" which forbids measures`);
+          if (isAttr && sec.allowAttributeColumns===false) log('err',`  !! ATTRIBUTE "${full.name}" placed in section "${sec.key}" which forbids attributes`);
+        }
+        if (sec.maxColumnCount!=null && (dim.columns||[]).length>sec.maxColumnCount)
+          log('err',`  !! section "${sec.key}" got ${dim.columns.length} cols, max ${sec.maxColumnCount}`);
+      }
+    }
+    log('ok','  (config/section cross-check done)');
+
+    log('ev','-> GetDataQuery');
+    const q = await send('GetDataQuery', { config: init.defaultChartConfig });
+    log('ok','<- GetDataQuery response:', q);
+    (q.queries||[]).forEach((qq,i)=>{
+      if(!qq.queryColumns || qq.queryColumns.length===0) log('err',`  !! query[${i}] has 0 queryColumns`);
+      else log('ok',`  query[${i}]: ${qq.queryColumns.length} cols ${qq.queryParams?'queryParams='+JSON.stringify(qq.queryParams):''}`);
+    });
+
+    log('ev','-> InitializeComplete');
+    await send('InitializeComplete', {});
+    log('ok','<- InitializeComplete ack');
+
+    // Self-heal check: with a stale/invalid saved config, the chart SHOULD
+    // report isConfigValid=false and hand back a usable defaultChartConfig,
+    // so the host can re-seed instead of choking on the bad saved state.
+    if (scenario === 'stale') {
+      if (init.isConfigValid) log('err','  !! SELF-HEAL FAILED: chart reported the stale bad config as VALID, and returned no replacement config. Host is left holding a measure in an attribute-only slot.');
+      else if (!(init.defaultChartConfig||[]).length) log('err','  !! reported invalid but gave no defaultChartConfig to recover with');
+      else log('ok','  self-heal OK: stale config rejected, replacement config supplied');
+    }
+
+    // Feed data and ask for a render, like the host does.
+    const cfg = (init.defaultChartConfig && init.defaultChartConfig[0]) || chartModel.config.chartConfig[0];
+    const qcols = (cfg.dimensions||[]).flatMap(d=>d.columns||[]).map(c=>c.id);
+    // Generate a value for every queried column so multi-attribute rows and
+    // wide measure sets actually populate.
+    const ACC=['{caption}Acme Corp{/caption}https://example.com/a','{caption}Globex{/caption}https://example.com/b','{caption}Initech{/caption}https://example.com/c','{caption}Umbrella{/caption}https://example.com/d'];
+    const REG=['EMEA','AMER']; const SEG=['SMB','ENT'];
+    const dataValue=[];
+    for (const a of ACC) for (const r of REG) for (const g of SEG) {
+      const attrVals=[a,r,g].slice(0, qcols.length);
+      const row=qcols.map((id,i)=> i<attrVals.length && /^attr_/.test(qcols[i]) ? attrVals[i] : Math.round(Math.random()*2000));
+      dataValue.push(row);
+    }
+    const withData = { ...chartModel, visualProps: vprops, config:{chartConfig:init.defaultChartConfig},
+      data:[{ data:{ columns:qcols, dataValue } }] };
+    log('ev','-> ChartModelUpdate (with data)');
+    await send('ChartModelUpdate', { chartModel: withData });
+    log('ev','-> TriggerRenderChart');
+    await send('TriggerRenderChart', {});
+    log('ok','handshake sequence finished — watch for RenderComplete/RenderError above');
+  } catch (err) {
+    log('err','HANDSHAKE FAILED: '+(err&&err.message));
+    log('err', String(err&&err.stack||''));
+  }
+};
+</script>
+</body></html>
