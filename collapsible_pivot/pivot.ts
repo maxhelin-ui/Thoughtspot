@@ -281,6 +281,11 @@ let dragState: { key: string; startX: number; startW: number } | null = null;
 let onWidthCommit: (() => void) | null = null;
 let applyWidthsLive: (() => void) | null = null;
 
+// A 1px-tall spacer kept at the end of #tableWrap. Pinned to the table's
+// pre-drag width for the duration of a drag, then reset to 0 the instant the
+// drag ends — see the mousedown handler below for why.
+let resizeSpacer: HTMLDivElement | null = null;
+
 function addResizeHandle(th: HTMLTableCellElement, key: string) {
     th.dataset.colKey = key;
     const grip = document.createElement('span');
@@ -295,6 +300,20 @@ function addResizeHandle(th: HTMLTableCellElement, key: string) {
             startX: e.clientX,
             startW: columnWidths[key] ?? th.getBoundingClientRect().width,
         };
+        // Shrinking a column while scrolled near the far right would
+        // otherwise shrink #tableWrap's own scrollWidth under the cursor,
+        // and the browser clamps scrollLeft down to match — cancelling the
+        // mouse's motion pixel for pixel and making the grip look frozen.
+        // Pinning the spacer to the table's current width for the drag's
+        // duration keeps scrollWidth from ever dropping below it, so
+        // scrollLeft is never auto-clamped mid-gesture. A plain sibling div
+        // (rather than constraining the table itself) can't trip
+        // table-layout:auto into redistributing the freed width onto other
+        // columns.
+        const table = th.closest('table');
+        if (resizeSpacer && table) {
+            resizeSpacer.style.width = `${table.getBoundingClientRect().width}px`;
+        }
         document.body.classList.add('col-resizing');
     };
     th.appendChild(grip);
@@ -310,6 +329,7 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseup', () => {
     if (!dragState) return;
     dragState = null;
+    if (resizeSpacer) resizeSpacer.style.width = '0px';
     document.body.classList.remove('col-resizing');
     onWidthCommit?.();
 });
@@ -823,6 +843,12 @@ function render(ctx: CustomChartContext) {
     if (!wrap) return;
     wrap.innerHTML = '';
     wrap.appendChild(table);
+    if (!resizeSpacer) {
+        resizeSpacer = document.createElement('div');
+        resizeSpacer.style.height = '1px';
+    }
+    resizeSpacer.style.width = '0px';
+    wrap.appendChild(resizeSpacer);
 
     // Apply saved/dragged widths, then pin the frozen label columns. Widths
     // must land first: sticky left offsets are measured from real widths.
