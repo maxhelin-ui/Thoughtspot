@@ -17,7 +17,7 @@ There are **two independent ways to group columns**, and you can use either or b
 |---|---|---|
 | **Rows** | 4 | The left-hand label columns, flat and side by side. Bind several and you get one row per combination — no row hierarchy, no collapsing. |
 | **Column groups (outermost first)** | 4 | One nesting level per attribute. The first one you drop is the outermost group, the next nests inside it, and so on. |
-| **Measures** | 60 | The numbers in the cells. |
+| **Measures** | 200 | The numbers in the cells. |
 
 All the grouping happens across the top. Rows stay flat.
 
@@ -102,6 +102,6 @@ With 60 measures bound that gives you *Assets* over the first 20, *Usage* over t
 
 ## Limits
 
-- 4 row attributes (flat), 4 column-group levels, 60 measures.
+- 4 row attributes (flat), 4 column-group levels, 200 measures.
 - Collapse state isn't persisted into the saved chart (only the "start collapsed" default is).
 - Cells are plain values — no conditional formatting or heatmap shading.

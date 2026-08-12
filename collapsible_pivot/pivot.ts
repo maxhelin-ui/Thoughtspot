@@ -44,7 +44,7 @@ const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
 // Searches here run to 100+ columns, and the point of this chart is to tame a
 // wide table by grouping it — so allow plenty of measures rather than the
 // handful a normal chart would want.
-const MAX_MEASURES = 60;
+const MAX_MEASURES = 200;
 
 // Row attributes render as flat, side-by-side label columns on the left —
 // one column each, no hierarchy and no collapsing. (Grouping/collapsing in
