@@ -118,6 +118,18 @@ function detectPercentByName(name: string): boolean {
     return /%|\bpct\b|percent|percentage|\brate\b|\bratio\b|\bshare\b/i.test(name ?? '');
 }
 
+// Picks readable text for a user-chosen header background — dark text on
+// light colours, white on dark ones — so a colour pick can't render illegible.
+function contrastTextColor(hex: string): string {
+    const c = hex.replace('#', '');
+    if (!/^[0-9a-f]{6}$/i.test(c)) return '#1A1F2C';
+    const r = parseInt(c.slice(0, 2), 16);
+    const g = parseInt(c.slice(2, 4), 16);
+    const b = parseInt(c.slice(4, 6), 16);
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.55 ? '#1A1F2C' : '#FFFFFF';
+}
+
 function naturalCompare(a: string, b: string): number {
     return String(a).localeCompare(String(b), undefined, { numeric: true, sensitivity: 'base' });
 }
@@ -208,6 +220,7 @@ type ColNode = {
     children: ColNode[];
     pathKey: string;      // attribute-value path used for value lookup
     measureId?: string;   // set only on measure-level leaves
+    bgColor?: string;     // header background override (measure-group colour)
 };
 
 function isCollapsed(key: string, defaultCollapsed: boolean): boolean {
@@ -215,6 +228,24 @@ function isCollapsed(key: string, defaultCollapsed: boolean): boolean {
     if (explicitCollapsed.has(key)) return true;
     return defaultCollapsed;
 }
+
+// Every node with children, root to leaf — the full set a "collapse/expand
+// all" action needs to touch.
+function collectGroupKeys(nodes: ColNode[], out: string[] = []): string[] {
+    for (const n of nodes) {
+        if (n.children.length > 0) {
+            out.push(n.key);
+            collectGroupKeys(n.children, out);
+        }
+    }
+    return out;
+}
+
+// The settings dropdown is persistent, not a momentary button (the SDK has
+// no button widget), so a bulk action is applied once per distinct value —
+// remembering the last-applied value lets individual chevron clicks made
+// afterward stick instead of being fought on every re-render.
+let lastBulkAction: string | null = null;
 
 // Leaves that are actually on screen. A collapsed node contributes only its
 // FIRST child's subtree — recursively, so several collapsed layers still
@@ -468,7 +499,7 @@ function render(ctx: CustomChartContext) {
     // group stays ungrouped. This is Excel-style column grouping — "these 20
     // columns are one group, the next 30 are another" — rather than grouping
     // by an attribute's values.
-    type MGroup = { name: string; measures: Col[] };
+    type MGroup = { name: string; measures: Col[]; groupIndex: number };
     const measureGroups: MGroup[] = [];
     let ungrouped: Col[] = measureColumns;
     {
@@ -479,12 +510,17 @@ function render(ctx: CustomChartContext) {
             if (!name || size <= 0) continue;
             const slice = measureColumns.slice(cursor, cursor + size);
             if (slice.length === 0) break;
-            measureGroups.push({ name, measures: slice });
+            measureGroups.push({ name, measures: slice, groupIndex: i });
             cursor += slice.length;
         }
         ungrouped = measureColumns.slice(cursor);
     }
     const hasMeasureGroups = measureGroups.length > 0;
+    const applyColorToSubgroups = visualProps.groupColorAppliesToMeasures ?? false;
+    const groupColor = (i: number): string | null => {
+        const raw = (visualProps[`group${i}Color`] ?? '').toString().trim();
+        return raw || null;
+    };
 
     const multiMeasure = measureColumns.length > 1;
     const attrLevels = colColumns.length;
@@ -508,13 +544,23 @@ function render(ctx: CustomChartContext) {
     // (group nodes with measure children) or a flat run of measures.
     const measureNodes = (parentPath: string[], level: number): ColNode[] => {
         if (!hasMeasureGroups) return measureColumns.map(mc => leafFor(mc, parentPath, level));
-        const out: ColNode[] = measureGroups.map(g => ({
-            key: [...parentPath, `g:${g.name}`].join(SEP),
-            label: g.name,
-            level,
-            children: g.measures.map(mc => leafFor(mc, parentPath, level + 1)),
-            pathKey: parentPath.join(SEP),
-        }));
+        const out: ColNode[] = measureGroups.map(g => {
+            const color = groupColor(g.groupIndex) ?? undefined;
+            const childColor = applyColorToSubgroups ? color : undefined;
+            const children = g.measures.map(mc => {
+                const leaf = leafFor(mc, parentPath, level + 1);
+                leaf.bgColor = childColor;
+                return leaf;
+            });
+            return {
+                key: [...parentPath, `g:${g.name}`].join(SEP),
+                label: g.name,
+                level,
+                children,
+                pathKey: parentPath.join(SEP),
+                bgColor: color,
+            };
+        });
         // Leftover measures sit at the group level so they stay visible
         // alongside the groups instead of vanishing.
         for (const mc of ungrouped) out.push(leafFor(mc, parentPath, level));
@@ -554,6 +600,18 @@ function render(ctx: CustomChartContext) {
     if (roots.length === 0) {
         showMessage('No column values to display.');
         return;
+    }
+
+    const bulkAction = (visualProps.groupsBulkAction ?? 'None').toString();
+    if (bulkAction !== lastBulkAction) {
+        if (bulkAction === 'Collapse all' || bulkAction === 'Expand all') {
+            const keys = collectGroupKeys(roots);
+            explicitCollapsed.clear();
+            explicitExpanded.clear();
+            const target = bulkAction === 'Collapse all' ? explicitCollapsed : explicitExpanded;
+            for (const k of keys) target.add(k);
+        }
+        lastBulkAction = bulkAction;
     }
 
     const leaves: ColNode[] = [];
@@ -607,6 +665,10 @@ function render(ctx: CustomChartContext) {
             const span = visibleLeaves(node, defaultCollapsed).length;
             const th = document.createElement('th');
             th.colSpan = span;
+            if (node.bgColor) {
+                th.style.backgroundColor = node.bgColor;
+                th.style.color = contrastTextColor(node.bgColor);
+            }
             const isLeafRow = node.children.length === 0;
             if (isLeafRow) th.className = 'leaf-head';
             // A leaf that sits above the deepest header level (e.g. a measure
@@ -999,8 +1061,9 @@ const renderChart = async (ctx: CustomChartContext) => {
             const groupSlots: any[] = [];
             for (let i = 1; i <= MAX_GROUPS; i++) {
                 groupSlots.push(
-                    { key: `group${i}Name`, type: 'text',   defaultValue: ' ', label: `Group ${i} name` },
-                    { key: `group${i}Size`, type: 'number', defaultValue: 0,   label: `Group ${i} — how many measures` },
+                    { key: `group${i}Name`,  type: 'text',       defaultValue: ' ',       label: `Group ${i} name` },
+                    { key: `group${i}Size`,  type: 'number',     defaultValue: 0,         label: `Group ${i} — how many measures` },
+                    { key: `group${i}Color`, type: 'colorpicker', defaultValue: '#EEF1F6', label: `Group ${i} colour` },
                 );
             }
             return {
@@ -1009,11 +1072,13 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'numberFormat',      type: 'text',     defaultValue: '0,0.[0]a', label: 'Number format' },
                     { key: 'currency',          type: 'dropdown', defaultValue: 'None',     values: CURRENCY_OPTIONS, label: 'Currency symbol' },
                     { key: 'defaultCollapsed',  type: 'checkbox', defaultValue: false,      label: 'Start with groups collapsed' },
+                    { key: 'groupsBulkAction',  type: 'dropdown', defaultValue: 'None',     values: ['None', 'Collapse all', 'Expand all'], label: 'Collapse / expand all groups' },
                     { key: 'freezeColumnCount', type: 'number',   defaultValue: 1,          label: 'Freeze first N row label columns (0 = none)' },
                     { key: 'showRowTotals',     type: 'checkbox', defaultValue: false,      label: 'Show total column' },
                     { key: 'showGrandTotalRow', type: 'checkbox', defaultValue: false,      label: 'Show grand total row' },
                     { key: 'stripedRows',       type: 'checkbox', defaultValue: true,       label: 'Striped rows' },
                     { key: 'showGridLines',     type: 'checkbox', defaultValue: true,       label: 'Show column dividers' },
+                    { key: 'groupColorAppliesToMeasures', type: 'checkbox', defaultValue: false, label: 'Apply group colour to its measure headers too' },
                     ...groupSlots,
                 ],
             };

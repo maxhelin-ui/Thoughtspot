@@ -37,7 +37,10 @@
                 flex: 1 1 auto;
                 min-height: 0;
                 overflow: auto;
-                padding: 0 0 12px 0;
+                /* Right padding gives the last column's resize grip (it sits
+                   half outside the header cell, on the right edge) somewhere
+                   to land instead of butting against the scroll boundary. */
+                padding: 0 8px 12px 0;
                 box-sizing: border-box;
             }
             table.pivot {
@@ -78,6 +81,12 @@
                them to the bottom of the taller row. */
             table.pivot thead th[rowspan] {
                 vertical-align: bottom;
+            }
+            /* Row-label headers (the leftmost attribute columns) rowSpan
+               every header row too, but they have no leaf row underneath to
+               align with, so they read better centered like everything else. */
+            table.pivot thead th.row-head {
+                vertical-align: middle;
             }
             /* Group titles read better starting at the left of their span. */
             table.pivot thead th.grp-head { text-align: left; }
