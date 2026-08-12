@@ -68,6 +68,8 @@ In settings you get 8 group slots. Each has a **name** and a **how many measures
 
 With 60 measures bound that gives you *Assets* over the first 20, *Usage* over the next 30, *Engagement* over the next 5, and the remaining 5 left ungrouped at the end. Reorder the measures in the **Measures** slot to change which ones land in which group. Leave a name blank or its size at 0 to skip a slot.
 
+Each group slot also has a **colour** picker — pick a background colour for that group's header. Text colour switches automatically between dark and light so it stays readable against whatever you pick. By default the colour only paints the group's own header cell; turn on **Apply group colour to its measure headers too** (a single switch, applies to every group) to also paint the individual measure headers underneath it.
+
 ---
 
 ## Settings
@@ -78,8 +80,10 @@ With 60 measures bound that gives you *Assets* over the first 20, *Usage* over t
 | **Number format** | Numeral.js pattern, default `0,0.[0]a` (so `1.2M`). |
 | **Currency symbol** | Prefix for non-percent measures. |
 | **Start with groups collapsed** | Everything starts folded. Per-group clicks still override it. |
+| **Collapse / expand all groups** | Folds or unfolds every collapsible group — column groups and measure groups alike — in one shot. It's a one-time action, not a persistent state: after it runs you can still expand or collapse individual groups by hand, and flipping the setting to a different value (or back) re-triggers it. |
 | **Freeze first N row label columns (0 = none)** | How many of the left label columns stay pinned while you scroll sideways, counted from the left. `1` by default, `0` freezes nothing. |
-| **Group N name / Group N — how many measures** | Defines a measure group; see above. |
+| **Group N name / Group N — how many measures / Group N colour** | Defines a measure group and its header colour; see above. |
+| **Apply group colour to its measure headers too** | When on, every group's colour also paints the measure headers nested under it, not just the group title. |
 | **Show total column** | Adds a Total column on the right, one per measure. Totals cover **all** column groups, including collapsed/hidden ones. |
 | **Show grand total row** | Adds a totals row at the bottom. |
 | **Striped rows** | Alternating row shading. |

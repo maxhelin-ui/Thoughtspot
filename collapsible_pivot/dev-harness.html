@@ -49,6 +49,12 @@ if (new URLSearchParams(location.search).get('saved')==='1') {
 const fc = new URLSearchParams(location.search).get('freeze');
 if (fc!=null) { vprops.freezeColumnCount = Number(fc); log('warn','freezeColumnCount='+fc); }
 if (groupsOn) log('warn','visualProps groups: Assets=20, Usage=30, Engagement=5');
+if (new URLSearchParams(location.search).get('colors')==='1') {
+  Object.assign(vprops, { group1Color:'#FDE8E8', group2Color:'#E5F0FF', group3Color:'#1A1F2C', groupColorAppliesToMeasures:true });
+  log('warn','visualProps colors: group1=#FDE8E8, group2=#E5F0FF, group3=#1A1F2C (dark, tests contrast text), cascaded to measure headers');
+}
+const bulk = new URLSearchParams(location.search).get('bulk');
+if (bulk) { vprops.groupsBulkAction = bulk==='collapse' ? 'Collapse all' : 'Expand all'; log('warn','groupsBulkAction='+vprops.groupsBulkAction); }
 const chartModel = { columns, data: [], visualProps: vprops,
   config: { chartConfig: scenario==='stale' ? staleConfig : [] } };
 
