@@ -67,6 +67,27 @@ const SEP = '\u0000';
 const explicitCollapsed = new Set<string>();
 const explicitExpanded = new Set<string>();
 
+// User-dragged column widths, keyed by a stable per-column key. Seeded from
+// visualProps.clientState (the SDK's documented place for chart-local state
+// that must survive a save) and written back there when a drag finishes.
+const columnWidths: Record<string, number> = {};
+let widthsSeeded = false;
+
+const MIN_COL_PX = 48;
+
+type ClientState = { widths?: Record<string, number> };
+
+function readClientState(vp: VisualProps): ClientState {
+    try {
+        const raw = vp?.clientState;
+        if (typeof raw !== 'string' || !raw.trim()) return {};
+        const parsed = JSON.parse(raw);
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
 let globalAppConfig: any = null;
 
 // ---------- formatting ----------
@@ -220,6 +241,48 @@ function nodesAtLevel(roots: ColNode[], level: number, defaultCollapsed: boolean
     return out;
 }
 
+// ---------- column resizing ----------
+
+// Live drag state. The handle sets these on mousedown; document-level
+// listeners (not element-level, so the pointer can leave the 4px grip) do the
+// rest. onCommit persists once the drag ends, never per mousemove.
+let dragState: { key: string; startX: number; startW: number } | null = null;
+let onWidthCommit: (() => void) | null = null;
+let applyWidthsLive: (() => void) | null = null;
+
+function addResizeHandle(th: HTMLTableCellElement, key: string) {
+    th.dataset.colKey = key;
+    const grip = document.createElement('span');
+    grip.className = 'col-resize';
+    grip.title = 'Drag to resize this column';
+    // Keep the grip from triggering the collapse button or text selection.
+    grip.onmousedown = (e: MouseEvent) => {
+        e.preventDefault();
+        e.stopPropagation();
+        dragState = {
+            key,
+            startX: e.clientX,
+            startW: columnWidths[key] ?? th.getBoundingClientRect().width,
+        };
+        document.body.classList.add('col-resizing');
+    };
+    th.appendChild(grip);
+}
+
+document.addEventListener('mousemove', (e) => {
+    if (!dragState) return;
+    const next = Math.max(MIN_COL_PX, Math.round(dragState.startW + (e.clientX - dragState.startX)));
+    columnWidths[dragState.key] = next;
+    applyWidthsLive?.();
+});
+
+document.addEventListener('mouseup', () => {
+    if (!dragState) return;
+    dragState = null;
+    document.body.classList.remove('col-resizing');
+    onWidthCommit?.();
+});
+
 // ---------- messages ----------
 
 function showMessage(text: string) {
@@ -264,7 +327,21 @@ function render(ctx: CustomChartContext) {
     const showGrandTotalRow = visualProps.showGrandTotalRow ?? false;
     const stripedRows       = visualProps.stripedRows       ?? true;
     const showGridLines     = visualProps.showGridLines     ?? true;
-    const freezeRowLabels   = visualProps.freezeRowLabels   ?? true;
+    // How many of the left label columns stay pinned while scrolling
+    // sideways. 0 = none. Contiguous from the left, like Excel freeze panes.
+    const freezeCount = Math.max(0, Math.min(
+        rowColumns.length,
+        Math.floor(Number(visualProps.freezeColumnCount ?? 1) || 0),
+    ));
+
+    // Adopt any saved widths we haven't already got locally (local drags win).
+    if (!widthsSeeded) {
+        const saved = readClientState(visualProps).widths ?? {};
+        for (const [k, v] of Object.entries(saved)) {
+            if (typeof v === 'number' && isFinite(v) && !(k in columnWidths)) columnWidths[k] = v;
+        }
+        widthsSeeded = true;
+    }
 
     const measureLabel = (c: Col) => {
         const raw = (visualProps[`measureLabel_${c.id}`] ?? '').toString().trim();
@@ -496,8 +573,14 @@ function render(ctx: CustomChartContext) {
     const table = document.createElement('table');
     table.className = 'pivot'
         + (stripedRows ? ' striped' : '')
-        + (showGridLines ? '' : ' no-grid')
-        + (freezeRowLabels ? '' : ' no-freeze');
+        + (showGridLines ? '' : ' no-grid');
+    // Column keys in visual order — drives width application and the resize
+    // handles. Row labels first, then the visible leaf columns.
+    // `leaves` is already left-to-right, so this matches the rendered order.
+    const columnKeys: string[] = [
+        ...rowColumns.map(rc => `row:${rc.id}`),
+        ...leaves.map(lf => lf.key),
+    ];
 
     // ---- header ----
     const thead = document.createElement('thead');
@@ -509,11 +592,12 @@ function render(ctx: CustomChartContext) {
     }
 
     // Row-label headers span every header row.
-    rowColumns.forEach(rc => {
+    rowColumns.forEach((rc, i) => {
         const th = document.createElement('th');
-        th.className = 'row-head';
+        th.className = 'row-head' + (i < freezeCount ? ' frozen' : '');
         th.rowSpan = totalLevels;
         th.textContent = rc.name;
+        addResizeHandle(th, `row:${rc.id}`);
         headerRows[0].appendChild(th);
     });
 
@@ -564,6 +648,9 @@ function render(ctx: CustomChartContext) {
             lbl.textContent = node.label;
             wrapEl.appendChild(lbl);
             th.appendChild(wrapEl);
+            // Only single-column headers get a resize grip — dragging a group
+            // header's edge would be ambiguous about which column it resizes.
+            if (isLeafRow) addResizeHandle(th, node.key);
             headerRows[l].appendChild(th);
         }
     }
@@ -591,7 +678,7 @@ function render(ctx: CustomChartContext) {
         const raws   = rowSortByKey.get(rKey) ?? [];
         labels.forEach((lab, i) => {
             const td = document.createElement('td');
-            td.className = 'row-label';
+            td.className = 'row-label' + (i < freezeCount ? ' frozen' : '');
             // Link columns render as the caption text hyperlinked, not the
             // raw {caption}…{/caption}https://… blob.
             const link = isDateLikeCol(rowColumns[i]) ? { href: null } : parseLinkValue(raws[i] ?? '');
@@ -632,7 +719,7 @@ function render(ctx: CustomChartContext) {
         tr.className = 'grand-total';
         rowColumns.forEach((_, i) => {
             const td = document.createElement('td');
-            td.className = 'row-label';
+            td.className = 'row-label' + (i < freezeCount ? ' frozen' : '');
             td.textContent = i === 0 ? 'Grand total' : '';
             tr.appendChild(td);
         });
@@ -672,7 +759,54 @@ function render(ctx: CustomChartContext) {
     wrap.innerHTML = '';
     wrap.appendChild(table);
 
-    applyStickyOffsets(table, freezeRowLabels ? rowColumns.length : 0, totalLevels);
+    // Apply saved/dragged widths, then pin the frozen label columns. Widths
+    // must land first: sticky left offsets are measured from real widths.
+    const applyWidths = () => {
+        const colgroupCells: HTMLElement[][] = columnKeys.map(() => []);
+        const rowLabelCount = rowColumns.length;
+        // Header: row-label headers are cells 0..n-1 of header row 0; leaf
+        // headers carry their own key, so find them by the grip we attached.
+        Array.from(table.tHead?.rows ?? []).forEach(r => {
+            Array.from(r.cells).forEach(c => {
+                const k = (c as HTMLElement).dataset.colKey;
+                if (!k) return;
+                const idx = columnKeys.indexOf(k);
+                if (idx >= 0) colgroupCells[idx].push(c as HTMLElement);
+            });
+        });
+        // Body: column index maps straight onto cell index.
+        Array.from(table.tBodies[0]?.rows ?? []).forEach(r => {
+            for (let i = 0; i < columnKeys.length && i < r.cells.length; i++) {
+                colgroupCells[i].push(r.cells[i] as HTMLElement);
+            }
+        });
+        columnKeys.forEach((k, i) => {
+            const w = columnWidths[k];
+            for (const el of colgroupCells[i]) {
+                if (w == null) {
+                    el.style.width = ''; el.style.minWidth = ''; el.style.maxWidth = '';
+                } else {
+                    const px = `${w}px`;
+                    el.style.width = px; el.style.minWidth = px; el.style.maxWidth = px;
+                }
+            }
+        });
+        void rowLabelCount;
+        applyStickyOffsets(table, freezeCount, totalLevels);
+    };
+    applyWidths();
+    applyWidthsLive = applyWidths;
+    // Persist only when a drag ends, so we don't spam the host mid-gesture.
+    onWidthCommit = () => {
+        try {
+            const next = { ...readClientState(visualProps), widths: { ...columnWidths } };
+            ctx.emitEvent(ChartToTSEvent.UpdateVisualProps, {
+                visualProps: { ...(visualProps as any), clientState: JSON.stringify(next) },
+            } as any);
+        } catch (e) {
+            console.error('[Collapsible Pivot] could not persist column widths', e);
+        }
+    };
 
     console.log('[Collapsible Pivot]', {
         rows: rowColumns.map(c => c.name),
@@ -699,7 +833,8 @@ function applyStickyOffsets(table: HTMLTableElement, rowLabelCount: number, head
         top += headRows[r].getBoundingClientRect().height;
     }
 
-    // Left offsets: measure the first body row's label cells.
+    // Left offsets: measure the first body row's label cells. Only the first
+    // `rowLabelCount` columns are frozen, so only those get a left offset.
     const firstBodyRow = table.tBodies[0]?.rows[0];
     if (!firstBodyRow) return;
     const widths: number[] = [];
@@ -869,7 +1004,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                     { key: 'numberFormat',      type: 'text',     defaultValue: '0,0.[0]a', label: 'Number format' },
                     { key: 'currency',          type: 'dropdown', defaultValue: 'None',     values: CURRENCY_OPTIONS, label: 'Currency symbol' },
                     { key: 'defaultCollapsed',  type: 'checkbox', defaultValue: false,      label: 'Start with groups collapsed' },
-                    { key: 'freezeRowLabels',   type: 'checkbox', defaultValue: true,       label: 'Freeze row label columns when scrolling' },
+                    { key: 'freezeColumnCount', type: 'number',   defaultValue: 1,          label: 'Freeze first N row label columns (0 = none)' },
                     { key: 'showRowTotals',     type: 'checkbox', defaultValue: false,      label: 'Show total column' },
                     { key: 'showGrandTotalRow', type: 'checkbox', defaultValue: false,      label: 'Show grand total row' },
                     { key: 'stripedRows',       type: 'checkbox', defaultValue: true,       label: 'Striped rows' },

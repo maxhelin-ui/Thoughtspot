@@ -67,19 +67,23 @@
             }
             /* Measure/leaf header row values line up with their numeric cells. */
             table.pivot thead th.leaf-head { text-align: right; }
-            /* Row-label header + body cells: sticky to the left edge. */
+            /* Row-label cells. Only the ones marked .frozen are pinned —
+               how many is the "Freeze first N" setting. */
             table.pivot th.row-head,
             table.pivot td.row-label {
-                position: sticky;
-                left: 0;
                 text-align: left;
                 background: #FFFFFF;
+            }
+            table.pivot th.row-head.frozen,
+            table.pivot td.row-label.frozen {
+                position: sticky;
+                left: 0;
                 z-index: 1;
             }
             table.pivot thead th.row-head {
                 background: #F7F8FA;
-                z-index: 3;
             }
+            table.pivot thead th.row-head.frozen { z-index: 3; }
             /* The corner + left columns need an opaque background so body
                cells scrolling underneath them don't show through. */
             table.pivot td.row-label { font-weight: 500; }
@@ -136,14 +140,28 @@
                 content: ' …';
                 color: #6B7280;
             }
-            /* "Freeze row label columns" off — labels scroll with the rest. */
-            table.pivot.no-freeze th.row-head,
-            table.pivot.no-freeze td.row-label { position: static; }
             /* Link cells */
             table.pivot td.row-label a { color: #2A67C8; text-decoration: none; }
             table.pivot td.row-label a:hover { text-decoration: underline; }
             /* Group headers sit above their measure columns */
             table.pivot thead th.grp-head { text-align: left; background: #EEF1F6; }
+            /* Column resize grip on the right edge of resizable headers. */
+            table.pivot thead th { position: relative; }
+            .col-resize {
+                position: absolute;
+                top: 0;
+                right: -3px;
+                width: 7px;
+                height: 100%;
+                cursor: col-resize;
+                z-index: 5;
+                user-select: none;
+            }
+            .col-resize:hover { background: #B9C0CC; }
+            body.col-resizing { cursor: col-resize; user-select: none; }
+            body.col-resizing * { cursor: col-resize !important; }
+            /* Resized cells clip rather than force the column back open. */
+            table.pivot th, table.pivot td { overflow: hidden; text-overflow: ellipsis; }
             #message {
                 display: flex;
                 align-items: center;

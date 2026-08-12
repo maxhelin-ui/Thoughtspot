@@ -41,6 +41,13 @@ const staleConfig = [{ key:'column', dimensions:[
 log('warn', `scenario = ${scenario}`);
 const groupsOn = new URLSearchParams(location.search).get('groups')==='1';
 const vprops = groupsOn ? { group1Name:'Assets', group1Size:20, group2Name:'Usage', group2Size:30, group3Name:'Engagement', group3Size:5 } : {};
+// ?saved=1 simulates reopening a saved answer that already has widths.
+if (new URLSearchParams(location.search).get('saved')==='1') {
+  vprops.clientState = JSON.stringify({ widths: { 'attr_0': 999, 'row:attr_0': 275 } });
+  log('warn','injected saved clientState: row:attr_0 = 275px');
+}
+const fc = new URLSearchParams(location.search).get('freeze');
+if (fc!=null) { vprops.freezeColumnCount = Number(fc); log('warn','freezeColumnCount='+fc); }
 if (groupsOn) log('warn','visualProps groups: Assets=20, Usage=30, Engagement=5');
 const chartModel = { columns, data: [], visualProps: vprops,
   config: { chartConfig: scenario==='stale' ? staleConfig : [] } };

@@ -78,7 +78,7 @@ With 60 measures bound that gives you *Assets* over the first 20, *Usage* over t
 | **Number format** | Numeral.js pattern, default `0,0.[0]a` (so `1.2M`). |
 | **Currency symbol** | Prefix for non-percent measures. |
 | **Start with groups collapsed** | Everything starts folded. Per-group clicks still override it. |
-| **Freeze row label columns when scrolling** | Keeps the left label columns pinned while you scroll sideways. On by default — turn off if you'd rather everything scroll together. |
+| **Freeze first N row label columns (0 = none)** | How many of the left label columns stay pinned while you scroll sideways, counted from the left. `1` by default, `0` freezes nothing. |
 | **Group N name / Group N — how many measures** | Defines a measure group; see above. |
 | **Show total column** | Adds a Total column on the right, one per measure. Totals cover **all** column groups, including collapsed/hidden ones. |
 | **Show grand total row** | Adds a totals row at the bottom. |
@@ -89,7 +89,8 @@ With 60 measures bound that gives you *Assets* over the first 20, *Usage* over t
 
 ## Good to know
 
-- **Headers and row labels stay put** when you scroll — both the header rows and the left label columns are pinned. That pinning is deliberate, not a rendering glitch; switch off **Freeze row label columns** if you don't want it.
+- **Resize any column** by dragging the right edge of its header. Widths are **saved with the answer**, so they come back next time. Group headers have no grip — drag the individual column headers underneath instead.
+- **Headers always stay put** when you scroll vertically. Left label columns are pinned too, but only the first N — see **Freeze first N row label columns**. That pinning is deliberate, not a rendering glitch.
 - **Link columns render as links.** ThoughtSpot sends these as `{caption}Name{/caption}https://…`; the cell shows just the name, hyperlinked (http/https only).
 - **Percent measures are detected from the column name** (`%`, rate, ratio, share…) and are **averaged, not summed** — five 70% values summing to 350% is meaningless. Everything else sums.
 - **Empty branches are dropped.** A column value that has no data under a particular parent won't render an empty column there.

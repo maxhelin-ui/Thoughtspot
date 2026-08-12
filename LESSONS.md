@@ -437,3 +437,30 @@ cell shows the whole URL blob. Parse with
 `/^\{caption\}([\s\S]*?)\{\/caption\}([\s\S]*)$/`, show group 1 as the text,
 and only use group 2 as an `href` when it matches `^https?://` (never emit
 `javascript:`/`data:` from cell data).
+
+## Persisting chart-local UI state (column widths, etc.) — use `clientState`
+
+Visual props the user never edits (dragged column widths, pinned state, any
+in-chart UI the chart itself mutates) belong in `visualProps.clientState`. It's
+the one key the SDK preserves across changes to `visualPropEditorDefinition`;
+everything else not listed in `persistedVisualPropKeys` gets dropped. It must
+be a STRING — `JSON.stringify` your state object.
+
+Write it back with
+`ctx.emitEvent(ChartToTSEvent.UpdateVisualProps, { visualProps: { ...current, clientState } })`.
+Spread the existing visualProps or you'll wipe the user's real settings.
+
+Pattern that works for drag-resize:
+- Keep a module-level `Record<colKey, px>` as the live source of truth; seed it
+  from `clientState` ONCE (a `seeded` flag), so a re-render can't clobber a
+  width the user just dragged.
+- Put `mousemove`/`mouseup` listeners on `document`, not the grip — the pointer
+  routinely leaves a 7px handle mid-drag.
+- Emit `UpdateVisualProps` on `mouseup` only. Emitting per `mousemove` floods
+  the host with postMessages.
+- Key columns by something stable across collapse/expand (the node's path key),
+  not by column index.
+- Apply the width to the header cell AND every body cell in that column, and
+  set `width`/`minWidth`/`maxWidth` together — with `table-layout: auto` a lone
+  `width` is only a hint and long content will force the column back open. Add
+  `overflow:hidden; text-overflow:ellipsis` so content clips instead.
