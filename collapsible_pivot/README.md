@@ -45,7 +45,7 @@ Region    | EMEA  | AMER                  |
 Segment   | ENT   | ENT   | MID   | SMB   |
 ```
 
-The single `ENT` column under EMEA now represents that whole group, and its header shows a `…` so you can tell it's standing in for more. Click again to expand.
+The single `ENT` column under EMEA now represents that whole group. The button after the group name shows **+** when it's collapsed (there's more hidden behind it) and **−** when it's open. Click to toggle.
 
 Key points:
 
@@ -90,6 +90,7 @@ With 60 measures bound that gives you *Assets* over the first 20, *Usage* over t
 ## Good to know
 
 - **Resize any column** by dragging the right edge of its header. Widths are **saved with the answer**, so they come back next time. Group headers have no grip — drag the individual column headers underneath instead.
+- **Resized headers wrap, they don't truncate.** Squeeze a column and its title flows onto a second (or third) line, staying centred. Untouched columns still size themselves to their title on one line.
 - **Headers always stay put** when you scroll vertically. Left label columns are pinned too, but only the first N — see **Freeze first N row label columns**. That pinning is deliberate, not a rendering glitch.
 - **Link columns render as links.** ThoughtSpot sends these as `{caption}Name{/caption}https://…`; the cell shows just the name, hyperlinked (http/https only).
 - **Percent measures are detected from the column name** (`%`, rate, ratio, share…) and are **averaged, not summed** — five 70% values summing to 350% is meaningless. Everything else sums.

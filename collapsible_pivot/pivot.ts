@@ -620,13 +620,21 @@ function render(ctx: CustomChartContext) {
             const wrapEl = document.createElement('span');
             wrapEl.className = 'grp';
 
+            const lbl = document.createElement('span');
+            lbl.className = 'grp-label';
+            lbl.textContent = node.label;
+            wrapEl.appendChild(lbl);
+
+            // Expand/collapse control sits AFTER the group name: "+" means
+            // there's more hidden behind this column, "−" collapses it back.
             if (node.children.length > 0) {
                 const collapsed = isCollapsed(node.key, defaultCollapsed);
                 if (collapsed) wrapEl.className = 'grp collapsed';
+                th.classList.add('grp-head');
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'chev';
-                btn.textContent = collapsed ? '▸' : '▾';
+                btn.textContent = collapsed ? '+' : '\u2212';
                 btn.title = collapsed
                     ? `Expand ${node.label} (showing its first column only)`
                     : `Collapse ${node.label}`;
@@ -642,11 +650,6 @@ function render(ctx: CustomChartContext) {
                 };
                 wrapEl.appendChild(btn);
             }
-
-            const lbl = document.createElement('span');
-            lbl.className = 'grp-label';
-            lbl.textContent = node.label;
-            wrapEl.appendChild(lbl);
             th.appendChild(wrapEl);
             // Only single-column headers get a resize grip — dragging a group
             // header's edge would be ambiguous about which column it resizes.
@@ -785,9 +788,11 @@ function render(ctx: CustomChartContext) {
             for (const el of colgroupCells[i]) {
                 if (w == null) {
                     el.style.width = ''; el.style.minWidth = ''; el.style.maxWidth = '';
+                    el.classList.remove('sized');
                 } else {
                     const px = `${w}px`;
                     el.style.width = px; el.style.minWidth = px; el.style.maxWidth = px;
+                    el.classList.add('sized');
                 }
             }
         });

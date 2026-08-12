@@ -464,3 +464,35 @@ Pattern that works for drag-resize:
   set `width`/`minWidth`/`maxWidth` together — with `table-layout: auto` a lone
   `width` is only a hint and long content will force the column back open. Add
   `overflow:hidden; text-overflow:ellipsis` so content clips instead.
+
+## Sticky table headers: three CSS traps
+
+Building a scrollable table with frozen headers/columns, these each cost a
+debugging round:
+
+1. **A later `position: relative` on the same selector silently un-sticks your
+   header.** Adding `thead th { position: relative }` so an absolutely
+   positioned resize grip has a containing block overrides the earlier
+   `position: sticky` — headers stop sticking and nothing warns you. `sticky`
+   is ALREADY a containing block for absolute children, so just delete the
+   rule. Assert on `getComputedStyle(th).position === 'sticky'`, since it looks
+   fine until you scroll.
+
+2. **Horizontal padding on the scroll container makes columns visible to the
+   left of a frozen column.** `left: 0` is relative to the scrollport, which
+   INCLUDES the container's padding, so a `padding-left: 12px` leaves a 12px
+   strip where scrolling content shows through beside the pinned cell. Put the
+   padding on the table (or the cells), never on the element that scrolls.
+
+3. **Letting every header wrap collapses a wide table.** With `white-space:
+   nowrap`, columns size to their content and the table stays wide and
+   horizontally scrollable. Switch headers to `white-space: normal` globally
+   and the browser instead shrinks all 60 columns to fit the tile, turning
+   every title into a vertical tower of letters. Apply wrapping ONLY to columns
+   with an explicit user-set width (a `.sized` class alongside the inline
+   width); leave the rest nowrap.
+
+Related: a cell that spans header rows (`rowSpan`) defaults to
+`vertical-align: middle`, so its text floats halfway down and reads as a gap
+under the group title above it. `vertical-align: bottom` puts the rowspanning
+label on the same line as the leaf column names.

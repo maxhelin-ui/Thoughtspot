@@ -37,7 +37,7 @@
                 flex: 1 1 auto;
                 min-height: 0;
                 overflow: auto;
-                padding: 0 12px 12px 12px;
+                padding: 0 0 12px 0;
                 box-sizing: border-box;
             }
             table.pivot {
@@ -55,18 +55,28 @@
                 background: #FFFFFF;
                 box-sizing: border-box;
             }
-            /* Header cells */
+            /* Header cells. Centered, and they WRAP onto extra lines when a
+               column is dragged narrow rather than truncating. vertical-align
+               bottom keeps a rowspanning label on the same line as the leaf
+               column names, so there's no gap under a group title. */
             table.pivot thead th {
                 position: sticky;
                 background: #F7F8FA;
                 font-weight: 600;
                 color: #1A1F2C;
-                text-align: left;
+                text-align: center;
+                vertical-align: bottom;
                 z-index: 2;
                 border-bottom: 1px solid #E4E6EA;
             }
-            /* Measure/leaf header row values line up with their numeric cells. */
-            table.pivot thead th.leaf-head { text-align: right; }
+            /* Group titles read better starting at the left of their span. */
+            table.pivot thead th.grp-head { text-align: left; }
+            /* Set only on columns with a user-dragged width: wrap onto more
+               lines rather than truncate when squeezed. */
+            table.pivot thead th.sized {
+                white-space: normal;
+                overflow-wrap: anywhere;
+            }
             /* Row-label cells. Only the ones marked .frozen are pinned —
                how many is the "Freeze first N" setting. */
             table.pivot th.row-head,
@@ -115,8 +125,8 @@
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                width: 16px;
-                height: 16px;
+                width: 15px;
+                height: 15px;
                 flex: 0 0 auto;
                 padding: 0;
                 border: none;
@@ -124,7 +134,8 @@
                 background: #E4E6EA;
                 color: #1A1F2C;
                 cursor: pointer;
-                font-size: 10px;
+                font-size: 13px;
+                font-weight: 700;
                 line-height: 1;
                 font-family: inherit;
                 transition: background 0.15s ease;
@@ -134,19 +145,14 @@
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
-            /* Marks a header whose group is collapsed — the visible column is
-               standing in for the whole group. */
-            .grp.collapsed .grp-label::after {
-                content: ' …';
-                color: #6B7280;
-            }
             /* Link cells */
             table.pivot td.row-label a { color: #2A67C8; text-decoration: none; }
             table.pivot td.row-label a:hover { text-decoration: underline; }
             /* Group headers sit above their measure columns */
             table.pivot thead th.grp-head { text-align: left; background: #EEF1F6; }
-            /* Column resize grip on the right edge of resizable headers. */
-            table.pivot thead th { position: relative; }
+            /* Column resize grip on the right edge of resizable headers.
+               No `position: relative` here — it would override the sticky
+               positioning above; sticky is already a containing block. */
             .col-resize {
                 position: absolute;
                 top: 0;
@@ -160,8 +166,9 @@
             .col-resize:hover { background: #B9C0CC; }
             body.col-resizing { cursor: col-resize; user-select: none; }
             body.col-resizing * { cursor: col-resize !important; }
-            /* Resized cells clip rather than force the column back open. */
-            table.pivot th, table.pivot td { overflow: hidden; text-overflow: ellipsis; }
+            /* Resized BODY cells clip rather than force the column open again.
+               Headers deliberately wrap instead (see thead rule above). */
+            table.pivot tbody td { overflow: hidden; text-overflow: ellipsis; }
             #message {
                 display: flex;
                 align-items: center;
