@@ -65,9 +65,19 @@
                 font-weight: 600;
                 color: #1A1F2C;
                 text-align: center;
-                vertical-align: bottom;
+                vertical-align: middle;
                 z-index: 2;
                 border-bottom: 1px solid #E4E6EA;
+            }
+            /* Cells that rowSpan multiple header rows (row labels, a leaf
+               header left ungrouped while its neighbours nest deeper, the
+               Total column) must bottom-align so their text sits on the same
+               line as the deepest row's leaf labels. Plain single-row
+               headers stay vertical-align:middle so squeezing a NEIGHBOURING
+               column into two lines (growing that row's height) doesn't push
+               them to the bottom of the taller row. */
+            table.pivot thead th[rowspan] {
+                vertical-align: bottom;
             }
             /* Group titles read better starting at the left of their span. */
             table.pivot thead th.grp-head { text-align: left; }
