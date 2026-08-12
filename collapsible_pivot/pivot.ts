@@ -668,16 +668,16 @@ const renderChart = async (ctx: CustomChartContext) => {
         getQueriesFromChartConfig: (chartConfig: ChartConfig[], chartModel: ChartModel): Query[] => {
             // Must return at least one query holding at least one column, or
             // the SDK validator rejects it and the chart won't load at all.
+            // No queryParams override here: asking for more rows than the
+            // chart's own advertised chartConfigParameters.batchSizeLimit
+            // (default 20000) is inconsistent, and none of the working charts
+            // in this repo set it. Let the host pick the batch size.
             const queries = (chartConfig ?? []).map(config => ({
                 queryColumns: (config?.dimensions ?? []).flatMap(d => d?.columns ?? []),
             })).filter(q => q.queryColumns.length > 0);
-            if (queries.length > 0) {
-                // Pivots fan out across the row × column cross-product, so push
-                // past the default row cap (see LESSONS.md on truncation).
-                return queries.map(q => ({ ...q, queryParams: { size: 100000 } })) as any;
-            }
+            if (queries.length > 0) return queries as Query[];
             const placeholder = chartModel?.columns?.[0];
-            return placeholder ? ([{ queryColumns: [placeholder] }] as any) : [];
+            return placeholder ? ([{ queryColumns: [placeholder] }] as Query[]) : [];
         },
         renderChart,
         chartConfigEditorDefinition: [
