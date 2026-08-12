@@ -46,6 +46,12 @@ const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
 // handful a normal chart would want.
 const MAX_MEASURES = 60;
 
+// Row attributes render as flat, side-by-side label columns on the left —
+// one column each, no hierarchy and no collapsing. (Grouping/collapsing in
+// this chart is columns-only; "no nested rows" means no row outline, not
+// "only one row attribute".)
+const MAX_ROWS = 4;
+
 // Separator for composite lookup keys. NUL can't appear in real cell
 // values, so joining/splitting on it is unambiguous (a space would not be).
 const SEP = '\u0000';
@@ -668,7 +674,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                 {
                     key: 'column',
                     dimensions: [
-                        { key: 'rows',     columns: attributes.slice(0, 1) },
+                        { key: 'rows',     columns: attributes.slice(0, MAX_ROWS) },
                         { key: 'columns',  columns: [] },
                         { key: 'measures', columns: measures.slice(0, MAX_MEASURES) },
                     ],
@@ -692,7 +698,7 @@ const renderChart = async (ctx: CustomChartContext) => {
             const measures = get('measures');
 
             if (rows.length < 1) errors.push('Bind one attribute to Rows.');
-            if (rows.length > 1) errors.push('Rows takes a single attribute.');
+            if (rows.length > MAX_ROWS) errors.push(`Rows takes at most ${MAX_ROWS} attributes.`);
             if (measures.length < 1) errors.push('Bind at least one measure to Measures.');
             for (const c of [...rows, ...colGroups]) {
                 if (typeOf(c) === ColumnType.MEASURE) {
@@ -728,7 +734,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                 key: 'column',
                 label: 'Layout',
                 descriptionText:
-                    'Rows = the left-hand labels (one attribute, flat — grouping in this chart is on columns only). Column groups = one nesting level per attribute (first = outermost); each group header can be collapsed, and a collapsed group keeps its first column visible. Measures fill the cells.',
+                    'Rows = the left-hand label columns, flat and side by side (no row grouping — grouping in this chart is on columns only). Column groups = one nesting level per attribute (first = outermost); each group header can be collapsed, and a collapsed group keeps its first column visible. Measures fill the cells. Move an attribute from Rows into Column groups to start grouping by it.',
                 columnSections: [
                     {
                         key: 'rows',
@@ -736,7 +742,7 @@ const renderChart = async (ctx: CustomChartContext) => {
                         allowAttributeColumns: true,
                         allowMeasureColumns: false,
                         allowTimeSeriesColumns: true,
-                        maxColumnCount: 1,
+                        maxColumnCount: MAX_ROWS,
                     },
                     {
                         key: 'columns',

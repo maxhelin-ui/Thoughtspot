@@ -10,11 +10,13 @@ You bind attributes to build a column hierarchy. Every group header gets a small
 
 | Zone | Max | What it's for |
 |---|---|---|
-| **Rows** | 1 | The left-hand labels — a flat list, one row per value. Rows don't group in this chart. |
+| **Rows** | 4 | The left-hand label columns, flat and side by side. Bind several and you get one row per combination — no row hierarchy, no collapsing. |
 | **Column groups (outermost first)** | 4 | One nesting level per attribute. The first one you drop is the outermost group, the next nests inside it, and so on. |
-| **Measures** | 6 | The numbers in the cells. |
+| **Measures** | 60 | The numbers in the cells. |
 
 All the grouping happens across the top. Rows stay flat.
+
+**What you see when you first pick this chart:** every attribute from your search goes into Rows and every measure into Measures — so it starts as a plain wide table of your query, with nothing grouped. To start grouping, drag an attribute out of **Rows** and into **Column groups**; its values become collapsible column headers.
 
 **Order matters** in Column groups — first = outermost. Leaving it empty is fine: you just get a flat table of measures.
 
@@ -59,23 +61,21 @@ Key points:
 | **Show grand total row** | Adds a totals row at the bottom. |
 | **Striped rows** | Alternating row shading. |
 | **Show column dividers** | Vertical grid lines. |
-| **Label: `<measure>`** | Rename a measure's column header. |
-| **Treat "`<measure>`" as a percent (averaged)** | Formats as a percent and **averages** instead of summing. Auto-ticked when the name looks like a rate/ratio/percent. |
 
 ---
 
 ## Good to know
 
 - **Headers and row labels stay put** when you scroll — both the header rows and the left label columns are pinned.
-- **Percent measures are averaged, not summed** — five 70% values summing to 350% is meaningless. Everything else sums.
+- **Percent measures are detected from the column name** (`%`, rate, ratio, share…) and are **averaged, not summed** — five 70% values summing to 350% is meaningless. Everything else sums.
 - **Empty branches are dropped.** A column value that has no data under a particular parent won't render an empty column there.
-- **Row cap** is raised to 100,000 because pivots fan out across the row × column cross-product. If totals still look low, you're hitting ThoughtSpot's truncation — reduce the number of bound attributes.
+- **Row limits** are whatever ThoughtSpot's default batch is. Pivots fan out across the row × column cross-product, so if totals look low you're hitting truncation — reduce the number of bound attributes.
 - **Debugging?** Open DevTools and search `[Collapsible Pivot]` to see the bindings, row count, visible column count, and which groups are collapsed.
 
 ---
 
 ## Limits
 
-- 1 row attribute (flat), 4 column-group levels, 6 measures.
+- 4 row attributes (flat), 4 column-group levels, 60 measures.
 - Collapse state isn't persisted into the saved chart (only the "start collapsed" default is).
 - Cells are plain values — no conditional formatting or heatmap shading.
