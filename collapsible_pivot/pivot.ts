@@ -41,6 +41,11 @@ type Col = { id: string; name: string; dataType?: DataType; timeBucket?: ColumnT
 
 const CURRENCY_OPTIONS = ['None', '$', '€', '£', '¥', '₹', 'kr'];
 
+// Searches here run to 100+ columns, and the point of this chart is to tame a
+// wide table by grouping it — so allow plenty of measures rather than the
+// handful a normal chart would want.
+const MAX_MEASURES = 60;
+
 // Separator for composite lookup keys. NUL can't appear in real cell
 // values, so joining/splitting on it is unambiguous (a space would not be).
 const SEP = '\u0000';
@@ -654,16 +659,54 @@ const renderChart = async (ctx: CustomChartContext) => {
             // "Cannot display the custom chart".
             const attributes = cols.filter((c: any) => c.type === ColumnType.ATTRIBUTE);
             const measures   = cols.filter((c: any) => c.type === ColumnType.MEASURE);
+            // Seed the way a plain table would look: the first attribute down
+            // the side and EVERY measure from the search across the top, with
+            // no grouping yet. The user then drags attributes into "Column
+            // groups" to start grouping. Seeding a single measure made a
+            // 100-column search render as one lonely column.
             return [
                 {
                     key: 'column',
                     dimensions: [
                         { key: 'rows',     columns: attributes.slice(0, 1) },
-                        { key: 'columns',  columns: attributes.slice(1, 2) },
-                        { key: 'measures', columns: measures.slice(0, 1) },
+                        { key: 'columns',  columns: [] },
+                        { key: 'measures', columns: measures.slice(0, MAX_MEASURES) },
                     ],
                 },
             ];
+        },
+        // Without this the SDK's default says "every saved config is valid",
+        // so a stale/bad config saved by an earlier build is handed straight
+        // back to the host and never repaired — the host then chokes on, say,
+        // a measure sitting in the attribute-only Rows slot. Validating here
+        // makes the SDK fall back to getDefaultChartConfig and self-heal.
+        validateConfig: (chartConfig: ChartConfig[], chartModel: ChartModel) => {
+            const dims = chartConfig?.[0]?.dimensions ?? [];
+            const get = (k: string) => (dims.find(d => d.key === k)?.columns ?? []) as Col[];
+            const byId = new Map((chartModel?.columns ?? []).map((c: any) => [c.id, c]));
+            const typeOf = (c: Col) => (byId.get(c.id) as any)?.type ?? (c as any)?.type;
+            const errors: string[] = [];
+
+            const rows     = get('rows');
+            const colGroups = get('columns');
+            const measures = get('measures');
+
+            if (rows.length < 1) errors.push('Bind one attribute to Rows.');
+            if (rows.length > 1) errors.push('Rows takes a single attribute.');
+            if (measures.length < 1) errors.push('Bind at least one measure to Measures.');
+            for (const c of [...rows, ...colGroups]) {
+                if (typeOf(c) === ColumnType.MEASURE) {
+                    errors.push(`"${c.name}" is a measure and cannot sit in Rows or Column groups.`);
+                }
+            }
+            for (const c of measures) {
+                if (typeOf(c) === ColumnType.ATTRIBUTE) {
+                    errors.push(`"${c.name}" is an attribute and cannot sit in Measures.`);
+                }
+            }
+            return errors.length
+                ? { isValid: false, validationErrorMessage: errors }
+                : { isValid: true };
         },
         getQueriesFromChartConfig: (chartConfig: ChartConfig[], chartModel: ChartModel): Query[] => {
             // Must return at least one query holding at least one column, or
@@ -709,37 +752,28 @@ const renderChart = async (ctx: CustomChartContext) => {
                         allowAttributeColumns: false,
                         allowMeasureColumns: true,
                         allowTimeSeriesColumns: false,
-                        maxColumnCount: 6,
+                        maxColumnCount: MAX_MEASURES,
                     },
                 ],
             },
         ],
-        visualPropEditorDefinition: (chartModel: ChartModel) => {
-            const dims = chartModel?.config?.chartConfig?.[0]?.dimensions ?? [];
-            const measures = (dims.find(d => d.key === 'measures')?.columns ?? []) as Col[];
-
-            const perMeasure: any[] = [];
-            measures.forEach(mc => {
-                perMeasure.push(
-                    { key: `measureLabel_${mc.id}`,     type: 'text',     defaultValue: ' ',  label: `Label: ${mc.name}` },
-                    { key: `measureAsPercent_${mc.id}`, type: 'checkbox', defaultValue: detectPercentByName(mc.name), label: `Treat "${mc.name}" as a percent (averaged)` },
-                );
-            });
-
-            return {
-                elements: [
-                    { key: 'chartTitle',        type: 'text',     defaultValue: ' ',        label: 'Title' },
-                    { key: 'numberFormat',      type: 'text',     defaultValue: '0,0.[0]a', label: 'Number format' },
-                    { key: 'currency',          type: 'dropdown', defaultValue: 'None',     values: CURRENCY_OPTIONS, label: 'Currency symbol' },
-                    { key: 'defaultCollapsed',  type: 'checkbox', defaultValue: false,      label: 'Start with column groups collapsed' },
-                    { key: 'showRowTotals',     type: 'checkbox', defaultValue: false,      label: 'Show total column' },
-                    { key: 'showGrandTotalRow', type: 'checkbox', defaultValue: false,      label: 'Show grand total row' },
-                    { key: 'stripedRows',       type: 'checkbox', defaultValue: true,       label: 'Striped rows' },
-                    { key: 'showGridLines',     type: 'checkbox', defaultValue: true,       label: 'Show column dividers' },
-                    ...perMeasure,
-                ],
-            };
-        },
+        // STATIC element list. Per LESSONS.md, varying how MANY elements this
+        // returns based on bound-column counts crashes the host — only label
+        // TEXT may vary. With up to 60 measures allowed, per-measure settings
+        // would make the count swing wildly, so there are none: percent
+        // measures are detected from the column name instead.
+        visualPropEditorDefinition: () => ({
+            elements: [
+                { key: 'chartTitle',        type: 'text',     defaultValue: ' ',        label: 'Title' },
+                { key: 'numberFormat',      type: 'text',     defaultValue: '0,0.[0]a', label: 'Number format' },
+                { key: 'currency',          type: 'dropdown', defaultValue: 'None',     values: CURRENCY_OPTIONS, label: 'Currency symbol' },
+                { key: 'defaultCollapsed',  type: 'checkbox', defaultValue: false,      label: 'Start with column groups collapsed' },
+                { key: 'showRowTotals',     type: 'checkbox', defaultValue: false,      label: 'Show total column' },
+                { key: 'showGrandTotalRow', type: 'checkbox', defaultValue: false,      label: 'Show grand total row' },
+                { key: 'stripedRows',       type: 'checkbox', defaultValue: true,       label: 'Striped rows' },
+                { key: 'showGridLines',     type: 'checkbox', defaultValue: true,       label: 'Show column dividers' },
+            ],
+        }),
     });
 
     renderChart(ctx);
