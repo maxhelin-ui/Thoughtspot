@@ -348,3 +348,43 @@ Fix: route every render call — debounced or immediate — through the same
 fallback variable is actually assigned somewhere (e.g. inside the main
 render function itself); a fallback that's declared but never written is a
 silent no-op that's easy to miss in review.
+
+## ColumnType is MEASURE=1, ATTRIBUTE=2 — never hardcode the number
+
+`getDefaultChartConfig` is a top-3 cause of "Cannot display the custom chart",
+and this is a silent way to break it. The enum is:
+
+```
+UNKNOWN = 0, MEASURE = 1, ATTRIBUTE = 2, VIRTUAL = 3
+```
+
+Filtering attributes with `c.type === 1` actually selects **measures**. If the
+default config then seeds a measure into a section declared
+`allowMeasureColumns: false` (or an attribute into a measure-only section), the
+host rejects the config at init and the chart never loads — no console error
+from your code, just the generic "Cannot display the custom chart".
+
+Always `import { ColumnType }` and compare against `ColumnType.ATTRIBUTE` /
+`ColumnType.MEASURE`. Symptom to watch for: the chart fails only on worksheets
+with a particular attribute/measure mix (it can accidentally "work" when the
+seeded columns happen to be type-compatible).
+
+## Diagnosing "Cannot display the custom chart" from outside ThoughtSpot
+
+You don't need the TS host to rule out half the causes. Against the chart's
+**production** Vercel domain:
+
+1. `curl -sD- <domain>/` — expect `200` + your HTML. A `302` to
+   `vercel.com/sso-api` plus `x-frame-options: DENY` is Deployment Protection,
+   and the iframe can never load.
+2. Grab the `<script src>` from that HTML and curl it — confirms the bundle
+   built and is being served (check for a couple of your own string literals;
+   function names are minified away).
+3. If both pass, the page is fine and the failure is SDK-side config
+   validation — look at `getDefaultChartConfig`, `getQueriesFromChartConfig`,
+   and `visualPropEditorDefinition` in that order.
+
+**Test the production domain, not the deployment URL.** Per-deployment URLs
+(`<project>-<hash>-<org>.vercel.app`) are SSO-protected by default even when
+the production domain (`<project>.vercel.app`) is wide open — testing the wrong
+one sends you chasing a Deployment Protection problem that doesn't exist.

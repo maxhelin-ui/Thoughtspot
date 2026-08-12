@@ -1,6 +1,7 @@
 import {
     ChartToTSEvent,
     ColumnTimeBucket,
+    ColumnType,
     DataType,
     getChartContext,
     CustomChartContext,
@@ -647,8 +648,12 @@ const renderChart = async (ctx: CustomChartContext) => {
     const ctx = await getChartContext({
         getDefaultChartConfig: (chartModel: ChartModel): ChartConfig[] => {
             const cols = chartModel.columns ?? [];
-            const attributes = cols.filter((c: any) => c.type === 1 || c.type === 'ATTRIBUTE');
-            const measures   = cols.filter((c: any) => !(c.type === 1 || c.type === 'ATTRIBUTE'));
+            // ColumnType is UNKNOWN=0, MEASURE=1, ATTRIBUTE=2 — use the enum,
+            // never a literal. Getting this backwards seeds a measure into the
+            // attribute-only Rows slot, which the host rejects at init with
+            // "Cannot display the custom chart".
+            const attributes = cols.filter((c: any) => c.type === ColumnType.ATTRIBUTE);
+            const measures   = cols.filter((c: any) => c.type === ColumnType.MEASURE);
             return [
                 {
                     key: 'column',
