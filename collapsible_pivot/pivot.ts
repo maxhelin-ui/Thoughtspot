@@ -72,7 +72,17 @@ const explicitExpanded = new Set<string>();
 // visualProps.clientState (the SDK's documented place for chart-local state
 // that must survive a save) and written back there when a drag finishes.
 const columnWidths: Record<string, number> = {};
-let widthsSeeded = false;
+// Canonical form of what we last handed the host, so a normal commit can skip
+// a no-op emit. NOTE: this records what we SENT, not what the host kept — so
+// the self-heal path must be able to bypass it (see `force`).
+let lastPersistedWidths = '';
+// Guards the self-heal against a host that never echoes our state back: we
+// re-assert once per distinct (host state, local state) pair, never in a loop.
+let lastReassertKey = '';
+
+function canonicalWidths(w: Record<string, number>): string {
+    return JSON.stringify(Object.keys(w).sort().map(k => [k, w[k]]));
+}
 
 const MIN_COL_PX = 48;
 
@@ -290,6 +300,9 @@ function nodesAtLevel(roots: ColNode[], level: number, defaultCollapsed: boolean
 // listeners (not element-level, so the pointer can leave the 4px grip) do the
 // rest. onCommit persists once the drag ends, never per mousemove.
 let dragState: { key: string; startX: number; startW: number } | null = null;
+// A drag ending on a group header fires a click on that header afterwards;
+// without this the resize would also collapse/expand the group.
+let suppressToggleUntil = 0;
 let onWidthCommit: (() => void) | null = null;
 let applyWidthsLive: (() => void) | null = null;
 
@@ -298,19 +311,47 @@ let applyWidthsLive: (() => void) | null = null;
 // drag ends — see the mousedown handler below for why.
 let resizeSpacer: HTMLDivElement | null = null;
 
-function addResizeHandle(th: HTMLTableCellElement, key: string) {
-    th.dataset.colKey = key;
+// `ownsColumn: false` is used for GROUP headers: the grip drags the group's
+// right-hand edge, which physically means resizing the LAST leaf column inside
+// that group — but the group's own <th> spans many columns, so it must NOT be
+// tagged with that column's key (applyWidths would then force the whole
+// spanning header to one column's width and wreck the layout).
+function addResizeHandle(
+    th: HTMLTableCellElement,
+    key: string,
+    opts?: { ownsColumn?: boolean; title?: string },
+) {
+    const ownsColumn = opts?.ownsColumn !== false;
+    if (ownsColumn) th.dataset.colKey = key;
     const grip = document.createElement('span');
     grip.className = 'col-resize';
-    grip.title = 'Drag to resize this column';
+    grip.title = opts?.title ?? 'Drag to resize this column';
     // Keep the grip from triggering the collapse button or text selection.
     grip.onmousedown = (e: MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
+        // A group grip must start from the width of the column it actually
+        // resizes, not from the spanning header's own width.
+        let startW = columnWidths[key];
+        if (startW == null) {
+            let owner: HTMLElement | null = ownsColumn ? th : null;
+            if (!owner) {
+                const table = th.closest('table') as HTMLTableElement | null;
+                for (const r of Array.from(table?.tHead?.rows ?? [])) {
+                    for (const c of Array.from(r.cells)) {
+                        if ((c as HTMLElement).dataset.colKey === key) { owner = c as HTMLElement; break; }
+                    }
+                    if (owner) break;
+                }
+            }
+            startW = (owner ?? th).getBoundingClientRect().width;
+        }
+        // Suppress the group header's click-to-collapse for this gesture.
+        suppressToggleUntil = Date.now() + 400;
         dragState = {
             key,
             startX: e.clientX,
-            startW: columnWidths[key] ?? th.getBoundingClientRect().width,
+            startW,
         };
         // Shrinking a column while scrolled near the far right would
         // otherwise shrink #tableWrap's own scrollWidth under the cursor,
@@ -341,6 +382,7 @@ document.addEventListener('mousemove', (e) => {
 document.addEventListener('mouseup', () => {
     if (!dragState) return;
     dragState = null;
+    suppressToggleUntil = Date.now() + 400;
     if (resizeSpacer) resizeSpacer.style.width = '0px';
     document.body.classList.remove('col-resizing');
     onWidthCommit?.();
@@ -397,13 +439,13 @@ function render(ctx: CustomChartContext) {
         Math.floor(Number(visualProps.freezeColumnCount ?? 1) || 0),
     ));
 
-    // Adopt any saved widths we haven't already got locally (local drags win).
-    if (!widthsSeeded) {
-        const saved = readClientState(visualProps).widths ?? {};
-        for (const [k, v] of Object.entries(saved)) {
-            if (typeof v === 'number' && isFinite(v) && !(k in columnWidths)) columnWidths[k] = v;
-        }
-        widthsSeeded = true;
+    // Adopt saved widths for any column we don't already have locally (a
+    // width the user just dragged always wins over the host's older copy).
+    // Done on EVERY render, not once: widths saved in another session can
+    // arrive on a later ChartModelUpdate.
+    const hostWidths = readClientState(visualProps).widths ?? {};
+    for (const [k, v] of Object.entries(hostWidths)) {
+        if (typeof v === 'number' && isFinite(v) && !(k in columnWidths)) columnWidths[k] = v;
     }
 
     const measureLabel = (c: Col) => {
@@ -757,12 +799,31 @@ function render(ctx: CustomChartContext) {
                 // collapse". The button stays as the visual affordance.
                 th.classList.add('grp-clickable');
                 th.title = btn.title;
-                th.onclick = toggle;
+                th.onclick = (e) => {
+                    // Ignore clicks on the resize grip, and the click that
+                    // trails the end of a resize drag.
+                    if ((e.target as HTMLElement)?.classList?.contains('col-resize')) return;
+                    if (Date.now() < suppressToggleUntil) return;
+                    toggle();
+                };
             }
             th.appendChild(wrapEl);
-            // Only single-column headers get a resize grip — dragging a group
-            // header's edge would be ambiguous about which column it resizes.
-            if (isLeafRow) addResizeHandle(th, node.key);
+            if (isLeafRow) {
+                addResizeHandle(th, node.key);
+            } else {
+                // Group headers get a grip too: it drags the group's right
+                // edge by resizing the last column inside it. When the group
+                // is collapsed that's the single visible column, which is
+                // exactly what "resize this group" should mean.
+                const vis = visibleLeaves(node, defaultCollapsed);
+                const target = vis[vis.length - 1];
+                if (target) {
+                    addResizeHandle(th, target.key, {
+                        ownsColumn: false,
+                        title: `Drag to resize ${node.label}`,
+                    });
+                }
+            }
             headerRows[l].appendChild(th);
         }
     }
@@ -917,16 +978,37 @@ function render(ctx: CustomChartContext) {
     applyWidths();
     applyWidthsLive = applyWidths;
     // Persist only when a drag ends, so we don't spam the host mid-gesture.
-    onWidthCommit = () => {
+    const commitWidths = (force = false) => {
+        const canonical = canonicalWidths(columnWidths);
+        if (!force && canonical === lastPersistedWidths) return; // nothing new to send
         try {
             const next = { ...readClientState(visualProps), widths: { ...columnWidths } };
             ctx.emitEvent(ChartToTSEvent.UpdateVisualProps, {
                 visualProps: { ...(visualProps as any), clientState: JSON.stringify(next) },
             } as any);
+            lastPersistedWidths = canonical;
         } catch (e) {
             console.error('[Collapsible Pivot] could not persist column widths', e);
         }
     };
+    onWidthCommit = commitWidths;
+
+    // Self-heal: anything that rewrites visualProps without carrying our
+    // clientState through (a settings change, say) silently drops the saved
+    // widths. If the host's copy no longer matches what we hold locally,
+    // push ours back. The canonical-string guard in commitWidths means this
+    // emits at most once per actual difference, so it can't loop.
+    if (Object.keys(columnWidths).length) {
+        const hostCanon = canonicalWidths(hostWidths);
+        const localCanon = canonicalWidths(columnWidths);
+        if (hostCanon !== localCanon) {
+            const key = `${hostCanon}|${localCanon}`;
+            if (key !== lastReassertKey) {
+                lastReassertKey = key;
+                commitWidths(true); // force: the host's copy is out of date
+            }
+        }
+    }
 
     console.log('[Collapsible Pivot]', {
         rows: rowColumns.map(c => c.name),

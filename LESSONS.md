@@ -575,3 +575,42 @@ group won't collapse". Put the click handler on the whole header cell and
 keep the button purely as the visual affordance
 (`btn.onclick = e => { e.stopPropagation(); toggle(); }` so it doesn't fire
 twice). Costs two lines, removes an entire category of "it doesn't respond".
+
+## "Sometimes my saved state doesn't stick" — re-assert, don't just write once
+
+Writing chart-local state to `visualProps.clientState` once (on the gesture
+that changed it) is not enough. Anything else that rewrites visualProps — a
+settings-panel edit, some host round-trips — can come back WITHOUT your
+clientState, silently dropping it. The user sees "it saved that time but not
+this time".
+
+Fix: on every render, compare the host's copy against your local copy and push
+yours back when they differ. Two traps doing this:
+
+1. **Don't guard the re-assert with "what I last sent".** A `lastPersisted`
+   string is right for skipping no-op writes, but the self-heal path must be
+   able to bypass it (`commit(force = true)`) — the whole point is that the
+   host does NOT have what you last sent. Guarding on it makes the self-heal
+   silently never fire, which is exactly the bug you were fixing.
+2. **Guard against a host that never echoes back**, or you emit on every
+   render forever. Key the re-assert on the PAIR `(hostState, localState)` and
+   fire once per distinct pair.
+
+Verify both halves explicitly: that it re-asserts after a simulated drop, AND
+that N further renders produce zero extra emits.
+
+## Ambiguity is not a reason to omit an affordance
+
+This chart deliberately gave resize grips only to leaf headers, reasoning that
+"dragging a group header's edge is ambiguous about which column it resizes."
+Users then reported the groups as broken — they had no way to widen a group,
+especially a collapsed one (where the group IS a single column and there's
+nothing ambiguous about it at all).
+
+Pick the sane interpretation and ship it: a group's right edge resizes the
+LAST leaf column inside it. Two details make it work:
+- Do NOT tag the spanning `<th>` with that column's key, or width-application
+  will force the whole multi-column header to one column's width.
+- A drag that ends on a clickable header fires a click afterwards. Suppress
+  the toggle for ~400ms after `mouseup`, or every resize also collapses the
+  group.

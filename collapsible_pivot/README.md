@@ -97,7 +97,7 @@ Each group slot also has a **colour** picker — pick a background colour for th
 
 ## Good to know
 
-- **Resize any column** by dragging the right edge of its header. Widths are **saved with the answer**, so they come back next time. Group headers have no grip — drag the individual column headers underneath instead.
+- **Resize any column** by dragging the right edge of its header. **Group headers can be dragged too** — that moves the group's right edge (when a group is collapsed, that's just its one visible column). Widths are **saved with the answer**, so they come back next time.
 - **Resized headers wrap, they don't truncate.** Squeeze a column and its title flows onto a second (or third) line, staying centred. Untouched columns still size themselves to their title on one line.
 - **Headers always stay put** when you scroll vertically. Left label columns are pinned too, but only the first N — see **Freeze first N row label columns**. That pinning is deliberate, not a rendering glitch.
 - **Link columns render as links.** ThoughtSpot sends these as `{caption}Name{/caption}https://…`; the cell shows just the name, hyperlinked (http/https only).
