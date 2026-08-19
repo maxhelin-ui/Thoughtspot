@@ -57,6 +57,18 @@ const MAX_ROWS = 20;
 // number — the visual-prop element COUNT has to stay static (LESSONS.md).
 const MAX_GROUPS = 8;
 
+// Inline SVG icons, not text glyphs. A font's "+"/"−"/chevron characters
+// don't sit at the visual centre of their own font box (different fonts,
+// different offsets), and inside a flex container there's no CSS lever
+// (vertical-align doesn't apply to flex children) to correct that other than
+// guessing a font-specific nudge. An SVG with a symmetric viewBox centers by
+// geometry — exact regardless of the host's font.
+const SVG_PLUS  = '<svg width="9" height="9" viewBox="0 0 9 9" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4.5 1V8M1 4.5H8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+const SVG_MINUS = '<svg width="9" height="9" viewBox="0 0 9 9" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1 4.5H8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+// Same 9x9 grid and stroke as +/− above, so the sort chevron sits on the
+// exact same visual baseline as the collapse icon. .asc rotates it 180°.
+const SVG_CHEVRON = '<svg width="9" height="9" viewBox="0 0 9 9" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M2 3.5L4.5 6L7 3.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
 // Separator for composite lookup keys. NUL can't appear in real cell
 // values, so joining/splitting on it is unambiguous (a space would not be).
 const SEP = '\u0000';
@@ -67,6 +79,11 @@ const SEP = '\u0000';
 // clicks win.
 const explicitCollapsed = new Set<string>();
 const explicitExpanded = new Set<string>();
+
+// Interactive per-column sort. EPHEMERAL — like collapse state, this lives
+// only for the page's lifetime and is never written to clientState/visualProps.
+// Any viewer can click a column's sort arrow; reloading the page resets it.
+let activeSort: { key: string; dir: 'asc' | 'desc' } | null = null;
 
 // User-dragged column widths, keyed by a stable per-column key. Seeded from
 // visualProps.clientState (the SDK's documented place for chart-local state
@@ -311,6 +328,36 @@ let applyWidthsLive: (() => void) | null = null;
 // drag ends — see the mousedown handler below for why.
 let resizeSpacer: HTMLDivElement | null = null;
 
+// Per-column sort arrow — on every row-label header and every LEAF measure
+// header, never on a group header (grouping and sorting are independent).
+// Idle: small muted down-chevron, same on every column. Click once: sorts
+// that column descending (arrow turns solid, points down). Click the SAME
+// arrow again: flips to ascending (arrow points up). Click again: back to
+// descending — it only ever toggles between the two once active. Clicking a
+// DIFFERENT column's arrow makes that the new active sort at descending.
+function addSortHandle(container: HTMLElement, key: string, rerender: () => void) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'sort-btn';
+    btn.innerHTML = SVG_CHEVRON;
+    const isActive = activeSort?.key === key;
+    if (isActive) {
+        btn.classList.add('active');
+        if (activeSort!.dir === 'asc') btn.classList.add('asc');
+    }
+    btn.title = isActive
+        ? (activeSort!.dir === 'desc' ? 'Sorted highest to lowest — click for lowest to highest' : 'Sorted lowest to highest — click for highest to lowest')
+        : 'Sort by this column';
+    btn.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const cur = activeSort?.key === key ? activeSort!.dir : null;
+        activeSort = { key, dir: cur === 'desc' ? 'asc' : 'desc' };
+        rerender();
+    };
+    container.appendChild(btn);
+}
+
 // `ownsColumn: false` is used for GROUP headers: the grip drags the group's
 // right-hand edge, which physically means resizing the LAST leaf column inside
 // that group — but the group's own <th> spans many columns, so it must NOT be
@@ -542,19 +589,10 @@ function render(ctx: CustomChartContext) {
         return reduce(totalSums.get(k), totalCounts.get(k) ?? 0, mc);
     };
 
-    // ---- sort rows ----
-    rowKeys.sort((a, b) => {
-        const av = rowSortByKey.get(a)!;
-        const bv = rowSortByKey.get(b)!;
-        for (let i = 0; i < av.length; i++) {
-            const col = rowColumns[i];
-            const cmp = isDateLikeCol(col)
-                ? (Number(av[i]) || 0) - (Number(bv[i]) || 0)
-                : naturalCompare(av[i], bv[i]);
-            if (cmp !== 0) return cmp;
-        }
-        return 0;
-    });
+    // Row sorting happens further down (after `leaves`/`leafMeasure` exist —
+    // an interactive sort can target either a row-label attribute or a
+    // specific rendered measure column, and resolving the latter needs the
+    // column tree built first).
 
     // ---- build the column tree ----
     const sortedLevelValues = levelValues.map((set, i) => {
@@ -702,6 +740,65 @@ function render(ctx: CustomChartContext) {
     const leafMeasure = (leaf: ColNode) =>
         measureColumns.find(m => m.id === leaf.measureId) ?? measureColumns[0];
 
+    // ---- sort rows ----
+    // Entirely on-chart: click a column's arrow to sort by it. `activeSort`
+    // is a plain module variable, so it's naturally gone on reload — no
+    // settings, no persistence, every viewer sorts their own view.
+
+    // Resolve a row's value for a given sort key — either a row-label
+    // attribute (raw value from that row's own columns) or a specific
+    // rendered leaf column (its computed measure value at that column's own
+    // path, so sorting "by this column" means exactly what's displayed in
+    // it, not some aggregate across other groups).
+    const rowColIndexByKey = new Map(rowColumns.map((c, i) => [`row:${c.id}`, i]));
+    const leafByKey = new Map(leaves.map(l => [l.key, l]));
+    function sortValueFor(rKey: string, key: string): { num: number | null; str: string } {
+        const rowIdx = rowColIndexByKey.get(key);
+        if (rowIdx != null) {
+            const raw = (rowSortByKey.get(rKey) ?? [])[rowIdx] ?? '';
+            return { num: toNumber(raw), str: raw };
+        }
+        const leaf = leafByKey.get(key);
+        if (leaf) {
+            const v = valueAt(rKey, leaf.pathKey, leafMeasure(leaf));
+            return { num: v, str: v == null ? '' : String(v) };
+        }
+        return { num: null, str: '' };
+    }
+
+    if (activeSort) {
+        const { key, dir } = activeSort;
+        const mult = dir === 'asc' ? 1 : -1;
+        const isDateCol = rowColIndexByKey.has(key) && isDateLikeCol(rowColumns[rowColIndexByKey.get(key)!]);
+        rowKeys.sort((a, b) => {
+            const va = sortValueFor(a, key);
+            const vb = sortValueFor(b, key);
+            // Missing values always sink to the bottom, in either direction —
+            // "highest first" shouldn't mean blanks lead.
+            if (va.num == null && vb.num == null && va.str === '' && vb.str === '') return 0;
+            if (va.str === '' && va.num == null) return 1;
+            if (vb.str === '' && vb.num == null) return -1;
+            if (isDateCol) return ((Number(va.str) || 0) - (Number(vb.str) || 0)) * mult;
+            if (va.num != null && vb.num != null) return (va.num - vb.num) * mult;
+            return naturalCompare(va.str, vb.str) * mult;
+        });
+    } else {
+        // No active sort: natural order — by each row attribute, in the
+        // order the Rows columns are bound.
+        rowKeys.sort((a, b) => {
+            const av = rowSortByKey.get(a)!;
+            const bv = rowSortByKey.get(b)!;
+            for (let i = 0; i < av.length; i++) {
+                const col = rowColumns[i];
+                const cmp = isDateLikeCol(col)
+                    ? (Number(av[i]) || 0) - (Number(bv[i]) || 0)
+                    : naturalCompare(av[i], bv[i]);
+                if (cmp !== 0) return cmp;
+            }
+            return 0;
+        });
+    }
+
     // ---- build the DOM ----
     const titleEl = document.getElementById('chartTitle');
     if (titleEl) {
@@ -735,7 +832,14 @@ function render(ctx: CustomChartContext) {
         const th = document.createElement('th');
         th.className = 'row-head' + (i < freezeCount ? ' frozen' : '');
         th.rowSpan = totalLevels;
-        th.textContent = rc.name;
+        const wrapEl = document.createElement('span');
+        wrapEl.className = 'grp';
+        const lbl = document.createElement('span');
+        lbl.className = 'grp-label';
+        lbl.textContent = rc.name;
+        wrapEl.appendChild(lbl);
+        addSortHandle(wrapEl, `row:${rc.id}`, () => render(ctx));
+        th.appendChild(wrapEl);
         addResizeHandle(th, `row:${rc.id}`);
         headerRows[0].appendChild(th);
     });
@@ -787,7 +891,7 @@ function render(ctx: CustomChartContext) {
                 const btn = document.createElement('button');
                 btn.type = 'button';
                 btn.className = 'chev';
-                btn.textContent = collapsed ? '+' : '\u2212';
+                btn.innerHTML = collapsed ? SVG_PLUS : SVG_MINUS;
                 btn.title = collapsed
                     ? `Expand ${node.label} (showing its first column only)`
                     : `Collapse ${node.label}`;
@@ -807,6 +911,9 @@ function render(ctx: CustomChartContext) {
                     toggle();
                 };
             }
+            // Sort arrow on leaf columns only — never on a group header,
+            // which already uses its click area to collapse/expand.
+            if (isLeafRow) addSortHandle(wrapEl, node.key, () => render(ctx));
             th.appendChild(wrapEl);
             if (isLeafRow) {
                 addResizeHandle(th, node.key);

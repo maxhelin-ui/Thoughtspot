@@ -76,6 +76,21 @@ Each group slot also has a **colour** picker — pick a background colour for th
 
 ---
 
+## Sorting rows
+
+Every **row label** column and every **leaf measure** column has a small sort arrow after its name (group headers don't — sorting and grouping are independent). Click it:
+
+- **First click** sorts by that column, highest to lowest, and the arrow turns solid.
+- **Click the same arrow again** to flip to lowest to highest — the arrow flips to point the other way.
+- **Click again** to flip back. It only ever toggles between the two once a column is active.
+- **Click a different column's arrow** and that becomes the new sort; the previous column's arrow goes back to idle.
+
+Sorting a specific column sorts by exactly what's shown in that column — if it's a measure under a collapsed or specific group, the sort uses that column's own values, not a total across all groups.
+
+**This is entirely in the chart, for whoever's looking at it.** There's no setting for a default sort — anyone viewing can click any column's arrow to reorder for themselves, and reloading the page always goes back to the normal default order (rows sorted by whatever's bound to Rows).
+
+---
+
 ## Settings
 
 | Setting | What it does |

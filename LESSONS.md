@@ -614,3 +614,28 @@ LAST leaf column inside it. Two details make it work:
 - A drag that ends on a clickable header fires a click afterwards. Suppress
   the toggle for ~400ms after `mouseup`, or every resize also collapses the
   group.
+
+## Use SVG icons, not text glyphs like "+" / "−" / "▾", for anything that must be pixel-centered
+
+A `+`/`−`/chevron rendered as a font character doesn't sit at the visual
+centre of its own font-metrics box — different fonts put different amounts of
+"ink" above vs below the baseline (a `+` typically has zero descender, so it
+visually floats high in a normal line box). Inside a flex container this is
+un-fixable by CSS alone: `vertical-align` has no effect on flex children, so
+the only lever is `align-items` (centers box heights, not glyph ink) or a
+manual `padding`/`transform` nudge tuned to one specific font. That nudge
+breaks the moment the host renders in a different font than whatever you
+tested with — and a custom corporate webfont (this repo's `Optimo-Plain`)
+usually isn't loadable in a local dev/test harness at all, so you can't even
+verify the nudge before shipping it.
+
+Fix: use a small inline SVG (`stroke="currentColor"` so it still inherits the
+button's color) with a symmetric viewBox — a plus is two centered strokes, a
+chevron is a centered V. It centers by geometry, which is exact in every font
+on every host, with zero tuning. Costs a few lines of SVG path data, and
+permanently removes an entire category of "recenter this pixel" back-and-forth
+with a user who can see a font you can't.
+
+## Don't let a shared header-icon style undermine a color-contrast feature
+
+When a header can have a custom background color (a colorpicker `contrastTextColor` feature), an icon SITTING ON A FIXED-COLOR BADGE inside that header should generally keep the badge's own fixed contrast (dark icon on a light-grey pill stays dark regardless of the header behind it) — it's a self-contained control, not text painted directly on the header background. Before "fixing" an icon that looks like it isn't inheriting the header's dynamic text color, check what it's actually sitting on: if it has its own background, forcing it to inherit would make it invisible against ITS OWN box, not more readable.

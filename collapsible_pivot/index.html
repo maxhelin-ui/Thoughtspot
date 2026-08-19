@@ -143,10 +143,18 @@
                 gap: 6px;
                 max-width: 100%;
             }
+            /* The +/− and sort-arrow icons are inline SVG, not text glyphs.
+               A font's "+" character has no descender, so centering it by
+               font/line-height metrics (the only lever available inside a
+               flex box — vertical-align doesn't apply there) always leaves a
+               small, font-dependent, unfixable-by-guessing offset. An SVG
+               with a symmetric viewBox centers by geometry instead — exact
+               in any font, on any host, with no per-font tuning. */
             button.chev {
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
+                box-sizing: border-box;
                 width: 15px;
                 height: 15px;
                 flex: 0 0 auto;
@@ -156,17 +164,38 @@
                 background: #E4E6EA;
                 color: #1A1F2C;
                 cursor: pointer;
-                font-size: 13px;
-                font-weight: 700;
-                line-height: 1;
-                font-family: inherit;
                 transition: background 0.15s ease;
             }
+            button.chev svg { display: block; }
             button.chev:hover { background: #D3D6DC; }
             .grp-label {
                 overflow: hidden;
                 text-overflow: ellipsis;
             }
+            /* Per-column sort arrow. Idle = small muted down-chevron on every
+               sortable header. Active = solid/dark; .asc flips it to point up
+               (a CSS rotate, not a different glyph, so it stays pixel-aligned
+               with the idle state). */
+            button.sort-btn {
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                flex: 0 0 auto;
+                width: 12px;
+                height: 12px;
+                padding: 0;
+                margin: 0;
+                border: none;
+                background: none;
+                cursor: pointer;
+                color: #1A1F2C;
+                opacity: 0.32;
+                transition: opacity 0.15s ease, transform 0.15s ease;
+            }
+            button.sort-btn svg { display: block; }
+            button.sort-btn:hover { opacity: 0.65; }
+            button.sort-btn.active { opacity: 1; color: #534AB7; }
+            button.sort-btn.active.asc { transform: rotate(180deg); }
             /* Link cells */
             table.pivot td.row-label a { color: #2A67C8; text-decoration: none; }
             table.pivot td.row-label a:hover { text-decoration: underline; }
