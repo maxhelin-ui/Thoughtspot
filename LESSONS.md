@@ -496,3 +496,56 @@ Related: a cell that spans header rows (`rowSpan`) defaults to
 `vertical-align: middle`, so its text floats halfway down and reads as a gap
 under the group title above it. `vertical-align: bottom` puts the rowspanning
 label on the same line as the leaf column names.
+
+## Reordering columns within ONE multi-column config section doesn't work
+
+If a chart lets a section hold several columns (e.g. `maxColumnCount: 4`) and
+the user needs to control their ORDER, don't rely on drag-to-reorder within
+that one section — in the ThoughtSpot layout panel it visibly bounces the
+chip back to its original position.
+
+This is NOT something `validateConfig` rejects — proved by sending a
+genuinely reordered `ChartConfigValidate` payload through a harness: the
+chart's own `isValid` came back `true`, and `GetDataQuery` preserved the new
+order correctly. The bounce-back happens in the host UI before the chart is
+even asked. So don't debug it by staring at your own SDK callbacks — verify
+first (harness test), then treat it as a host limitation.
+
+**Working fix**: split the single multi-column section into N separate
+single-column sections (`row1`, `row2`, `row3`, `row4`, each
+`maxColumnCount: 1`), matching the pattern already used elsewhere in this
+repo for ordered slots (e.g. kpi_detailed's "Primary value 1/2/3/4"). Now
+reordering is "drag into a *different* slot," which is an ordinary
+cross-section drag and works fine. Combine the slots back into one ordered
+array in code: `for (i=1..N) out.push(dims.find(d => d.key === \`row${i}\`)?.columns?.[0])`,
+skipping empty slots.
+
+## A resize/drag grip that overflows into a sibling cell gets covered by it
+
+Positioning a drag handle at `right: -3px` so it visually sits ON a cell
+border (straddling into the next `<td>`/`<th>`) breaks unpredictably once
+BOTH cells are `position: sticky` (or otherwise separately stacked): each
+sticky element is its OWN stacking context, so the grip's local `z-index`
+only wins comparisons against siblings inside its OWN cell — it can't
+out-rank the next cell's entire stacking context, which (being later in DOM
+order) paints over the overflowing sliver regardless of the grip's z-index.
+
+Symptom is exactly this confusing: the very LAST column in a row has no
+sibling to be covered by, so it resizes fine; every other boundary is
+unreliable depending on precisely where in the sliver you click — which
+reads as "some columns work, some don't," not "resizing is broken."
+
+Fix: keep the grip **fully inside its own cell's box** (`right: 0`, not
+negative). No cross-cell stacking-context comparison needed once the
+grip never leaves the cell it belongs to.
+
+## Silent truncation reads as "the setting isn't working"
+
+If a numeric setting can request more than's actually available (a measure
+group asking for 51 columns when only 20 are bound, a page size bigger than
+the row count, etc.), NEVER just quietly clamp it. From the user's side that
+looks identical to a broken setting — nothing on screen indicates why 51
+became 20. Show the shortfall directly where the result renders, e.g. a
+group header reading `"Assets (20 of 51)"`, and log the requested vs. actual
+counts in the diagnostic console output. Costs one string template; saves a
+support round-trip every time someone hits the limit.

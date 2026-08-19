@@ -171,12 +171,23 @@
             table.pivot thead th.grp-head { text-align: left; background: #EEF1F6; }
             /* Column resize grip on the right edge of resizable headers.
                No `position: relative` here — it would override the sticky
-               positioning above; sticky is already a containing block. */
+               positioning above; sticky is already a containing block.
+               `right: 0` keeps the grip FULLY INSIDE its own <th> — every
+               header cell here is `position: sticky`, which makes each one
+               its own stacking context, so an earlier attempt that let the
+               grip overflow 3px into the NEXT cell got silently painted over
+               by that next (later-in-DOM) sticky cell regardless of the
+               grip's own z-index (z-index only wins within the SAME stacking
+               context; it can't out-rank a whole sibling context). That
+               made resizing unreliable at every column boundary, worst at
+               group edges where the neighbour is guaranteed to be a
+               differently-styled <th>. Staying inside the cell's own box
+               sidesteps the cross-context comparison entirely. */
             .col-resize {
                 position: absolute;
                 top: 0;
-                right: -3px;
-                width: 7px;
+                right: 0;
+                width: 6px;
                 height: 100%;
                 cursor: col-resize;
                 z-index: 5;

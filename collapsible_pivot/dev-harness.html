@@ -34,13 +34,15 @@ log('warn', `harness: chartModel has ${columns.length} columns (${NATTR} attribu
 // and an ATTRIBUTE in the measure-only "measures" slot.
 const scenario = new URLSearchParams(location.search).get('scenario') || 'fresh';
 const staleConfig = [{ key:'column', dimensions:[
-  { key:'rows',     columns:[ columns[NATTR] ] },   // a measure -> attribute-only slot
+  { key:'row1',     columns:[ columns[NATTR] ] },   // a measure -> attribute-only slot
   { key:'columns',  columns:[] },
   { key:'measures', columns:[ columns[0] ] },   // attribute -> measure-only slot
 ]}];
 log('warn', `scenario = ${scenario}`);
 const groupsOn = new URLSearchParams(location.search).get('groups')==='1';
-const vprops = groupsOn ? { group1Name:'Assets', group1Size:20, group2Name:'Usage', group2Size:30, group3Name:'Engagement', group3Size:5 } : {};
+const g1size = Number(new URLSearchParams(location.search).get('g1size') || 20);
+const vprops = groupsOn ? { group1Name:'Assets', group1Size:g1size, group2Name:'Usage', group2Size:30, group3Name:'Engagement', group3Size:5 } : {};
+if (groupsOn) log('warn', `group1Size override = ${g1size}`);
 // ?saved=1 simulates reopening a saved answer that already has widths.
 if (new URLSearchParams(location.search).get('saved')==='1') {
   vprops.clientState = JSON.stringify({ widths: { 'attr_0': 999, 'row:attr_0': 275 } });
