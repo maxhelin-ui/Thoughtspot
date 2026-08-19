@@ -195,20 +195,15 @@ type DataModel = {
     dataArr: DataPointsArray;
 };
 
-// Row order uses MAX_ROWS separate single-column slots (row1..row4) instead
-// of one multi-column "rows" slot. ThoughtSpot's layout panel doesn't support
-// dragging to reorder chips within a single multi-column section (confirmed:
-// our own validateConfig/getQueriesFromChartConfig happily accept a reordered
-// payload — the drag itself bounces back in the host UI before it ever
-// reaches the chart). With one column per slot, changing the order means
-// dragging a column into a DIFFERENT slot, which works fine.
+// Rows is ONE multi-column section. An attempt to split it into four
+// single-column slots (row1..row4) — so that reordering could be done by
+// dragging between slots — broke the chart with "cannot display" for any
+// answer that already had a config saved against the old `rows` key. The
+// local fake-host harness could not catch it (it doesn't enforce the host's
+// own config validation), so this stays as-is until that can be verified
+// against a real ThoughtSpot instance. See LESSONS.md.
 function getRowColumns(dims: ChartConfig['dimensions']): Col[] {
-    const out: Col[] = [];
-    for (let i = 1; i <= MAX_ROWS; i++) {
-        const c = dims?.find(d => d.key === `row${i}`)?.columns?.[0];
-        if (c) out.push(c as Col);
-    }
-    return out;
+    return (dims?.find(d => d.key === 'rows')?.columns ?? []) as Col[];
 }
 
 function getDataModel(chartModel: ChartModel): DataModel {
@@ -1010,15 +1005,11 @@ const renderChart = async (ctx: CustomChartContext) => {
             // no grouping yet. The user then drags attributes into "Column
             // groups" to start grouping. Seeding a single measure made a
             // 100-column search render as one lonely column.
-            const rowSlots = Array.from({ length: MAX_ROWS }, (_, i) => ({
-                key: `row${i + 1}`,
-                columns: attributes[i] ? [attributes[i]] : [],
-            }));
             return [
                 {
                     key: 'column',
                     dimensions: [
-                        ...rowSlots,
+                        { key: 'rows',     columns: attributes.slice(0, MAX_ROWS) },
                         { key: 'columns',  columns: [] },
                         { key: 'measures', columns: measures.slice(0, MAX_MEASURES) },
                     ],
@@ -1041,7 +1032,8 @@ const renderChart = async (ctx: CustomChartContext) => {
             const colGroups = get('columns');
             const measures = get('measures');
 
-            if (rows.length < 1) errors.push('Bind an attribute to at least Row 1.');
+            if (rows.length < 1) errors.push('Bind at least one attribute to Rows.');
+            if (rows.length > MAX_ROWS) errors.push(`Rows takes at most ${MAX_ROWS} attributes.`);
             if (measures.length < 1) errors.push('Bind at least one measure to Measures.');
             for (const c of [...rows, ...colGroups]) {
                 if (typeOf(c) === ColumnType.MEASURE) {
@@ -1077,20 +1069,16 @@ const renderChart = async (ctx: CustomChartContext) => {
                 key: 'column',
                 label: 'Layout',
                 descriptionText:
-                    'Row 1..4 = the left-hand label columns, flat and side by side, left to right in that order (no row grouping — grouping in this chart is on columns only). To reorder them, drag a column into a different Row N slot — the layout panel doesn\'t support drag-reordering within one slot. Column groups = one nesting level per attribute (first = outermost); each group header can be collapsed, and a collapsed group keeps its first column visible. Measures fill the cells.',
+                    'Rows = the left-hand label columns, flat and side by side (no row grouping — grouping in this chart is on columns only). Column groups = one nesting level per attribute (first = outermost); each group header can be collapsed, and a collapsed group keeps its first column visible. Measures fill the cells. Move an attribute from Rows into Column groups to start grouping by it.',
                 columnSections: [
-                    // One column per slot (not one 4-wide "Rows" section) so
-                    // reordering is "drag into a different slot" — dragging to
-                    // reorder chips WITHIN a single multi-column section
-                    // bounces back in the ThoughtSpot layout panel.
-                    ...Array.from({ length: MAX_ROWS }, (_, i) => ({
-                        key: `row${i + 1}`,
-                        label: `Row ${i + 1}`,
+                    {
+                        key: 'rows',
+                        label: 'Rows',
                         allowAttributeColumns: true,
                         allowMeasureColumns: false,
                         allowTimeSeriesColumns: true,
-                        maxColumnCount: 1,
-                    })),
+                        maxColumnCount: MAX_ROWS,
+                    },
                     {
                         key: 'columns',
                         label: 'Column groups (outermost first)',

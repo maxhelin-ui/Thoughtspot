@@ -15,15 +15,15 @@ There are **two independent ways to group columns**, and you can use either or b
 
 | Zone | Max | What it's for |
 |---|---|---|
-| **Row 1 / Row 2 / Row 3 / Row 4** | 1 each | The left-hand label columns, flat and side by side, left to right in that slot order. Bind 1–4 of them — no row hierarchy, no collapsing. |
+| **Rows** | 4 | The left-hand label columns, flat and side by side. Bind several and you get one row per combination — no row hierarchy, no collapsing. |
 | **Column groups (outermost first)** | 4 | One nesting level per attribute. The first one you drop is the outermost group, the next nests inside it, and so on. |
 | **Measures** | 200 | The numbers in the cells. |
 
 All the grouping happens across the top. Rows stay flat.
 
-**What you see when you first pick this chart:** your first four attributes go into Row 1–4 (in that order) and every measure into Measures — so it starts as a plain wide table of your query, with nothing grouped. To start grouping by an attribute's values, drag it out of a Row slot and into **Column groups**.
+**What you see when you first pick this chart:** every attribute from your search goes into Rows and every measure into Measures — so it starts as a plain wide table of your query, with nothing grouped. To start grouping by an attribute's values, drag it out of **Rows** and into **Column groups**.
 
-**To reorder the row label columns**, drag a column into a *different* Row N slot — e.g. drag Row 2's column into Row 1 to swap them. Dragging within a single slot to reorder isn't supported by the layout panel, which is why Rows is four separate one-column slots instead of one four-column slot.
+**Reordering the row label columns is a known limitation.** ThoughtSpot's layout panel won't let you drag to reorder chips inside a single slot — the chip springs back. For now the workaround is to remove the columns from **Rows** and re-add them in the order you want. (Splitting Rows into four separate one-column slots does fix the reordering, but it breaks any chart that already has a saved config, so it's parked until it can be tested against a real instance.)
 
 **Order matters** in Column groups — first = outermost. Leaving it empty is fine, and is the common case: most grouping here is done with **measure groups** in the settings instead.
 

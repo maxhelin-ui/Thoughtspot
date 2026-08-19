@@ -497,28 +497,31 @@ Related: a cell that spans header rows (`rowSpan`) defaults to
 under the group title above it. `vertical-align: bottom` puts the rowspanning
 label on the same line as the leaf column names.
 
-## Reordering columns within ONE multi-column config section doesn't work
+## Reordering columns within ONE multi-column config section — and why the fix is NOT free
 
-If a chart lets a section hold several columns (e.g. `maxColumnCount: 4`) and
-the user needs to control their ORDER, don't rely on drag-to-reorder within
-that one section — in the ThoughtSpot layout panel it visibly bounces the
-chip back to its original position.
+Drag-to-reorder chips inside a single multi-column section (`maxColumnCount: 4`)
+does not work in the ThoughtSpot layout panel; the chip springs back. This is
+NOT your `validateConfig` rejecting it — proved with a harness by sending a
+genuinely reordered `ChartConfigValidate` payload: `isValid` came back `true`
+and `GetDataQuery` preserved the new order. The bounce happens in the host UI
+before the chart is consulted.
 
-This is NOT something `validateConfig` rejects — proved by sending a
-genuinely reordered `ChartConfigValidate` payload through a harness: the
-chart's own `isValid` came back `true`, and `GetDataQuery` preserved the new
-order correctly. The bounce-back happens in the host UI before the chart is
-even asked. So don't debug it by staring at your own SDK callbacks — verify
-first (harness test), then treat it as a host limitation.
+The obvious fix — split the section into N single-column sections (`row1`..
+`row4`) — **breaks every chart that already has a config saved against the old
+key**, with "Cannot display the custom chart". Changing a `columnSections` key
+orphans the saved config's dimension key, and the host rejects it at init even
+though `validateConfig` returns `isValid:false` and a valid replacement from
+`getDefaultChartConfig`. A local fake-host harness will NOT catch this: the
+harness doesn't run ThoughtSpot's own config validation, so init succeeds and
+the chart renders perfectly in the harness while failing in the product.
 
-**Working fix**: split the single multi-column section into N separate
-single-column sections (`row1`, `row2`, `row3`, `row4`, each
-`maxColumnCount: 1`), matching the pattern already used elsewhere in this
-repo for ordered slots (e.g. kpi_detailed's "Primary value 1/2/3/4"). Now
-reordering is "drag into a *different* slot," which is an ordinary
-cross-section drag and works fine. Combine the slots back into one ordered
-array in code: `for (i=1..N) out.push(dims.find(d => d.key === \`row${i}\`)?.columns?.[0])`,
-skipping empty slots.
+Takeaways:
+- **Renaming/splitting a `columnSections` key is a BREAKING change** for saved
+  answers. Treat it like a schema migration, not a UI tweak.
+- The harness verifies YOUR code, not the host's validation. Anything that
+  changes the config *shape* still needs a real-instance test before shipping.
+- Ship shape changes on their own, never bundled with unrelated fixes, so a
+  revert doesn't take working fixes down with it.
 
 ## A resize/drag grip that overflows into a sibling cell gets covered by it
 

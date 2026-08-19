@@ -38,6 +38,13 @@ const staleConfig = [{ key:'column', dimensions:[
   { key:'columns',  columns:[] },
   { key:'measures', columns:[ columns[0] ] },   // attribute -> measure-only slot
 ]}];
+// ?scenario=oldrows = the config ALREADY SAVED on the user's chart by the
+// previous build, which used a single multi-column `rows` dimension.
+const oldRowsConfig = [{ key:'column', dimensions:[
+  { key:'rows',     columns: columns.slice(0, NATTR) },
+  { key:'columns',  columns:[] },
+  { key:'measures', columns: columns.slice(NATTR, NATTR+10) },
+]}];
 log('warn', `scenario = ${scenario}`);
 const groupsOn = new URLSearchParams(location.search).get('groups')==='1';
 const g1size = Number(new URLSearchParams(location.search).get('g1size') || 20);
@@ -58,7 +65,7 @@ if (new URLSearchParams(location.search).get('colors')==='1') {
 const bulk = new URLSearchParams(location.search).get('bulk');
 if (bulk) { vprops.groupsBulkAction = bulk==='collapse' ? 'Collapse all' : 'Expand all'; log('warn','groupsBulkAction='+vprops.groupsBulkAction); }
 const chartModel = { columns, data: [], visualProps: vprops,
-  config: { chartConfig: scenario==='stale' ? staleConfig : [] } };
+  config: { chartConfig: scenario==='stale' ? staleConfig : scenario==='oldrows' ? oldRowsConfig : [] } };
 
 const frame = document.getElementById('frame');
 let componentId = 'harness-1';
@@ -153,7 +160,12 @@ frame.onload = async () => {
       const row=qcols.map((id,i)=> i<attrVals.length && /^attr_/.test(qcols[i]) ? attrVals[i] : Math.round(Math.random()*2000));
       dataValue.push(row);
     }
-    const withData = { ...chartModel, visualProps: vprops, config:{chartConfig:init.defaultChartConfig},
+    // Use the EFFECTIVE config: the chart's default when it rejected the saved
+    // one, otherwise the saved config itself. (Blindly using defaultChartConfig
+    // sends an empty config whenever the saved one was accepted.)
+    const effectiveCfg = (init.defaultChartConfig && init.defaultChartConfig.length)
+      ? init.defaultChartConfig : chartModel.config.chartConfig;
+    const withData = { ...chartModel, visualProps: vprops, config:{chartConfig:effectiveCfg},
       data:[{ data:{ columns:qcols, dataValue } }] };
     log('ev','-> ChartModelUpdate (with data)');
     await send('ChartModelUpdate', { chartModel: withData });
