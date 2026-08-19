@@ -90,6 +90,9 @@
             }
             /* Group titles read better starting at the left of their span. */
             table.pivot thead th.grp-head { text-align: left; }
+            /* Whole group header is the collapse/expand hit target. */
+            table.pivot thead th.grp-clickable { cursor: pointer; }
+            table.pivot thead th.grp-clickable:hover .chev { background: #C4C9D2; }
             /* Set only on columns with a user-dragged width: wrap onto more
                lines rather than truncate when squeezed. */
             table.pivot thead th.sized {

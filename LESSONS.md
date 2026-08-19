@@ -552,3 +552,26 @@ became 20. Show the shortfall directly where the result renders, e.g. a
 group header reading `"Assets (20 of 51)"`, and log the requested vs. actual
 counts in the diagnostic console output. Costs one string template; saves a
 support round-trip every time someone hits the limit.
+
+## A nearly-full config section silently refuses drag-reorder
+
+If users report they can reorder chips in one multi-column section but NOT
+another, compare the sections' `maxColumnCount` before assuming it's a host
+bug. A section at (or close to) capacity rejects the drop that a reorder is
+implemented as, so the chip springs back — indistinguishable from "reordering
+is broken". In this chart, `measures` allowed 200 and reordered fine while
+`rows` was capped at 4 with 3 bound and would not.
+
+Set `maxColumnCount` to a generous sanity cap rather than the number you
+expect people to use. It costs nothing and avoids a failure mode that looks
+like a platform limitation.
+
+## Make the whole header the hit target, not a 15px button
+
+A collapse/expand affordance rendered as a small button inside a header is
+easy to miss and easy for any overlapping absolutely-positioned element (a
+resize grip, a tooltip layer) to intercept — which users report as "this
+group won't collapse". Put the click handler on the whole header cell and
+keep the button purely as the visual affordance
+(`btn.onclick = e => { e.stopPropagation(); toggle(); }` so it doesn't fire
+twice). Costs two lines, removes an entire category of "it doesn't respond".

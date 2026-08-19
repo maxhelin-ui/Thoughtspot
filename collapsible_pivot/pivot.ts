@@ -49,8 +49,9 @@ const MAX_MEASURES = 200;
 // Row attributes render as flat, side-by-side label columns on the left —
 // one column each, no hierarchy and no collapsing. (Grouping/collapsing in
 // this chart is columns-only; "no nested rows" means no row outline, not
-// "only one row attribute".)
-const MAX_ROWS = 4;
+// "only one row attribute".) There's no fixed number of rows: bind as many
+// as you like, this is only a sanity cap.
+const MAX_ROWS = 20;
 
 // How many named measure-groups the settings panel offers. Must be a fixed
 // number — the visual-prop element COUNT has to stay static (LESSONS.md).
@@ -731,14 +732,7 @@ function render(ctx: CustomChartContext) {
                 const collapsed = isCollapsed(node.key, defaultCollapsed);
                 if (collapsed) wrapEl.className = 'grp collapsed';
                 th.classList.add('grp-head');
-                const btn = document.createElement('button');
-                btn.type = 'button';
-                btn.className = 'chev';
-                btn.textContent = collapsed ? '+' : '\u2212';
-                btn.title = collapsed
-                    ? `Expand ${node.label} (showing its first column only)`
-                    : `Collapse ${node.label}`;
-                btn.onclick = () => {
+                const toggle = () => {
                     if (collapsed) {
                         explicitCollapsed.delete(node.key);
                         explicitExpanded.add(node.key);
@@ -748,7 +742,22 @@ function render(ctx: CustomChartContext) {
                     }
                     render(ctx);
                 };
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = 'chev';
+                btn.textContent = collapsed ? '+' : '\u2212';
+                btn.title = collapsed
+                    ? `Expand ${node.label} (showing its first column only)`
+                    : `Collapse ${node.label}`;
+                btn.onclick = (e) => { e.stopPropagation(); toggle(); };
                 wrapEl.appendChild(btn);
+                // The whole group header toggles, not just the 15px button —
+                // a tiny hit target is easy to miss (and easy for anything
+                // overlapping it to steal), which reads as "this group won't
+                // collapse". The button stays as the visual affordance.
+                th.classList.add('grp-clickable');
+                th.title = btn.title;
+                th.onclick = toggle;
             }
             th.appendChild(wrapEl);
             // Only single-column headers get a resize grip — dragging a group

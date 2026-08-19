@@ -15,7 +15,7 @@ There are **two independent ways to group columns**, and you can use either or b
 
 | Zone | Max | What it's for |
 |---|---|---|
-| **Rows** | 4 | The left-hand label columns, flat and side by side. Bind several and you get one row per combination — no row hierarchy, no collapsing. |
+| **Rows** | 20 | The left-hand label columns, flat and side by side. Bind as many as you need — one row per combination, no row hierarchy, no collapsing. |
 | **Column groups (outermost first)** | 4 | One nesting level per attribute. The first one you drop is the outermost group, the next nests inside it, and so on. |
 | **Measures** | 200 | The numbers in the cells. |
 
@@ -23,7 +23,7 @@ All the grouping happens across the top. Rows stay flat.
 
 **What you see when you first pick this chart:** every attribute from your search goes into Rows and every measure into Measures — so it starts as a plain wide table of your query, with nothing grouped. To start grouping by an attribute's values, drag it out of **Rows** and into **Column groups**.
 
-**Reordering the row label columns is a known limitation.** ThoughtSpot's layout panel won't let you drag to reorder chips inside a single slot — the chip springs back. For now the workaround is to remove the columns from **Rows** and re-add them in the order you want. (Splitting Rows into four separate one-column slots does fix the reordering, but it breaks any chart that already has a saved config, so it's parked until it can be tested against a real instance.)
+**Reordering:** measures reorder normally by dragging within the Measures slot. Row attributes were previously hard to reorder because the Rows slot was capped at 4 and a nearly-full slot rejects the drop; the cap is now 20, which should let them reorder like measures do. If a chip still springs back, remove the columns from **Rows** and re-add them in the order you want.
 
 **Order matters** in Column groups — first = outermost. Leaving it empty is fine, and is the common case: most grouping here is done with **measure groups** in the settings instead.
 
@@ -47,7 +47,7 @@ Region    | EMEA  | AMER                  |
 Segment   | ENT   | ENT   | MID   | SMB   |
 ```
 
-The single `ENT` column under EMEA now represents that whole group. The button after the group name shows **+** when it's collapsed (there's more hidden behind it) and **−** when it's open. Click to toggle.
+The single `ENT` column under EMEA now represents that whole group. The button after the group name shows **+** when it's collapsed (there's more hidden behind it) and **−** when it's open. **Clicking anywhere on the group header toggles it** — you don't have to hit the small button.
 
 Key points:
 
