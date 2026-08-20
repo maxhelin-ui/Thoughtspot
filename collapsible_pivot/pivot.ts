@@ -118,6 +118,19 @@ function readClientState(vp: VisualProps): ClientState {
 
 let globalAppConfig: any = null;
 
+// Column widths are only WRITTEN BACK while the chart is being set up, not
+// while someone is just looking at a liveboard. A viewer can still drag
+// columns around — it just isn't saved, so a reload returns to whatever the
+// last proper edit left behind. Same contract as the sort arrows.
+//
+// `isLiveboardContext` is the only mode signal the SDK exposes (there's no
+// explicit edit/view flag), so "on a liveboard tile" stands in for "viewing".
+// Unknown/absent config is treated as EDITABLE: a chart set up outside a
+// liveboard must still be able to save its widths.
+function widthsArePersistable(): boolean {
+    return globalAppConfig?.appOptions?.isLiveboardContext !== true;
+}
+
 // ---------- formatting ----------
 
 function formatNumber(value: number, format: string): string {
@@ -1086,6 +1099,9 @@ function render(ctx: CustomChartContext) {
     applyWidthsLive = applyWidths;
     // Persist only when a drag ends, so we don't spam the host mid-gesture.
     const commitWidths = (force = false) => {
+        // Viewing a liveboard: the drag still applies locally for this session,
+        // it just never reaches visualProps.
+        if (!widthsArePersistable()) return;
         const canonical = canonicalWidths(columnWidths);
         if (!force && canonical === lastPersistedWidths) return; // nothing new to send
         try {
@@ -1105,7 +1121,7 @@ function render(ctx: CustomChartContext) {
     // widths. If the host's copy no longer matches what we hold locally,
     // push ours back. The canonical-string guard in commitWidths means this
     // emits at most once per actual difference, so it can't loop.
-    if (Object.keys(columnWidths).length) {
+    if (widthsArePersistable() && Object.keys(columnWidths).length) {
         const hostCanon = canonicalWidths(hostWidths);
         const localCanon = canonicalWidths(columnWidths);
         if (hostCanon !== localCanon) {

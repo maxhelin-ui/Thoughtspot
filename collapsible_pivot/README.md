@@ -112,7 +112,8 @@ Sorting a specific column sorts by exactly what's shown in that column — if it
 
 ## Good to know
 
-- **Resize any column** by dragging the right edge of its header. **Group headers can be dragged too** — that moves the group's right edge (when a group is collapsed, that's just its one visible column). Widths are **saved with the answer**, so they come back next time.
+- **Resize any column** by dragging the right edge of its header. **Group headers can be dragged too** — that moves the group's right edge (when a group is collapsed, that's just its one visible column).
+- **Widths save only when you're setting the chart up**, not when someone is just viewing a liveboard. Resize while editing the answer and the widths are stored with it. A viewer on a liveboard can still drag columns around for their own session, but it isn't saved — reloading returns to the widths from the last proper edit. Same contract as the sort arrows.
 - **Resized headers wrap, they don't truncate.** Squeeze a column and its title flows onto a second (or third) line, staying centred. Untouched columns still size themselves to their title on one line.
 - **Headers always stay put** when you scroll vertically. Left label columns are pinned too, but only the first N — see **Freeze first N row label columns**. That pinning is deliberate, not a rendering glitch.
 - **Link columns render as links.** ThoughtSpot sends these as `{caption}Name{/caption}https://…`; the cell shows just the name, hyperlinked (http/https only).

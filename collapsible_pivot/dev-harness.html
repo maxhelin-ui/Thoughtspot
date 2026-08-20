@@ -103,7 +103,11 @@ frame.onload = async () => {
   try {
     log('ev','-> Initialize');
     const init = await send('Initialize', {
-      chartModel, appConfig:{ styleConfig:{}, appOptions:{}, localeOptions:{} },
+      chartModel, appConfig:{ styleConfig:{},
+        // ?lb=1 simulates viewing a liveboard tile (widths must NOT persist);
+        // default simulates the answer/setup context (widths persist).
+        appOptions:{ isLiveboardContext: new URLSearchParams(location.search).get('lb')==='1' },
+        localeOptions:{} },
       // hostUrl is passed straight to postMessage(msg, targetOrigin) by the
       // SDK — it MUST be a real origin or every emitEvent throws.
       componentId, hostUrl: window.location.origin, containerElSelector:null });

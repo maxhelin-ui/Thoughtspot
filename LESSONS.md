@@ -671,3 +671,36 @@ the rendered columns match the subset EXACTLY, in order — same count, same
 sequence. And note `ChartModelUpdate` only stores the model and returns
 `{triggerRenderChart:true}`; the host must then send `TriggerRenderChart`, so a
 harness that omits it will silently keep testing the previous model.
+
+## Viewer-adjustable vs author-saved: gate the WRITE, not the interaction
+
+In-chart controls fall into two camps and the difference matters to users:
+state an author configures (should be saved with the answer) vs state a viewer
+fiddles with while reading a liveboard (must NOT be saved — the next person,
+and a reload, should see the author's version).
+
+Get this wrong and viewers silently overwrite the author's setup just by
+dragging something.
+
+Implement it by gating the PERSIST call, never the interaction: the drag/click
+always applies locally so the chart still feels responsive; only the
+`UpdateVisualProps` emit is conditional. Remember to gate any self-heal/
+re-assert path too, or it'll write on the next render anyway.
+
+The SDK exposes no explicit edit/view flag. The usable signal is
+`ctx.getAppConfig().appOptions.isLiveboardContext` — true when rendering in a
+liveboard. Treat unknown/absent config as EDITABLE, so a chart set up outside a
+liveboard can still save.
+
+Ephemeral-by-default state (a sort order held in a plain module variable) needs
+no gating at all — it dies on reload for free. Prefer that when the state
+doesn't need saving.
+
+## Harness gotcha: `emitEvent` is async — don't assert on it synchronously
+
+`ctx.emitEvent(...)` is a postMessage round-trip. Counting emitted events in the
+same tick as the interaction that triggers them reports zero every time, which
+reads as "persistence is broken" (or worse, as "correctly suppressed" when you
+were testing that it DOESN'T emit — a false pass). Always `await` a few hundred
+ms before asserting on emit counts, and when testing suppression, also pump a
+few extra renders so a deferred/self-heal write has a chance to appear.
