@@ -1219,33 +1219,30 @@ const renderChart = async (ctx: CustomChartContext) => {
         // back to the host and never repaired — the host then chokes on, say,
         // a measure sitting in the attribute-only Rows slot. Validating here
         // makes the SDK fall back to getDefaultChartConfig and self-heal.
-        validateConfig: (chartConfig: ChartConfig[], chartModel: ChartModel) => {
+        // DELIBERATELY PERMISSIVE — returning isValid:false here is destructive,
+        // in two different ways, and neither is obvious from the name:
+        //
+        //   1. At init, the SDK responds to a false with getDefaultChartConfig(),
+        //      and the host adopts it. Our default binds EVERY attribute and
+        //      EVERY measure in the search, in chartModel.columns order. So one
+        //      spurious false silently rebinds columns the user had deliberately
+        //      left out and reshuffles the rest (formula columns, which sort last
+        //      in chartModel.columns, get dragged to the end).
+        //   2. On ChartConfigValidate, a false makes the host REJECT the edit the
+        //      user is making and snap the layout back.
+        //
+        // Both read to the user as "the table rearranges itself". So the only
+        // thing worth rejecting is a config that binds nothing at all; every
+        // other shortcoming (no rows yet, no measures yet, a column of the wrong
+        // type left over from an old build) is reported by render() as an
+        // on-chart message instead, which costs the user nothing.
+        validateConfig: (chartConfig: ChartConfig[]) => {
             const dims = chartConfig?.[0]?.dimensions ?? [];
-            const get = (k: string) => (dims.find(d => d.key === k)?.columns ?? []) as Col[];
-            const byId = new Map((chartModel?.columns ?? []).map((c: any) => [c.id, c]));
-            const typeOf = (c: Col) => (byId.get(c.id) as any)?.type ?? (c as any)?.type;
-            const errors: string[] = [];
-
-            const rows     = getRowColumns(dims);
-            const colGroups = get('columns');
-            const measures = get('measures');
-
-            if (rows.length < 1) errors.push('Bind at least one attribute to Rows.');
-            if (rows.length > MAX_ROWS) errors.push(`Rows takes at most ${MAX_ROWS} attributes.`);
-            if (measures.length < 1) errors.push('Bind at least one measure to Measures.');
-            for (const c of [...rows, ...colGroups]) {
-                if (typeOf(c) === ColumnType.MEASURE) {
-                    errors.push(`"${c.name}" is a measure and cannot sit in Rows or Column groups.`);
-                }
+            const bound = dims.reduce((n, d) => n + (d?.columns?.length ?? 0), 0);
+            if (bound === 0) {
+                return { isValid: false, validationErrorMessage: ['Bind at least one column.'] };
             }
-            for (const c of measures) {
-                if (typeOf(c) === ColumnType.ATTRIBUTE) {
-                    errors.push(`"${c.name}" is an attribute and cannot sit in Measures.`);
-                }
-            }
-            return errors.length
-                ? { isValid: false, validationErrorMessage: errors }
-                : { isValid: true };
+            return { isValid: true };
         },
         getQueriesFromChartConfig: (chartConfig: ChartConfig[], chartModel: ChartModel): Query[] => {
             // Must return at least one query holding at least one column, or

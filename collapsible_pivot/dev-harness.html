@@ -45,6 +45,15 @@ const oldRowsConfig = [{ key:'column', dimensions:[
   { key:'columns',  columns:[] },
   { key:'measures', columns: columns.slice(NATTR, NATTR+10) },
 ]}];
+// ?scenario=curated = a user-curated layout: 1 row attribute and only a
+// HANDFUL of the available measures, deliberately leaving the rest
+// "not visualised". This must survive init completely untouched — no extra
+// measures appearing, no reordering.
+const curatedConfig = [{ key:'column', dimensions:[
+  { key:'rows',     columns:[ columns[0] ] },
+  { key:'columns',  columns:[] },
+  { key:'measures', columns:[ columns[NATTR+4], columns[NATTR+1], columns[NATTR+9] ] },
+]}];
 log('warn', `scenario = ${scenario}`);
 const groupsOn = new URLSearchParams(location.search).get('groups')==='1';
 const g1size = Number(new URLSearchParams(location.search).get('g1size') || 20);
@@ -65,7 +74,7 @@ if (new URLSearchParams(location.search).get('colors')==='1') {
 const bulk = new URLSearchParams(location.search).get('bulk');
 if (bulk) { vprops.groupsBulkAction = bulk==='collapse' ? 'Collapse all' : 'Expand all'; log('warn','groupsBulkAction='+vprops.groupsBulkAction); }
 const chartModel = { columns, data: [], visualProps: vprops,
-  config: { chartConfig: scenario==='stale' ? staleConfig : scenario==='oldrows' ? oldRowsConfig : [] } };
+  config: { chartConfig: scenario==='stale' ? staleConfig : scenario==='oldrows' ? oldRowsConfig : scenario==='curated' ? curatedConfig : [] } };
 
 const frame = document.getElementById('frame');
 let componentId = 'harness-1';

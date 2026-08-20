@@ -639,3 +639,35 @@ with a user who can see a font you can't.
 ## Don't let a shared header-icon style undermine a color-contrast feature
 
 When a header can have a custom background color (a colorpicker `contrastTextColor` feature), an icon SITTING ON A FIXED-COLOR BADGE inside that header should generally keep the badge's own fixed contrast (dark icon on a light-grey pill stays dark regardless of the header behind it) — it's a self-contained control, not text painted directly on the header background. Before "fixing" an icon that looks like it isn't inheriting the header's dynamic text color, check what it's actually sitting on: if it has its own background, forcing it to inherit would make it invisible against ITS OWN box, not more readable.
+
+## `validateConfig` returning false is DESTRUCTIVE — treat it as a last resort
+
+`validateConfig` sounds advisory. It isn't. Returning `{isValid:false}` has two
+side effects, and users experience both as "the chart rearranges itself":
+
+1. **At init**, the SDK answers a false by calling `getDefaultChartConfig()` and
+   handing the result to the host, which adopts it. If your default seeds "every
+   attribute and every measure in the search" (a reasonable default for a FRESH
+   chart), one spurious false silently re-binds columns the user had deliberately
+   left unvisualised, and reorders the rest into `chartModel.columns` order —
+   which is why formula columns, sorting last in that array, visibly migrate to
+   the end.
+2. **On `ChartConfigValidate`** (fired while the user edits the layout), a false
+   makes the host REJECT the edit and snap the layout back.
+
+So any condition you put in there fires on transient, mid-edit states too. A
+check as innocent as `if (rows.length < 1) invalid` means "the moment the user
+drags their only row attribute out, blow away their entire column selection."
+
+Rule: reject ONLY a config that is unusable AND that you'd genuinely want reset
+from scratch — in practice, one that binds nothing at all. Everything else
+(missing rows, missing measures, a wrong-typed column left over from an old
+build) should return `isValid:true` and be surfaced by `render()` as an on-chart
+message. A message costs the user nothing; a reset costs them their layout.
+
+Regression test worth keeping: feed a CURATED config (a scrambled subset of the
+available columns) through `ChartConfigValidate` + `ChartModelUpdate`, and assert
+the rendered columns match the subset EXACTLY, in order — same count, same
+sequence. And note `ChartModelUpdate` only stores the model and returns
+`{triggerRenderChart:true}`; the host must then send `TriggerRenderChart`, so a
+harness that omits it will silently keep testing the previous model.
